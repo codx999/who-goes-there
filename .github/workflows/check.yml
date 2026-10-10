@@ -1,0 +1,31 @@
+# Runs scripts/check.sh (tests, mypy, ruff, data guard) on a clean Linux machine.
+# Needs no secrets. Never add tokens (Hugging Face, Kaggle) or dataset files here.
+name: check
+
+on:
+  push:
+    branches: [main] # session branches are merged locally; only main is pushed
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency: # a newer push to the same branch cancels the older run
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # Actions pinned to commit IDs: a tag can be missing or moved.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # guard_data.py --history checks every commit
+          persist-credentials: false # later steps (PyPI packages) never see the token
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: "0.12.23" # same uv as local; bump both together
+          enable-cache: true
+      - run: bash scripts/check.sh
