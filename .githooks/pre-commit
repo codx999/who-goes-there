@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Refuses commits that stage data files, images, weights or keys (scripts/guard_data.py, standard library only).
+# Enable once per clone: git config core.hooksPath .githooks
+set -euo pipefail
+exec uv run --no-project --quiet python scripts/guard_data.py --staged

@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Refuses a push whose new commits contain data files, images, weights or keys anywhere in their history,
+# including files a later commit removed (scripts/guard_data.py reads the refs from stdin).
+set -euo pipefail
+exec uv run --no-project --quiet python scripts/guard_data.py --pre-push
