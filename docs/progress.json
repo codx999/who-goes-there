@@ -13,7 +13,7 @@
     {"id": "2.03", "session": 2, "owner": "claude", "due": "2026-10-11",
      "description": ".claude/agents/code-reviewer.md (Opus 5.5 xhigh, whole range) and risk-reviewer.md (Fable 5.1 high, given files), both read-only with Read, Grep, Glob, Bash, and .claude/commands/review-session.md that refuses uncommitted changes, computes merge-base(main, HEAD)..HEAD, runs risk_files.sh, selects invariant rows, reports the tier and spawns both agents",
      "steps": "the three files exist; each agent file states its tools, read-only, severity definition and that 'nothing found' is valid; `bash scripts/check.sh` green",
-     "passes": false},
+     "passes": true},
     {"id": "2.04", "session": 2, "owner": "user", "due": "2026-10-11",
      "description": "First review (playbook step 10) of the bootstrap and design range, covering CLAUDE.md and the review machinery, with a second Opus run in place of the Fable risk-reviewer where Fable wrote the files",
      "steps": "manual: the review covers the explicit range 9788ae4..HEAD (/review-session uses merge-base(main, HEAD)..HEAD, which excludes commits already merged, so pass the range to `/code-review xhigh --max-findings all 9788ae4..HEAD` or to the two reviewer agents); findings verified, fixed or rejected with reasons; progress-log entry ends with 'Review: tier N, ran X'",
