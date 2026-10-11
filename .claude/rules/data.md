@@ -3,7 +3,6 @@ paths:
   - "trailcam/data/**"
   - "trailcam/evaluate/**"
   - "data/**"
-  - "tests/fixtures/**"
 ---
 # Data and Dataset Rules
 
@@ -19,6 +18,9 @@ paths:
   redefine it inline.
 - Val and test transforms are resize and normalize only; augmentation belongs to the training
   transform alone.
+- Bounding boxes are training-time augmentation (arm B) and attention scoring only; never a model
+  input. The box-guided crop sampler lives in `trailcam/data/boxcrop.py`, is used by the arm B
+  training transform only, and must never be reachable from the eval (val or test) transform.
 - Generated figures go in `docs/figures/` and must never contain raw dataset images; demo samples
   (a few trans-test photos) go in `assets/`. Both folders have a file-count and size budget in
   `scripts/guard_data.py`.
