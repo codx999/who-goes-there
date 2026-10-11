@@ -91,3 +91,38 @@ open question 5 says so and adds `deploy_space.py` to the mypy targets; the TA q
 the first kept frame; four numbers corrected (57,864 images, about 21 MB of weights, 9 of 12
 classes in trans_val, 407 same-species multi-annotation images). Rejected: none.
 Review: tier 0 for the docs plus CLAUDE.md, ran /code-review xhigh; one round.
+
+## 2026-10-11: session 1 continued, design revision after the literature review (Fable 5.1)
+
+**Done.** A parallel session wrote `docs/research-prompt.md` and `docs/research-report.md` (CCT20
+literature, task options, a ranked list of research questions, an experimental design) and a draft
+`scripts/kaggle_prepare_cct20.py`. Both documents are now committed under `docs/` (the report with
+a note that plan.md wins where they differ). Decisions taken with the user and written into
+`docs/plan.md` (now with a section 6, "Research question and experiment", and renumbered sections
+after it): keep 12 classes, no `empty` (the report's 13-class option becomes an add-if-early run);
+adopt the research question, box-guided crop augmentation at training time only, arm A vs arm B,
+seed 0 first and seeds 1 and 2 only if arm B seed 0 is done by 10-16; measure accuracy, macro-F1,
+attention-in-box (Grad-CAM mass inside the ground-truth box) and an animal-removed test (box
+blanked, does the prediction survive); ResNet-18 from torchvision as the backbone with
+EfficientNet-B0 as the Space fallback; 512 px longer-side cache as the prepare script already does;
+stratify the re-split by sequence majority class and location with at least 30 val images per
+class; Food-101 as the fallback dataset (the prompt's choice, replacing Oxford-IIIT Pet); keep
+boxes, capture hour and a pixel-based day/night flag in the metadata (verified today: every image
+has a full timestamp and about half are night shots; hour 12 is doubled and looks like a clock
+default, so the pixel test is the label); descriptive slices (day/night, common/rare, per unseen
+camera) and a two-colour feature map of backbone features; temperature scaling as add-if-early.
+Rejected from the report: scoring the test set mid-way (plan keeps one scoring at the end) and a
+committed split CSV (the guard refuses it; seed plus hash stays). CLAUDE.md gained two lines (the
+report in the context list; boxes never a model input), 72 lines. `docs/progress.json` rewritten:
+42 items, 13 owner=user; new items for the box-guided sampler (4.04), the prepare script with the
+day/night test (6.01), arm A and arm B runs (6.05, 7.02, 7.03), attention and animal-removed
+(8.03), slices and feature map (8.04), calibration if early (12.03). The Kaggle script stays
+untracked in the main checkout until item 6.01 commits it, type-checked and with a test.
+
+**Next.** Session 2 (2026-10-11, today): the review machinery (2.01 to 2.03), then the user's first
+review (2.04) over 9788ae4..HEAD. Ask the TA about the torchvision dataset rule today (open
+question 1).
+
+Review: tier 0 for the docs plus CLAUDE.md (two added lines). The user decides whether the
+CLAUDE.md change waits for the session 2 review or gets `/code-review xhigh --max-findings all
+9c0c2e4..HEAD` now.
