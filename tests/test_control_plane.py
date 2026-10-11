@@ -68,6 +68,45 @@ def test_check_sh_fails_when_hooks_folder_is_missing(tmp_path: Path) -> None:
     assert "git hooks are not enabled" in result.stderr
 
 
+def _git(cwd: Path, *args: str) -> None:
+    env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+    env |= {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com"}
+    env |= {"GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.com"}
+    subprocess.run(["git", *args], cwd=cwd, env=env, check=True, capture_output=True)
+
+
+def _data_root(cwd: Path) -> str:
+    return subprocess.run(
+        ["bash", str(ROOT / "scripts" / "data_root.sh")],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+
+
+def test_data_root_finds_the_main_checkout_data_from_a_worktree(tmp_path: Path) -> None:
+    main = tmp_path / "main"
+    main.mkdir()
+    _git(main, "init", "-q", "-b", "main")
+    (main / "README.md").write_text("t\n")
+    _git(main, "add", "README.md")
+    _git(main, "commit", "-q", "-m", "root")
+    _git(main, "worktree", "add", "-q", str(tmp_path / "wt"), "-b", "wt")
+    assert _data_root(main) == "" and _data_root(tmp_path / "wt") == ""  # no data/: nothing
+    (main / "data").mkdir()
+    expected = str((main / "data").resolve())
+    assert _data_root(main) == expected
+    assert _data_root(tmp_path / "wt") == expected
+
+
+def test_check_sh_sets_the_data_root_outside_ci() -> None:
+    lines = (ROOT / "scripts" / "check.sh").read_text().splitlines()
+    assert 'if [ -z "${CI:-}" ] && [ -z "${TRAILCAM_DATA_ROOT:-}" ]; then' in lines
+    assert '  root="$(bash scripts/data_root.sh)"' in lines
+    assert '    export TRAILCAM_DATA_ROOT="$root"' in lines
+
+
 def test_pytest_config_is_not_narrowed() -> None:
     config = tomllib.loads((ROOT / "pyproject.toml").read_text())["tool"]["pytest"]["ini_options"]
     assert config.get("testpaths") == ["tests"]

@@ -13,6 +13,15 @@ if [ -z "${CI:-}" ] && { [ -z "$expected" ] || [ "$hooks_dir" != "$expected" ]; 
   exit 1
 fi
 
+# The split tests on the real metadata (item 3.03) read TRAILCAM_DATA_ROOT. Outside CI it defaults
+# to the main checkout's data/ when that exists, so a local check runs them instead of skipping.
+if [ -z "${CI:-}" ] && [ -z "${TRAILCAM_DATA_ROOT:-}" ]; then
+  root="$(bash scripts/data_root.sh)"
+  if [ -n "$root" ]; then
+    export TRAILCAM_DATA_ROOT="$root"
+  fi
+fi
+
 uv sync --locked --quiet
 uv run pytest --tb=short -q
 uv run mypy trailcam/ scripts/guard_data.py
