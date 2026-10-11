@@ -115,6 +115,9 @@ Note: width/height here are the original capture sizes; the benchmark tarball is
 
 Extensions: {'.jpg': 57864}. Path depth (slashes): {0: 57864}. file_name stem equals image id: True.
 
+Id format (counted 2026-10-11, review 2.04): image ids that are UUIDs: 57864 of 57864; seq ids that
+are UUIDs: 57864 of 57864. `scripts/guard_data.py` relies on this to refuse id lists and dumps.
+
 ## info block
 
 Keys: ['contributor', 'date_created', 'description', 'version', 'year']

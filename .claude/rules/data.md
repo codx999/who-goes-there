@@ -17,7 +17,7 @@ paths:
 - The class-to-index map is written once in `trailcam/data/` and imported everywhere else; never
   redefine it inline.
 - Val and test transforms resize so the shorter side is 256, centre crop 224 and normalise with
-  the ImageNet mean and std (plan.md section 5), never a direct resize to 224 by 224; augmentation
+  the ImageNet mean and std (plan.md sections 5 and 2), never a direct resize to 224 by 224; augmentation
   belongs to the training transform alone.
 - Bounding boxes are training-time augmentation (arm B) and attention scoring only; never a model
   input. The box-guided crop sampler lives in `trailcam/data/boxcrop.py`, is used by the arm B
