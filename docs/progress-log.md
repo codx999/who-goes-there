@@ -252,3 +252,28 @@ refused. `tests/test_control_plane.py` pins the new lines. The main checkout's c
 uncommitted edit: `git restore .claude/settings.json` there before merging this branch.
 
 **Next.** Item 3.02, the metadata loader and the synthetic metadata writer.
+
+## 2026-10-11: session 3, item 3.02, the metadata loader and the synthetic metadata (Opus 5.5)
+
+**Done.** `trailcam/data/metadata.py`: finds the one `<split>_annotations.json` per official file
+under `--root` (recursive), checks every category against the class map by id and name, and
+builds one frozen `Record` per kept image (label index from `trailcam/data/classes.py`, location,
+seq_id, frame_num, seq_num_frames, width, height, capture hour, every box as COCO x, y, w, h in
+the original pixel size, and `night` from a `day_night.json` sidecar when present, else None).
+Drop rules in order: two_species, empty, rare, unannotated, counted per file; repeated image ids,
+orphan annotations, malformed boxes and unknown or renamed categories raise. The sidecar format
+(image id to `{"night": bool}`) is defined here for item 6.01. `trailcam/data/synthetic.py`
+(metadata part): 12 classes, cis locations 101 and 102, trans location 201, 3-frame sequences,
+7 pool sequences per class and cis location, boxes on about 90% of animal annotations, planted
+empty, rare, two-species and two-opossum frames and one burst split across train and cis_val; it
+writes only the five files and the sidecar into the given directory.
+
+`tests/test_metadata.py`: 23 tests, expectations read back from the written JSON; one runs on the
+real metadata when `TRAILCAM_DATA_ROOT` is set (file totals, 78 two-species images, 4,014
+empties, all as in `docs/data-inspection.md`). The CLI on the real `data/` printed counts only:
+kept 53,535 (train 13,496, cis_val 2,485, trans_val 1,603, cis_test 14,478, trans_test 21,473);
+dropped two_species 78, empty 4,014, rare 237, unannotated 0; boxed fraction 0.67 (cis_val) to
+0.92 (trans_val); hour 12 holds 4,525 images against about 1,100 to 1,800 for its neighbours, as
+plan section 2 says. Invariant test cells filled: R03, R05, R10, R15, R37.
+
+**Next.** Item 3.03, the re-split and the leakage tests (tier 3, xhigh).

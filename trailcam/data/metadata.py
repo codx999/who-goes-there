@@ -1,0 +1,258 @@
+"""Load the five CCT20 COCO-style annotation files into one record per image (plan.md section 2).
+
+Each kept image becomes a `Record` with its label index from `trailcam.data.classes`, location,
+sequence id and frame, capture hour, every bounding box (possibly none) and an optional day/night
+flag from the cache's sidecar. Images are dropped by these rules, checked in this order:
+
+1. `two_species`: annotations with more than one distinct category (78 images in CCT20).
+   Several annotations of one species keep that label and all their boxes.
+2. `empty`: the `empty` category (30).
+3. `rare`: badger, fox and deer.
+4. `unannotated`: no annotation at all (none in CCT20; counted so it cannot pass silently).
+
+The five files keep their official split names here; pooling and re-splitting train and cis_val is
+`trailcam/data/split.py`. `python -m trailcam.data.metadata --root <dir>` prints counts only.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+from collections import Counter
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Final
+
+from trailcam.data.classes import CLASSES, DROPPED_CCT_IDS, NUM_CLASSES, index_of_cct_id
+
+SPLITS: Final = ("train", "cis_val", "trans_val", "cis_test", "trans_test")
+DROP_RULES: Final = ("two_species", "empty", "rare", "unannotated")
+EMPTY_CCT_ID: Final = 30
+DATE_FORMAT: Final = "%Y-%m-%d %H:%M:%S"
+
+# Written next to the image cache by scripts/kaggle_prepare_cct20.py (item 6.01): a JSON object
+# mapping image id to {"night": bool, ...}. Read only when present.
+DAY_NIGHT_SIDECAR: Final = "day_night.json"
+
+Box = tuple[float, float, float, float]  # COCO [x, y, width, height] in pixels of width x height
+
+
+@dataclass(frozen=True)
+class Record:
+    """One kept image. `split` is the official file it came from."""
+
+    image_id: str
+    file_name: str
+    split: str
+    label: int
+    location: int
+    seq_id: str
+    frame_num: int
+    seq_num_frames: int
+    width: int
+    height: int
+    hour: int
+    boxes: tuple[Box, ...]
+    night: bool | None
+
+
+@dataclass(frozen=True)
+class Metadata:
+    """Kept records per official split, in file order, and images dropped per split per rule."""
+
+    records: Mapping[str, tuple[Record, ...]]
+    dropped: Mapping[str, Mapping[str, int]]
+
+
+def annotation_file_name(split: str) -> str:
+    return f"{split}_annotations.json"
+
+
+def find_annotation_files(root: Path) -> dict[str, Path]:
+    """The one `<split>_annotations.json` under `root` (searched recursively) for every split."""
+    if not root.is_dir():
+        raise FileNotFoundError(f"metadata root is not a directory: {root}")
+    found: dict[str, Path] = {}
+    for split in SPLITS:
+        matches = sorted(root.rglob(annotation_file_name(split)))
+        if len(matches) != 1:
+            raise FileNotFoundError(
+                f"expected one {annotation_file_name(split)} under {root}, found {len(matches)}"
+            )
+        found[split] = matches[0]
+    return found
+
+
+def capture_hour(date_captured: str) -> int:
+    """Hour 0 to 23 of a CCT `date_captured` string ("YYYY-MM-DD HH:MM:SS")."""
+    return datetime.strptime(date_captured, DATE_FORMAT).hour
+
+
+def _parse_box(raw: Any) -> Box:
+    if not isinstance(raw, list) or len(raw) != 4:
+        raise ValueError("a bbox is not a list of four numbers")
+    x, y, w, h = (float(v) for v in raw)
+    if w <= 0 or h <= 0:
+        raise ValueError("a bbox has a non-positive width or height")
+    return (x, y, w, h)
+
+
+def _check_categories(categories: Sequence[Mapping[str, Any]], split: str) -> None:
+    """Every category in the file is one the class map knows, under the same name."""
+    for category in categories:
+        cct_id = int(category["id"])
+        name = category["name"]
+        expected = (
+            DROPPED_CCT_IDS[cct_id]
+            if cct_id in DROPPED_CCT_IDS
+            else CLASSES[index_of_cct_id(cct_id)]
+        )
+        if name != expected:
+            raise ValueError(f"{split}: category {cct_id} is named {name!r}, expected {expected!r}")
+
+
+def load_night_flags(path: Path) -> dict[str, bool]:
+    """Image id to night flag from a day/night sidecar."""
+    raw = json.loads(path.read_text())
+    if not isinstance(raw, dict):
+        raise ValueError("the day/night sidecar is not a JSON object")
+    flags: dict[str, bool] = {}
+    for image_id, entry in raw.items():
+        night = entry.get("night") if isinstance(entry, dict) else None
+        if not isinstance(night, bool):
+            raise ValueError("a day/night sidecar entry has no boolean 'night'")
+        flags[image_id] = night
+    return flags
+
+
+def load_split(
+    path: Path, split: str, night_flags: Mapping[str, bool] | None = None
+) -> tuple[tuple[Record, ...], dict[str, int]]:
+    """Kept records of one annotation file and the number of images dropped per rule."""
+    data = json.loads(path.read_text())
+    _check_categories(data["categories"], split)
+
+    annotations: dict[str, list[Mapping[str, Any]]] = {}
+    for ann in data["annotations"]:
+        annotations.setdefault(ann["image_id"], []).append(ann)
+
+    image_ids = [image["id"] for image in data["images"]]
+    if len(set(image_ids)) != len(image_ids):
+        raise ValueError(f"{split}: {len(image_ids) - len(set(image_ids))} repeated image ids")
+    orphans = len(annotations.keys() - set(image_ids))
+    if orphans:
+        raise ValueError(f"{split}: annotations for {orphans} image ids not in the file")
+
+    dropped = dict.fromkeys(DROP_RULES, 0)
+    records: list[Record] = []
+    for image in data["images"]:
+        anns = annotations.get(image["id"], [])
+        categories = {int(ann["category_id"]) for ann in anns}
+        if len(categories) > 1:
+            dropped["two_species"] += 1
+            continue
+        if not categories:
+            dropped["unannotated"] += 1
+            continue
+        (cct_id,) = categories
+        if cct_id == EMPTY_CCT_ID:
+            dropped["empty"] += 1
+            continue
+        if cct_id in DROPPED_CCT_IDS:
+            dropped["rare"] += 1
+            continue
+        location = image["location"]
+        if not isinstance(location, int) or isinstance(location, bool):
+            raise ValueError(f"{split}: a location is not an integer")
+        records.append(
+            Record(
+                image_id=image["id"],
+                file_name=image["file_name"],
+                split=split,
+                label=index_of_cct_id(cct_id),
+                location=location,
+                seq_id=image["seq_id"],
+                frame_num=int(image["frame_num"]),
+                seq_num_frames=int(image["seq_num_frames"]),
+                width=int(image["width"]),
+                height=int(image["height"]),
+                hour=capture_hour(image["date_captured"]),
+                boxes=tuple(_parse_box(ann["bbox"]) for ann in anns if "bbox" in ann),
+                night=None if night_flags is None else night_flags.get(image["id"]),
+            )
+        )
+    return tuple(records), dropped
+
+
+def load_metadata(root: Path, sidecar: Path | None = None) -> Metadata:
+    """Load and filter all five files under `root`.
+
+    The day/night flags come from `sidecar` if given, else from `root / DAY_NIGHT_SIDECAR` if that
+    exists; without one every record has `night=None`.
+    """
+    files = find_annotation_files(root)
+    if sidecar is None and (root / DAY_NIGHT_SIDECAR).is_file():
+        sidecar = root / DAY_NIGHT_SIDECAR
+    night_flags = None if sidecar is None else load_night_flags(sidecar)
+    records: dict[str, tuple[Record, ...]] = {}
+    dropped: dict[str, Mapping[str, int]] = {}
+    for split in SPLITS:
+        records[split], dropped[split] = load_split(files[split], split, night_flags)
+    return Metadata(records=records, dropped=dropped)
+
+
+def summary(meta: Metadata) -> str:
+    """Counts only: images per class per split, boxed fraction, hours, night share, drops."""
+    width = max(len(name) for name in (*CLASSES, *DROP_RULES, "total")) + 2
+    head = "".join(f"{split:>12}" for split in SPLITS) + f"{'all':>12}"
+    lines = ["Images per class per split (kept)", f"{'class':<{width}}{head}"]
+    per_split = {split: Counter(r.label for r in meta.records[split]) for split in SPLITS}
+    for index, name in enumerate(CLASSES):
+        row = [per_split[split][index] for split in SPLITS]
+        lines.append(f"{name:<{width}}" + "".join(f"{n:>12}" for n in row) + f"{sum(row):>12}")
+    totals = [len(meta.records[split]) for split in SPLITS]
+    lines.append(f"{'total':<{width}}" + "".join(f"{n:>12}" for n in totals) + f"{sum(totals):>12}")
+
+    lines += ["", "Images dropped per rule", f"{'rule':<{width}}{head}"]
+    for rule in DROP_RULES:
+        row = [meta.dropped[split][rule] for split in SPLITS]
+        lines.append(f"{rule:<{width}}" + "".join(f"{n:>12}" for n in row) + f"{sum(row):>12}")
+
+    lines += ["", "Boxed fraction (kept images with at least one box)"]
+    for split in SPLITS:
+        recs = meta.records[split]
+        boxed = sum(1 for r in recs if r.boxes)
+        share = boxed / len(recs) if recs else 0.0
+        lines.append(f"  {split:<12}{boxed:>7} of {len(recs):>6}  {share:.3f}")
+
+    every = [r for split in SPLITS for r in meta.records[split]]
+    hours = Counter(r.hour for r in every)
+    lines += ["", "Capture hour histogram (kept images, all splits)"]
+    lines += [f"  {hour:02d}  {hours[hour]:>6}" for hour in range(24)]
+
+    flagged = [r.night for r in every if r.night is not None]
+    lines.append("")
+    if flagged:
+        lines.append(
+            f"Night flag: {len(flagged)} of {len(every)} images flagged, "
+            f"{sum(flagged)} night ({sum(flagged) / len(flagged):.3f})"
+        )
+    else:
+        lines.append("Night flag: no day/night sidecar")
+    lines.append(f"Classes: {NUM_CLASSES}")
+    return "\n".join(lines)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
+    parser.add_argument("--root", type=Path, required=True, help="directory holding the 5 files")
+    parser.add_argument("--sidecar", type=Path, default=None, help="day/night sidecar JSON")
+    args = parser.parse_args(argv)
+    print(summary(load_metadata(args.root, args.sidecar)))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
