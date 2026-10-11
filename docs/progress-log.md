@@ -201,6 +201,13 @@ check may be skipped when `data/` is absent (items are not Claude's to edit); pl
 a camera's background photo next to the per-camera chart, which R04 forbids unless it comes from
 `assets/`; `.pdf` is not restricted by the guard.
 
+Then, at the user's go-ahead: absolute Read deny rules for this project's `data/`, `models/`,
+`outputs/`, `.env*` and any `kaggle.json` added to the user's `~/.claude/settings.json` (outside
+the repo; the probe file could not be written from this session, so the user checks it); the
+CLAUDE.md eval transform line (shorter side 256, centre crop 224, normalise; 73 lines); plan
+section 7's per-camera chart made bars only; `.pdf` blocked by suffix and signature. Item 3.03's
+real-data skip stays with the user (items are not Claude's to edit).
+
 **Next.** A fix round on `e777e14..HEAD` (the fix commits touch the guard, check.sh,
 risk_files.sh and the commands), started by the user. Then session 3 (2026-10-12): class map,
 metadata loader, re-split with the leakage tests (tier 3).
