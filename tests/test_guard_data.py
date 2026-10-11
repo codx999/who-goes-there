@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -269,17 +270,71 @@ def test_history_budget_is_per_commit(monkeypatch: pytest.MonkeyPatch) -> None:
     assert [(e.commit, p) for e, p in findings] == [("c1", "25 images under assets/ (cap 24)")]
 
 
+# Pinned so that dropping a suffix from the guard (R01, R02) fails a test, not only a review.
+EXPECTED_BLOCKED_SUFFIXES = {
+    *(".avif", ".bmp", ".gif", ".heic", ".heif", ".jpeg", ".jpg", ".png", ".tif", ".tiff"),
+    *(".webp", ".avi", ".m4v", ".mkv", ".mov", ".mp4", ".webm"),
+    *(".bin", ".ckpt", ".h5", ".hdf5", ".npy", ".npz", ".onnx", ".pt", ".pth", ".safetensors"),
+    *(".db", ".db-journal", ".db-shm", ".db-wal", ".sqlite", ".sqlite3", ".sqlite-journal"),
+    *(".sqlite-shm", ".sqlite-wal", ".arrow", ".csv", ".feather", ".jsonl", ".ndjson"),
+    *(".parquet", ".tsv", ".xls", ".xlsx", ".pickle", ".pkl", ".7z", ".bak", ".bz2", ".gz"),
+    *(".rar", ".tar", ".tgz", ".xz", ".zip", ".zst", ".env"),
+}
+
+
+def test_blocked_suffixes_are_pinned() -> None:
+    assert set(guard.BLOCKED_SUFFIXES) == EXPECTED_BLOCKED_SUFFIXES
+    for suffix in EXPECTED_BLOCKED_SUFFIXES:
+        assert guard.path_problems(f"notes/file{suffix}"), suffix
+
+
+ENV_AND_SECRET_NAMES = [
+    ".env",
+    ".env.local",
+    ".env.production",
+    "space/.env.prod.local",
+    ".envrc",
+    "prod.env",
+    "kaggle.json",
+    "notebooks/kaggle.json",
+    "secrets.toml",
+    "space/secrets.toml",
+]
+
+
+@pytest.mark.parametrize("name", ENV_AND_SECRET_NAMES)
+def test_env_and_secret_files_are_refused_and_ignored(name: str) -> None:
+    assert guard.path_problems(name)
+    ignored = subprocess.run(
+        ["git", "check-ignore", "-q", "--no-index", name], cwd=ROOT, check=False
+    )
+    assert ignored.returncode == 0, f".gitignore does not ignore {name}"
+
+
+def test_env_example_is_allowed_and_not_ignored() -> None:
+    assert guard.path_problems(".env.example") == []
+    ignored = subprocess.run(
+        ["git", "check-ignore", "-q", "--no-index", ".env.example"], cwd=ROOT, check=False
+    )
+    assert ignored.returncode == 1
+
+
 def test_gitignore_matches_guard() -> None:
-    lines = {line.strip() for line in (ROOT / ".gitignore").read_text().splitlines()}
+    text = (ROOT / ".gitignore").read_text()
+    lines = {line.strip() for line in text.splitlines()}
     missing = sorted(s for s in guard.BLOCKED_SUFFIXES if f"*{s}" not in lines)
     assert missing == [], f".gitignore lacks patterns for {missing}"
+    # And the other way: every suffix pattern in the project block is one the guard refuses.
+    project = text.split("# --- project-specific ---", 1)[1].splitlines()
+    patterns = [line.strip() for line in project if line.strip().startswith("*.")]
+    assert sorted(p[1:] for p in patterns if p[1:] not in guard.BLOCKED_SUFFIXES) == []
     for directory in guard.BLOCKED_DIRS:
         assert f"/{directory}" in lines
     allowed = sorted(
         f"!{d}**/*{s}" for d in guard.IMAGE_BUDGETS for s in guard.ALLOWED_IMAGE_SUFFIXES
     )
     assert [p for p in allowed if p not in lines] == []
-    extra = sorted(p for p in lines if p.startswith("!") and p not in allowed)
+    extra = sorted(p for p in lines if p.startswith("!") and p not in [*allowed, "!.env.example"])
     assert extra == [], f".gitignore re-includes paths the guard refuses: {extra}"
 
 

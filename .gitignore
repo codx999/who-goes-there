@@ -292,7 +292,10 @@ __marimo__/
 !docs/figures/**/*.jpg
 !docs/figures/**/*.png
 !docs/figures/**/*.webp
-# Credentials
+# Credentials and env files (guard: path_problems refuses the same names)
 kaggle.json
+secrets.toml
+.env.*
+!.env.example
 # macOS
 .DS_Store
