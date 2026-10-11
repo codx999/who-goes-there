@@ -319,3 +319,63 @@ third round.
 
 Review: tier 2, ran /review-session 3.02 (72613c9..bcc04ec) and the fix round /review-session
 bcc04ec..HEAD 3.02 (code-reviewer Opus xhigh, risk-reviewer Fable high)
+
+## 2026-10-11: session 3, item 3.03, the re-split and the leakage tests (Opus 5.5, xhigh)
+
+**Done.** `trailcam/data/split.py`: `make_split(meta, seed)` pools the official train and cis_val
+records, groups them by `seq_id` and re-splits whole sequences into train and val; trans_val,
+cis_test and trans_test are the tuples `load_metadata` returned, passed through untouched. A
+sequence's class is the majority label over its kept frames (ties to the lower class index; every
+image keeps its own label); a pool sequence spanning two locations is refused. Strata are (class,
+location): each class gets 15% of its sequences rounded half up (at least 1, at most n - 1 when
+n >= 2), spread over its locations by largest remainder, so every stratum gets the floor or the
+ceiling of 15%; within a stratum the val sequences are those with the smallest SHA-256 of (seed,
+seq_id). No random generator is used, so the split does not depend on record order, dict or set
+order, the global `random` state or the Python version: the hash computed on the Mac is the one a
+Kaggle run will record. The split hash is a SHA-256 over (split, image id, label) for all five
+splits, sorted by image id. Before returning, `check_split` refuses (with counts only) an image id
+twice, a `seq_id` in two splits, a location in both a cis and a trans split, or a cis location
+missing from train or val. Output splits are `train`, `val`, `trans_val`, `cis_test`,
+`trans_test`; each record's `split` field names the split it is in (one docstring line in
+`trailcam/data/metadata.py` says so). `Split.records` is read-only and `Split`'s repr shows the
+seed, the hash and the sizes only. Nothing is written to a file.
+
+`uv run python -m trailcam.data.split --root <main checkout data/> --seed 42` printed counts only.
+Pool: 15,981 images in 6,274 sequences (222 of them with kept frames in both official files),
+3 mixed-label sequences, 0 majority ties. Sizes: train 13,587, val 2,394 (0.150 of the pool's
+images, 940 of 6,274 sequences, 0.147 to 0.154 per cis location), trans_val 1,603, cis_test
+14,478, trans_test 21,473. Smallest val class: skunk with 40 images (rodent 78, bird 89); over 200
+split seeds tried, the smallest val class never fell below 40. Locations: 10 in train and val,
+1 in trans_val, 10 in cis_test, 9 in trans_test. Split hash for seed 42:
+c78a9c1048f63aa52f34578ca17a6391315afdc2e478b4dbfd8a3aa954d1b009.
+
+`tests/test_split.py`: 58 tests. Every leakage and coverage rule (plan section 3 tests 1 to 4)
+runs on the synthetic metadata and on the real metadata; sizes, per-class counts, sequences and
+the hash are pinned for seed 42 on both (test 5), so CI catches a change to the algorithm without
+data. Also: same seed same split, different seeds differ, record order, the global `random` state
+and `PYTHONHASHSEED` (in a subprocess) leave the hash unchanged, the hash covers assignment and
+labels, the stratum sizes follow the majority class (a spy on `val_quotas`), `val_quotas` on 300
+random size tables, six refusals of planted leaks, and a CLI run that prints no id and writes no
+file. `TRAILCAM_DATA_ROOT=<abs path> uv run pytest -rs tests/test_split.py`: 58 passed, 0 skipped;
+without it, 37 passed and 21 skipped (the CI case). Mutation check in a scratch copy: 15 planted
+bugs (per-image draw, pooling every file, first-frame strata, hash over a set or over ids only,
+subsampled trans_test, no runtime check, ties to the higher index, banker's rounding, per-stratum
+rounding, the global `random`, set-order draws, unseeded tie-breaks, no location check, val taken
+from the cis_val file) each fail at least one test both with and without data, and the leakage
+tests catch the three leaking bugs on their own with the runtime check removed. R03 check of the
+failure output with bugs planted, under the default, `--tb=long` and `-vv` styles: the first
+version printed a real image id, because pytest prints a failing test's arguments (`Metadata` and
+`Split` reprs) and the arguments of the frame that raised; fixed by a counts-only `Split` repr,
+tests that take a `Case` whose repr names its source only, and `quietly`, which re-raises a failure
+in `make_split` or the CLI as its type and message. After the fix: no id, `Record(` or
+`Metadata(` in any failure output. Invariant test cells filled: R10, R11, R12, R13, R14, R15, R27.
+
+Open, not done (needs the user's OK, since it changes 3.02's module): `Record` and `Metadata` keep
+the dataclass repr, which prints image ids. A later real-data test that takes them as fixture
+arguments, or a notebook cell that echoes one, would show ids; a counts-only repr on both would
+close that for every caller.
+
+**Next.** Item 3.04, the data card (counts from the seed 42 run above).
+
+Review: tier 3 (split code). Commands for the user: `/review-session 3.03`, then
+`/code-review ultra`, leaving time for one fix round. Not started by this session.
