@@ -114,6 +114,8 @@ MAGIC = {
     b"\xff\xd8\xff": "JPEG",
     b"\x89PNG\r\n\x1a\n": "PNG",
     b"GIF8": "GIF",
+    b"II*\x00": "TIFF",
+    b"MM\x00*": "TIFF",
     b"\x89HDF\r\n\x1a\n": "HDF5",
     b"\x93NUMPY": "NumPy array",
     b"\x80\x02": "pickle",
@@ -343,8 +345,15 @@ def content_problems(data: bytes, path: str = "") -> list[str]:
     if data[4:8] == b"ftyp":
         is_image = data[8:12] in HEIF_BRANDS
         problems.append("HEIC/AVIF image file" if is_image else "MP4/MOV video file")
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        problems.append("WebP file")
+    if data[:2] == b"BM" and data[6:10] == b"\0\0\0\0":  # BMP: reserved header bytes are zero
+        problems.append("BMP file")
     if is_allowed_image(path):
-        problems = [p for p in problems if p not in ("JPEG file", "PNG file")]
+        web_images = ("JPEG file", "PNG file", "WebP file")
+        if not any(p in web_images for p in problems):
+            problems.append("not a JPEG, PNG or WebP image under an image name")
+        problems = [p for p in problems if p not in web_images]
     else:
         problems += embedded_problems(data)
     if path.lower().endswith(".ipynb"):

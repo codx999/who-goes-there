@@ -85,6 +85,25 @@ def test_magic_bytes_catch_renamed_files() -> None:
 def test_allowed_asset_image_passes_content_check() -> None:
     assert guard.content_problems(JPEG, "assets/demo/a.jpg") == []
     assert guard.content_problems(JPEG, "docs/figures/a.jpg") == []
+    webp = b"RIFF\x10\0\0\0WEBPVP8 " + b"\0" * 16
+    assert guard.content_problems(webp, "assets/demo/a.webp") == []
+    assert guard.content_problems(b"\x89PNG\r\n\x1a\nrest", "docs/figures/curve.png") == []
+
+
+def test_allowed_image_name_must_hold_an_image() -> None:
+    dump = json.dumps(_records(3000)).encode()
+    for path in ("docs/figures/meta.png", "assets/demo/x.jpg"):
+        assert guard.content_problems(dump, path) == [
+            "not a JPEG, PNG or WebP image under an image name"
+        ]
+
+
+def test_other_image_signatures_under_any_name() -> None:
+    assert guard.content_problems(b"RIFF\x10\0\0\0WEBPVP8 ", "a.dat") == ["WebP file"]
+    assert guard.content_problems(b"II*\x00" + b"\0" * 8, "a.dat") == ["TIFF file"]
+    assert guard.content_problems(b"MM\x00*" + b"\0" * 8, "a.dat") == ["TIFF file"]
+    assert guard.content_problems(b"BM\x36\x00\x0c\x00\0\0\0\0\x36", "a.dat") == ["BMP file"]
+    assert guard.content_problems(b"BMW notes: 4 doors", "cars.md") == []
 
 
 def _notebook(cells: list[dict[str, object]]) -> bytes:
