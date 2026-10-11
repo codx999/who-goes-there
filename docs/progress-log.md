@@ -397,8 +397,17 @@ reconciled the pool and trans_val totals with `docs/data-inspection.md` (risk-re
 `check.sh` green (211 passed). The fix commit modifies existing test lines and touches
 `trailcam/data/split.py`, so one fix round on it is due.
 
-**Next.** The fix round, `/review-session e3a2cb5..HEAD 3.03`; then item 3.04, the data card
-(counts from the seed 42 run above), and item 3.05, the id-free reprs (tier 2).
+Fix round, started by the user: `/review-session e3a2cb5..HEAD 3.03`, tier 3, risk files
+`tests/test_metadata.py`, `tests/test_split.py`, `trailcam/data/split.py`; code-reviewer on Opus
+at xhigh, risk-reviewer on Fable at high. Nothing found by either; every scenario held (R01, R03,
+R10 to R15, R27, R42 to R45; the same known gaps skipped). Spec changed: none. Both reproduced the
+new subprocess test by hand (locally 3 failed and 20 errors, as CI 23 skipped). Notes, not fixed:
+any non-empty `CI` counts as CI, so `CI=false` would skip too, the same rule `check.sh` uses (both
+reviewers); item 3.05's step `uv run pytest tests/test_metadata.py` now needs
+`TRAILCAM_DATA_ROOT` exported, or a run through `check.sh` (code-reviewer). No third round.
 
-Review: tier 3, ran `/code-review ultra` and `/review-session 3.03` (d889a44..e3a2cb5;
-code-reviewer Opus xhigh, risk-reviewer Fable high); fix round pending.
+**Next.** Item 3.04, the data card (counts from the seed 42 run above), then item 3.05, the
+id-free reprs (tier 2).
+
+Review: tier 3, ran `/code-review ultra` and `/review-session 3.03` (d889a44..e3a2cb5) and the fix
+round `/review-session e3a2cb5..HEAD 3.03` (code-reviewer Opus xhigh, risk-reviewer Fable high)
