@@ -375,8 +375,30 @@ test that takes them as fixture arguments, or a notebook cell that echoes one, w
 id-free repr on both closes that for every caller. Added as item 3.05 with the user's OK (it
 changes 3.02's module); not built in this session, so it stays out of the 3.03 review range.
 
-**Next.** The 3.03 review (tier 3) and its fix round; then item 3.04, the data card (counts from
-the seed 42 run above), and item 3.05, the id-free reprs (tier 2).
+Review, started by the user: `/code-review ultra` (cloud) and `/review-session 3.03`, tier 3,
+range d889a44..e3a2cb5, risk files `tests/test_split.py`, `trailcam/data/metadata.py`,
+`trailcam/data/split.py`; code-reviewer on Opus at xhigh, risk-reviewer on Fable at high. Nothing
+above low; every scenario held (R01, R03, R05, R10 to R15, R27, R42 to R45; skipped as known gaps:
+the loader side of R12, the ledger and data card of R14, the run seed of R27, the `Record` and
+`Metadata` reprs of R03 (item 3.05), the notebook, Kaggle and assets parts of R01 and R43). Spec
+changed: none. Two findings, both verified and fixed in 9d3221d:
+- both local reviewers, low: the real-metadata tests skipped whenever `TRAILCAM_DATA_ROOT` was
+  unset, though item 3.03 allows the skip only in CI. At the user's decision they now skip only
+  when `CI` is set and fail otherwise, in `tests/test_split.py` and `tests/test_metadata.py`. A
+  subprocess test runs them without the root as a local run (all 23 fail) and as CI (all 23
+  skip); on the old code it failed (0 failed locally). R42's test cell names it.
+- ultrareview, nit: `make_split` built each sequence's label `Counter` twice (inline and in
+  `majority_label`); it now builds it once. Behaviour unchanged: the pinned hashes hold, and the
+  first-frame, tie-rule and mixed-count mutations are still caught.
+Notes, not fixed: the 30-val-image floor is tested for seed 42 only and not enforced at run time,
+to be decided in 5.03 if the split seed can differ from 42 (code-reviewer); the pinned real values
+have no independent source, so the data card (3.04) cross-checks them; the code-reviewer
+reconciled the pool and trans_val totals with `docs/data-inspection.md` (risk-reviewer).
+`check.sh` green (211 passed). The fix commit modifies existing test lines and touches
+`trailcam/data/split.py`, so one fix round on it is due.
 
-Review: tier 3 (split code). Commands for the user: `/review-session 3.03`, then
-`/code-review ultra`, leaving time for one fix round. Not started by this session.
+**Next.** The fix round, `/review-session e3a2cb5..HEAD 3.03`; then item 3.04, the data card
+(counts from the seed 42 run above), and item 3.05, the id-free reprs (tier 2).
+
+Review: tier 3, ran `/code-review ultra` and `/review-session 3.03` (d889a44..e3a2cb5;
+code-reviewer Opus xhigh, risk-reviewer Fable high); fix round pending.
