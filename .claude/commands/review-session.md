@@ -41,7 +41,9 @@ range is given, use it everywhere below in place of `<base>..HEAD`.
      `/code-review xhigh --max-findings all <base>..HEAD` instead, and stop.
    - step 3 printed files: tier 2, continue.
    - the given items include 3.03 (the split code) or 9.01 (the final scoring script), or the
-     printed files include `trailcam/data/split.py` or `trailcam/evaluate/score_test.py`: tier 3;
+     printed files include `trailcam/data/split.py`, `trailcam/evaluate/score_test.py`,
+     `tests/test_split.py` or `tests/test_score_test.py` (their tests: a skipped leakage test is a
+     tier-3 change): tier 3;
      after the tier-2 reports, remind the user to run `/code-review ultra` with time for one fix
      round before the deadline.
 6. In one message, so the two run in parallel, spawn. Every reviewer prompt starts with: "Read
@@ -59,9 +61,10 @@ range is given, use it everywhere below in place of `<base>..HEAD`.
      code.
 
    Always pass `model` and `effort` explicitly. If an agent type is unknown in this session (the
-   file is newer than the session), spawn `general-purpose` with the same model and effort and the
-   same prompt, telling it to follow the agent file. If a spawn fails for any other reason, say so
-   in the report; never present one reviewer's result as the full review.
+   file is newer than the session), spawn the built-in `Plan` type (it has no Edit, Write or
+   NotebookEdit tool; `general-purpose` has them) with the same model and effort and the same
+   prompt, telling it to follow the agent file and its read-only rules. If a spawn fails for any
+   other reason, say so in the report; never present one reviewer's result as the full review.
 7. Wait for both reports. Show them together, each finding tagged with its reviewer, most severe
    first; mark findings both reviewers made; list each scenario with its result. Then stop: the
    verify-then-fix step (`docs/setup-playbook.md`, "After a review") comes next and starts from

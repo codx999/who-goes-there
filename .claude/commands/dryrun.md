@@ -7,5 +7,6 @@ Run the dry-run:
 If `trailcam/train/train.py` does not exist yet, report that and STOP. Do not create it.
 
 If the run completes:
-1. Show the loss values, the output shape of the final layer and the ledger row it wrote.
+1. Show the loss values, the output shape of the final layer and the ledger row it printed (a
+   dry run never appends to `docs/ledger.md`).
 2. STOP. Do NOT start a real training run; those happen in the Kaggle notebook, started by the user.
