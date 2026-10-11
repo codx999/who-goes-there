@@ -43,3 +43,36 @@ the previous guard. One judgment call: the payload threshold was added after the
 retroactively refused the previous commit's test file (a 400-character fake payload); the
 threshold is a real improvement (docs and icons do not count) and avoided a force-push.
 Review: tier 1, ran /code-review xhigh, two rounds; no further round unless requested.
+
+## 2026-10-10: session 1, design document (Fable 5.1)
+
+**Done.** Playbook step 7 in a dedicated session, explore then plan then implement: all seven
+inputs read, the outline of `docs/plan.md` with its conflicts presented and approved in chat, then
+four commits, `check.sh` green before each. `docs/plan.md` is now the source of truth: problem
+statement (12 classes, 11 animals plus `car`), the explicit class-to-index map, the split design
+(official location split kept; train and cis_val pooled and re-split by sequence because they share
+224 sequences; cis and trans test scored once), the four leakage tests, small CNN plus fine-tuned
+EfficientNet-B0 from timm, AdamW with cosine warmup and early stopping on val macro-F1, accuracy
+and macro-F1 side by side, Gradio demo and Hugging Face Space with weights uploaded via
+`huggingface_hub`, the "decisions and why" section, a dated schedule for sessions 2 to 12, open
+questions, sources. `docs/HANDOFF.md` retired with a note pointing to the plan. `CLAUDE.md` (69
+lines) from the playbook template. `docs/progress.json` with 35 items for sessions 2 to 12, 12 of
+them owner=user (Kaggle runs, Hugging Face account and Space, the final scoring, example photos,
+video, rehearsal); sessions 0 and 1 are logged here only. Worktree note: the app sets an absolute
+`core.hooksPath` to the main checkout, so `check.sh` reported hooks disabled until
+`git config --worktree core.hooksPath "$PWD/.githooks"`; recorded in CLAUDE.md.
+
+Judgment calls, approved: `car` kept as the twelfth class; the playbook's "15 classes plus empty"
+invariant rows are superseded by the plan and get corrected in session 2; fixture images are
+generated at test time because the guard blocks them in git; the split is reproduced from seed
+plus hash rather than committed.
+
+**Next.** Session 2 (2026-10-11): Part B of `docs/review/playbook-reusable.md` writes
+`invariants.md`, `risk_files.sh` with its test, both reviewer agents and `/review-session`
+(items 2.01 to 2.03); then the user runs the first review (2.04) over the bootstrap and design
+range. Open question 1 (the TA's reading of the torchvision dataset rule) is due 2026-10-13.
+
+Review: tier 0 for the docs. CLAUDE.md is a control-plane file written by Fable 5.1 and has no
+code review machinery yet; the user decides whether it waits for the session 2 `/review-session`
+(with a second Opus run in place of the Fable risk-reviewer) or gets `/code-review xhigh
+--max-findings all main..HEAD` now.
