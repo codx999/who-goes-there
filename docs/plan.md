@@ -174,6 +174,14 @@ GPU budget (Kaggle, 30 hours a week, T4 or P100): small CNN about 0.5 h; each Re
 1 h over roughly 13,600 cached training images; two arms times up to three seeds is 6 h; the
 evaluation passes about 1 h. Total under 10 h.
 
+Platform (decided 2026-10-11, after comparing Kaggle, Colab free, Colab Pro, Lightning AI Studio and
+per-hour clouds): Kaggle stays. It is the only free option with a published quota, the cache
+already lives there as a dataset, and a faster GPU would not change the result at 224 px with
+ResNet-18. Accelerator: the single P100, not the 2x T4 option, which burns quota at twice the rate
+and the script uses one GPU. Runs are launched with "Save & Run All" so they finish in the
+background. Fallback if queues or quota fail in the final week: Colab Pro for one month
+(about $10, roughly 50 T4 hours), with the cache copied to Drive.
+
 ## 6. Research question and experiment
 
 **Question.** Does training the whole-image classifier with **box-guided crop augmentation**,
