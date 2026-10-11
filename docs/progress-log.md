@@ -18,3 +18,14 @@ course-guideline.md and setup-review.md; then CLAUDE.md, `docs/progress.json`. T
 
 Review: tier 0 for the docs; the guard script and tests are control-plane files and get their
 first review with the step 9 machinery.
+
+**Review of the bootstrap (same day).** `/code-review xhigh --max-findings all 9788ae4..HEAD`,
+11 findings, none high. Fixed (8): notebook image outputs now refused; `assets/` images capped at
+24 files and 12 MB over the index; JSON with more than 100 image or annotation records refused as
+dataset metadata; video suffixes and the MP4 marker blocked; `.gitignore` regenerated from the
+guard's lists with a drift test; `assets/` allow-list narrowed to jpg, jpeg, png, webp; `.env.local`
+added to the Read deny list; `check.sh` fails outside CI when hooks are not enabled; unit tests for
+`_parse_raw`, `pre_push_revs`, `read_blobs`. Each fix has a test that fails on the old guard (9 of
+39 failed against the pre-fix copy). Skipped (3, low): mypy targets listed twice, version string in
+three places, importlib loading in the test. Review: tier 1, ran /code-review xhigh. The fix commit
+touches control-plane files, so it gets one fix-round review of its own range.

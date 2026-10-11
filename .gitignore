@@ -218,46 +218,73 @@ __marimo__/
 .streamlit/secrets.toml
 
 # --- project-specific ---
+# Kept in step with scripts/guard_data.py (tests/test_guard_data.py checks the two agree).
 # CCT20 images and metadata live in data/ (downloaded from LILA, CDLA-Permissive) and are never
-# committed. scripts/guard_data.py refuses them even if force-added.
+# committed; model checkpoints and run outputs stay in models/ and outputs/.
 /data/
-# Model checkpoints and run outputs
 /models/
 /outputs/
-# Images and weights anywhere in the tree (demo samples go in the allow-listed assets/ folder)
-*.jpg
-*.jpeg
-*.png
-*.webp
-*.gif
+# Every suffix the guard refuses: images, video, weights, tables, archives, env files
+*.7z
+*.arrow
+*.avi
+*.bak
+*.bin
 *.bmp
-*.tif
-*.tiff
-!assets/**/*.jpg
-!assets/**/*.jpeg
-!assets/**/*.png
-!assets/**/*.webp
-*.pt
-*.pth
+*.bz2
 *.ckpt
-*.safetensors
+*.csv
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+*.env
+*.feather
+*.gif
+*.gz
 *.h5
 *.hdf5
-*.onnx
+*.jpeg
+*.jpg
+*.jsonl
+*.m4v
+*.mkv
+*.mov
+*.mp4
+*.ndjson
 *.npy
 *.npz
-# Tables, exports and archives
-*.csv
-*.tsv
-*.jsonl
-*.ndjson
+*.onnx
 *.parquet
-*.pkl
 *.pickle
-*.zip
+*.pkl
+*.png
+*.pt
+*.pth
+*.rar
+*.safetensors
+*.sqlite
+*.sqlite-journal
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite3
 *.tar
-*.tar.gz
 *.tgz
+*.tif
+*.tiff
+*.tsv
+*.webm
+*.webp
+*.xls
+*.xlsx
+*.xz
+*.zip
+*.zst
+# Demo sample images are allowed under assets/ only (guard: ALLOWED_IMAGE_SUFFIXES, with a budget)
+!assets/**/*.jpeg
+!assets/**/*.jpg
+!assets/**/*.png
+!assets/**/*.webp
 # Credentials
 kaggle.json
 # macOS

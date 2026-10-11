@@ -10,72 +10,85 @@ Contents are read by blob ID from git (the index or the commits), never from the
 Findings name the path and the rule only, never the matching text. Standard library only, so the
 hooks can run it with `uv run --no-project`.
 
-Demo sample images are allowed under `assets/` only (IMAGE_SUFFIXES, ALLOWED_IMAGE_DIRS); the size
-limit still applies to them.
+Demo sample images are allowed under `assets/` only (ALLOWED_IMAGE_SUFFIXES, ALLOWED_IMAGE_DIRS),
+within a count and total-size budget that `--all` (check.sh, CI) enforces over the whole index.
+Notebooks must have no image outputs, and a JSON file with more than MAX_METADATA_RECORDS image
+records is treated as dataset metadata.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import PurePosixPath
+from typing import Any
 
 BLOCKED_DIRS = ("data/", "models/", "outputs/")
 IMAGE_SUFFIXES = frozenset({".bmp", ".gif", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"})
 ALLOWED_IMAGE_DIRS = ("assets/",)  # demo samples from trans-test locations, a few files only
-BLOCKED_SUFFIXES = IMAGE_SUFFIXES | frozenset(
-    {
-        # model weights and tensors
-        ".bin",
-        ".ckpt",
-        ".h5",
-        ".hdf5",
-        ".npy",
-        ".npz",
-        ".onnx",
-        ".pt",
-        ".pth",
-        ".safetensors",
-        # SQLite stores and their side files
-        ".db",
-        ".db-journal",
-        ".db-shm",
-        ".db-wal",
-        ".sqlite",
-        ".sqlite3",
-        ".sqlite-journal",
-        ".sqlite-shm",
-        ".sqlite-wal",
-        # tables and exports
-        ".arrow",
-        ".csv",
-        ".feather",
-        ".jsonl",
-        ".ndjson",
-        ".parquet",
-        ".tsv",
-        ".xls",
-        ".xlsx",
-        # pickled objects
-        ".pickle",
-        ".pkl",
-        # archives and backups, which hide their contents from the checks below
-        ".7z",
-        ".bak",
-        ".bz2",
-        ".gz",
-        ".rar",
-        ".tar",
-        ".tgz",
-        ".xz",
-        ".zip",
-        ".zst",
-        # env files with another name, e.g. prod.env
-        ".env",
-    }
+ALLOWED_IMAGE_SUFFIXES = frozenset({".jpeg", ".jpg", ".png", ".webp"})  # mirrored in .gitignore
+MAX_ASSET_IMAGES = 24
+MAX_ASSET_BYTES = 12_000_000
+VIDEO_SUFFIXES = frozenset({".avi", ".m4v", ".mkv", ".mov", ".mp4", ".webm"})
+MAX_METADATA_RECORDS = 100  # a JSON "images"/"annotations" list longer than this is a dataset dump
+BLOCKED_SUFFIXES = (
+    IMAGE_SUFFIXES
+    | VIDEO_SUFFIXES
+    | frozenset(
+        {
+            # model weights and tensors
+            ".bin",
+            ".ckpt",
+            ".h5",
+            ".hdf5",
+            ".npy",
+            ".npz",
+            ".onnx",
+            ".pt",
+            ".pth",
+            ".safetensors",
+            # SQLite stores and their side files
+            ".db",
+            ".db-journal",
+            ".db-shm",
+            ".db-wal",
+            ".sqlite",
+            ".sqlite3",
+            ".sqlite-journal",
+            ".sqlite-shm",
+            ".sqlite-wal",
+            # tables and exports
+            ".arrow",
+            ".csv",
+            ".feather",
+            ".jsonl",
+            ".ndjson",
+            ".parquet",
+            ".tsv",
+            ".xls",
+            ".xlsx",
+            # pickled objects
+            ".pickle",
+            ".pkl",
+            # archives and backups, which hide their contents from the checks below
+            ".7z",
+            ".bak",
+            ".bz2",
+            ".gz",
+            ".rar",
+            ".tar",
+            ".tgz",
+            ".xz",
+            ".zip",
+            ".zst",
+            # env files with another name, e.g. prod.env
+            ".env",
+        }
+    )
 )
 ALLOWED_ENV_FILES = frozenset({".env.example"})
 SECRET_FILES = frozenset({"secrets.toml", "kaggle.json"})  # Streamlit and Kaggle credentials
@@ -218,15 +231,50 @@ def read_blobs(blobs: list[str]) -> dict[str, bytes]:
 
 
 def is_allowed_image(path: str) -> bool:
-    """A demo sample image under assets/: image suffixes only, no other blocked suffix."""
+    """A demo sample image under assets/: a web image suffix only, no other blocked suffix."""
     lower = path.lower()
     suffixes = PurePosixPath(lower).suffixes
     return (
         lower.startswith(ALLOWED_IMAGE_DIRS)
         and bool(suffixes)
-        and suffixes[-1] in IMAGE_SUFFIXES
-        and not any(s in BLOCKED_SUFFIXES - IMAGE_SUFFIXES for s in suffixes)
+        and suffixes[-1] in ALLOWED_IMAGE_SUFFIXES
+        and not any(s in BLOCKED_SUFFIXES - ALLOWED_IMAGE_SUFFIXES for s in suffixes)
     )
+
+
+def _load_json(data: bytes) -> Any:
+    try:
+        return json.loads(data)
+    except ValueError:  # includes UnicodeDecodeError
+        return None
+
+
+def notebook_problems(data: bytes) -> list[str]:
+    """Cell outputs carrying image data (a rendered dataset sample ends up as base64 in git)."""
+    nb = _load_json(data)
+    if not isinstance(nb, dict):
+        return []
+    n_images = 0
+    for cell in nb.get("cells", []):
+        if not isinstance(cell, dict):
+            continue
+        for out in cell.get("outputs", []):
+            mime = out.get("data", {}) if isinstance(out, dict) else {}
+            if isinstance(mime, dict) and any(str(k).startswith("image/") for k in mime):
+                n_images += 1
+    return [f"notebook with {n_images} image outputs (clear outputs first)"] if n_images else []
+
+
+def metadata_problems(data: bytes) -> list[str]:
+    """A COCO-style dump: more than MAX_METADATA_RECORDS image or annotation records."""
+    obj = _load_json(data)
+    if not isinstance(obj, dict):
+        return []
+    for key in ("images", "annotations"):
+        records = obj.get(key)
+        if isinstance(records, list) and len(records) > MAX_METADATA_RECORDS:
+            return [f"dataset metadata ({len(records)} {key} records)"]
+    return []
 
 
 def path_problems(path: str) -> list[str]:
@@ -248,8 +296,15 @@ def path_problems(path: str) -> list[str]:
 
 def content_problems(data: bytes, path: str = "") -> list[str]:
     problems = [f"{kind} file" for magic, kind in MAGIC.items() if data.startswith(magic)]
+    if data[4:8] == b"ftyp":
+        problems.append("MP4/MOV video file")
     if is_allowed_image(path):
-        problems = [p for p in problems if p not in ("JPEG file", "PNG file", "GIF file")]
+        problems = [p for p in problems if p not in ("JPEG file", "PNG file")]
+    lower = path.lower()
+    if lower.endswith(".ipynb"):
+        problems += notebook_problems(data)
+    elif lower.endswith(".json"):
+        problems += metadata_problems(data)
     problems += [rule for rule, pattern in SECRET_PATTERNS.items() if pattern.search(data)]
     if len(data) > MAX_BYTES:
         problems.append(f"larger than {MAX_BYTES // 1_000_000} MB")
@@ -262,6 +317,19 @@ def check(entries: list[Entry]) -> list[tuple[Entry, str]]:
     for entry in entries:
         problems = path_problems(entry.path) + content_problems(contents[entry.blob], entry.path)
         findings.extend((entry, problem) for problem in problems)
+    assets = {e.path: e for e in entries if is_allowed_image(e.path)}
+    if len(assets) > MAX_ASSET_IMAGES:
+        findings.append(
+            (Entry("assets/", ""), f"{len(assets)} images under assets/ (cap {MAX_ASSET_IMAGES})")
+        )
+    total = sum(len(contents[e.blob]) for e in assets.values())
+    if total > MAX_ASSET_BYTES:
+        findings.append(
+            (
+                Entry("assets/", ""),
+                f"assets/ images total {total:,} bytes (cap {MAX_ASSET_BYTES:,})",
+            )
+        )
     return findings
 
 
