@@ -286,4 +286,23 @@ with the box format; R24's scenario names the double-scaling failure. The synthe
 carries the hour too. `tests/test_metadata.py`: 26 tests (fractions against the written pixel
 boxes, `normalise_box` cases, two planted overrunning boxes clipped and counted).
 
+Review, started by the user: `/review-session 3.02`, tier 2, range 72613c9..bcc04ec, risk files
+`tests/test_metadata.py`, `trailcam/data/metadata.py`, `trailcam/data/synthetic.py`;
+code-reviewer on Opus at xhigh, risk-reviewer on Fable at high. Nothing above low; every
+scenario held (R01, R03, R05, R10, R15, R23, R37, R42 to R45; the split side of R10 and R15 and
+the dry-run side of R37 skipped as known gaps). Spec changed: plan section 2 (rows R01, R05, R06,
+R15, R21, R23, R32 re-read; still accurate). Three low findings, all verified and fixed in
+fe6c301:
+- both reviewers: `load_metadata` read a `day_night.json` next to the annotation files on its
+  own, against plan section 2; the flag now comes only from `--sidecar`;
+- code-reviewer: a sidecar keyed wrongly (by file name) left every flag unset and the summary
+  said "no sidecar"; a sidecar missing any kept image id now raises;
+- code-reviewer: the real-metadata test did not pin the box facts plan section 2 states; it now
+  checks rare drops per file (50, 4, 0, 168, 15), 47,729 kept boxes, 100 clipped, and that boxes
+  are in the original-size pixel space (some end past 0.9 of the frame, impossible if they were
+  1024 px boxes over 2048 to 2560 px originals). That test passed on the old code, as a test-gap
+  fix should; the four sidecar tests failed on it.
+`check.sh` green (152 passed). The fix commit touches `trailcam/data/metadata.py` and modifies
+one existing test, so one fix round on fe6c301 is due.
+
 **Next.** Item 3.03, the re-split and the leakage tests (tier 3, xhigh).
