@@ -206,7 +206,9 @@ Then, at the user's go-ahead: absolute Read deny rules for this project's `data/
 the repo; the probe file could not be written from this session, so the user checks it); the
 CLAUDE.md eval transform line (shorter side 256, centre crop 224, normalise; 73 lines); plan
 section 7's per-camera chart made bars only; `.pdf` blocked by suffix and signature. Item 3.03's
-real-data skip stays with the user (items are not Claude's to edit).
+steps edited by Claude at the user's explicit request in chat (an exception to "never edit
+items"): the real-metadata coverage checks read `TRAILCAM_DATA_ROOT` and the item flips only when
+`pytest -rs tests/test_split.py` reports 0 skipped; the skip is allowed only in CI.
 
 **Next.** A fix round on `e777e14..HEAD` (the fix commits touch the guard, check.sh,
 risk_files.sh and the commands), started by the user. Then session 3 (2026-10-12): class map,
