@@ -286,6 +286,11 @@ EXPECTED_BLOCKED_SUFFIXES = {
 
 def test_blocked_suffixes_are_pinned() -> None:
     assert set(guard.BLOCKED_SUFFIXES) == EXPECTED_BLOCKED_SUFFIXES
+
+
+def test_image_budgets_are_pinned() -> None:
+    """R04: 24 files and 12 MB in assets/, 40 files and 20 MB in docs/figures/."""
+    assert guard.IMAGE_BUDGETS == {"assets/": (24, 12_000_000), "docs/figures/": (40, 20_000_000)}
     for suffix in EXPECTED_BLOCKED_SUFFIXES:
         assert guard.path_problems(f"notes/file{suffix}"), suffix
 

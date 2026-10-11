@@ -29,10 +29,13 @@ def test_hooks_run_the_guard(hook: str, mode: str) -> None:
 
 
 def test_workflow_runs_only_check_sh_and_needs_no_secrets() -> None:
-    text = (ROOT / ".github" / "workflows" / "check.yml").read_text()
+    workflows = ROOT / ".github" / "workflows"
+    assert sorted(p.name for p in workflows.iterdir()) == ["check.yml"]  # no second workflow
+    text = (workflows / "check.yml").read_text()
     runs = re.findall(r"^\s*-?\s*run:\s*(.+)$", text, re.MULTILINE)
     assert runs == ["bash scripts/check.sh"]
-    assert not re.search(r"\$\{\{\s*secrets\.|^\s*secrets:", text, re.MULTILINE)
+    # secrets.X, secrets['X'], toJSON(secrets) inside an expression, or a secrets: block
+    assert not re.search(r"\$\{\{[^}]*\bsecrets\b|^\s*secrets:", text, re.MULTILINE)
     assert re.search(r"^permissions:\n\s+contents: read$", text, re.MULTILINE)
     assert "fetch-depth: 0" in text  # --history needs every commit
 
