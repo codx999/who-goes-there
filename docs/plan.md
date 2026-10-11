@@ -20,7 +20,7 @@ class, and anything that needs more than a Kaggle notebook's free GPU.
 
 ## 2. Dataset and data decisions
 
-**Source.** Caltech Camera Traps, CCT20 benchmark subset, from LILA BC. 57,868 images from 20
+**Source.** Caltech Camera Traps, CCT20 benchmark subset, from LILA BC. 57,864 images from 20
 camera locations in the American Southwest; COCO-style JSON metadata with `location`, `seq_id`,
 `frame_num`, `date_captured`, `width`, `height`. The benchmark tarball
 (`eccv_18_all_images_sm.tar.gz`, about 6.5 GB) holds the images resized to at most 1024 px per
@@ -57,7 +57,7 @@ evaluation, the demo and the Space. Nothing redefines it inline.
   or to score. Alternative considered: an `other` class; rejected because it would be a three-way
   mix of unrelated animals with 56 training images.
 - The 78 images that carry two different species (62 are bobcat + rabbit): dropped from every
-  split. Images with several annotations of the same species (414 in train) keep that one label.
+  split. Images with several annotations of the same species (407 in train) keep that one label.
 
 **Imbalance.** opossum alone is 20% of train; opossum + raccoon are 47% of trans test. Accuracy
 alone would reward predicting opossum, so macro-F1 sits next to accuracy everywhere (section 6),
@@ -76,7 +76,9 @@ locations (trans_val, trans_test), no overlap. Two published splits need repair:
 - The official `train` and `cis_val` files **share 224 sequences** (bursts of three frames), which
   breaks the invariant that every burst sits in one split. So the two files are **pooled (17,037
   images before filtering) and re-split by `seq_id`**, stratified by class, about 85% train and
-  15% val, from a fixed seed. The split is a deterministic function of the metadata and the seed,
+  15% val, from a fixed seed. For stratification a sequence takes the label of its first kept
+  frame; bursts whose frames carry different labels are rare and the split script reports their
+  count. The split is a deterministic function of the metadata and the seed,
   and its hash is recorded in the ledger. It is not committed as a file: the data guard refuses
   record dumps, and a seed plus a hash reproduces it exactly.
 - `cis_test`, `trans_val` and `trans_test` are clean (zero shared sequences with anything) and stay
@@ -86,7 +88,7 @@ locations (trans_val, trans_test), no overlap. Two published splits need repair:
 | --- | --- | --- |
 | train | fitting | pooled train + cis_val, re-split by sequence |
 | val (cis) | model selection, early stopping, every hyperparameter choice | same pool |
-| trans_val | sanity check only (1,725 images, one camera, 10 classes); reported, never selected on | official |
+| trans_val | sanity check only (1,725 images, one camera, 9 of the 12 classes); reported with macro-F1 over the classes present, never selected on | official |
 | cis test | scored once at the end | official |
 | trans test | scored once at the end; the headline | official |
 
@@ -109,7 +111,7 @@ Two models, trained and scored the same way, so the slides can show what pretrai
    two-layer minimum on its own and is the baseline.
 2. **Fine-tuned pretrained backbone** (`trailcam/model/backbone.py`): EfficientNet-B0 from `timm`
    with ImageNet weights, classifier replaced by a 12-way linear head. 5.3M parameters, about 0.4
-   GFLOPs per image, 16 MB of weights: it runs in well under a second on the CPU-only free tier of
+   GFLOPs per image, about 21 MB of weights: it runs in well under a second on the CPU-only free tier of
    Hugging Face Spaces. ImageNet contains no CCT images, so pretraining is not leakage.
    Fallback if a Space prediction takes over about one second: MobileNetV3-Large (timm).
 
@@ -128,9 +130,9 @@ before any training run, and checks the head size against the class map.
 | Augmentation | Training only: random resized crop (scale 0.6 to 1.0), horizontal flip, mild colour jitter. Val and test: resize to 256, centre crop 224, normalise |
 | Seeds | One seed for the split, one for the run; both set (`torch`, `numpy`, `random`) and logged |
 | DataLoader | Shuffle on the training loader only; val and test loaders never shuffle |
-| Compute | A Kaggle notebook (`notebooks/`, outputs cleared) downloads the annotations and the tarball, builds the 256 px cache once and saves it as a private Kaggle dataset, installs `trailcam` from the public repo and runs the training script. The Mac runs code, tests and the dry-run only |
-| Dry run | `/dryrun` runs one epoch on a tiny batch of synthetic fixture images generated at test time (the guard blocks fixture images in git) and stops |
-| Ledger | Every run appends one row (`docs/ledger.md`): run id, model, config, split seed, run seed, split hash, epochs run, best epoch, scheduler, val accuracy, val macro-F1, trans_val accuracy, checkpoint hash. The row is what gets reviewed; Kaggle runs are started by the user, who pastes the row |
+| Compute | A Kaggle notebook (`notebooks/`, outputs cleared) downloads the annotations and the tarball, builds the 256 px cache once and saves it as a private Kaggle dataset, installs `trailcam` from the public repo with pip (the one place pip is allowed; the package needs a `[build-system]` table, added in session 5) and runs the training script. The Mac runs code, tests and the dry-run only |
+| Dry run | `/dryrun` runs `train.py --max-epochs=1 --batch-size=2 --dry-run=True`; `--dry-run` writes the synthetic fixture (`trailcam/data/synthetic.py`, also used by the tests) into a temporary directory itself, since the guard blocks fixture images in git, runs one epoch on a tiny batch and stops |
+| Ledger | Every run appends one row to `docs/ledger.md` (created with its header row in session 5, same column order as the row `train.py` prints): run id, model, config, split seed, run seed, split hash, epochs run, best epoch, scheduler, val accuracy, val macro-F1, trans_val accuracy, checkpoint hash. The row is what gets reviewed; Kaggle runs are started by the user, who pastes the row |
 
 Runs happen in this order: small CNN, backbone with plain cross-entropy, backbone with class
 weights. Everything is chosen on val. Kaggle's weekly GPU budget (30 hours) is far above the need:
@@ -143,7 +145,9 @@ one backbone epoch over about 14,000 cached images takes minutes on a T4.
 - **Per-class** precision, recall and F1 on trans test, and the **confusion matrix** (both as
   figures under `docs/figures/`, which has a 40-file, 20 MB guard budget).
 - **Grad-CAM** (the `grad-cam` package, last conv block of the backbone) on correct and wrong
-  trans-test cases, to show whether the model looks at the animal or the background.
+  cases among the `assets/` photos, which are trans-test samples and the only dataset images
+  allowed in the repo (the data rule keeps raw dataset images out of `docs/figures/`), to show
+  whether the model looks at the animal or the background.
 - **Inference timer**: `time.perf_counter()` around the forward pass for one image, after one
   warm-up call, reported in seconds; the same function serves the Gradio UI.
 - **Protocol**: cis test and trans test are scored **once**, at the end, with the user's go-ahead,
@@ -205,12 +209,12 @@ fix round still fits before the deadline.
 | 2 | 10-11 | Review machinery (Part B of the reusable playbook): invariants with the 12-class rows, `risk_files.sh` with `^trailcam/`, `^space/`, `\.ipynb$`, both reviewer agents, `/review-session`; first review run by the user | tier 2 |
 | 3 | 10-12 | Data: class map, metadata loader and filters, re-split by sequence with the leakage tests, data card | tier 3 |
 | 4 | 10-13 | Dataset, transforms, DataLoaders, synthetic fixture generator | tier 2 |
-| 5 | 10-14 | Small CNN, backbone, training loop with scheduler, early stopping, seeds, ledger, dry-run config; `/review-shapes`, `/dryrun` | tier 2 |
+| 5 | 10-14 | Dependencies and mypy overrides, small CNN, backbone, training loop with scheduler, early stopping, seeds, ledger file, dry-run config, packaging for the Kaggle install; `/review-shapes`, `/dryrun` | tier 2 |
 | 6 | 10-15 | Kaggle notebook: download, 256 px cache as a Kaggle dataset, small CNN run (user) | run ledger |
 | 7 | 10-16 to 10-17 | Backbone runs: plain and class-weighted cross-entropy; selection on val; ledger checker | run ledger |
-| 8 | 10-18 | Evaluation: metrics, per-class, confusion matrix, Grad-CAM, figures, inference timer; val figures | tier 2 |
+| 8 | 10-18 | Evaluation: metrics, per-class, confusion matrix, Grad-CAM, figures, inference timer; example photos into `assets/` (user); val figures | tier 2 |
 | 9 | 10-19 | The single final scoring on cis and trans test (user go-ahead) | tier 3 |
-| 10 | 10-20 | Gradio demo, example images in `assets/`, local sort script | tier 2 |
+| 10 | 10-20 | Gradio demo, local sort script | tier 2 |
 | 11 | 10-21 | Space: `space/`, requirements export, deploy script; account, Space and deployment (user) | tier 2 |
 | 12 | 10-22 to 10-23 | Slides, README results and Space link, backup video, live-sort rehearsal | tier 0 |
 | buffer | 10-24 to 10-25 | Fix rounds from the tier 3 review, rehearsal | |
@@ -221,8 +225,10 @@ Slides: problem, live demo, cis vs trans result, confusion matrix with two error
 ## 10. Open questions
 
 1. **Course dataset rule.** CCT20 is not in `torchvision.datasets`; it is loaded through a custom
-   `Dataset` as chapter 04 teaches. Confirm the TA's reading by 2026-10-13, mentioning the
-   location-split motivation.
+   `Dataset` as chapter 04 teaches. Confirm the TA's reading by 2026-10-11, before the data
+   session commits to CCT20, mentioning the location-split motivation. Fallback if the answer is
+   no: Oxford-IIIT Pet (in `torchvision.datasets`, 37 breeds), which loses the unseen-camera
+   story but keeps every other part of the plan.
 2. **Submission format.** The Space (app.py, weights, requirements.txt) is known; whether a report,
    notebook or video is also required is not.
 3. **Tarball layout.** The folder structure inside `eccv_18_all_images_sm.tar.gz` is unknown until

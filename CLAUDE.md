@@ -57,7 +57,8 @@ session; no multi-agent runs the user did not ask for.
   (`--all`, `--history`). Run at session start and before every commit; check the exit code, never
   pipe it through `tail`.
 - Packages: `uv add <pkg>` / `uv add --dev <pkg>`, commit `uv.lock`. Never bare `python`, `pip` or
-  `conda`. One exception: `space/requirements.txt` for Hugging Face Spaces, exported with
+  `conda`. Two exceptions: Kaggle or Colab notebooks (`pip install` of `trailcam` from the public
+  repo), and `space/requirements.txt` for Hugging Face Spaces, exported with
   `uv export --no-dev --no-hashes` and trimmed to what `space/app.py` imports.
 - Hooks: `git config core.hooksPath .githooks` once per clone (in an app-made worktree:
   `git config --worktree core.hooksPath "$PWD/.githooks"`).

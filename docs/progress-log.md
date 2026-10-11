@@ -56,7 +56,7 @@ EfficientNet-B0 from timm, AdamW with cosine warmup and early stopping on val ma
 and macro-F1 side by side, Gradio demo and Hugging Face Space with weights uploaded via
 `huggingface_hub`, the "decisions and why" section, a dated schedule for sessions 2 to 12, open
 questions, sources. `docs/HANDOFF.md` retired with a note pointing to the plan. `CLAUDE.md` (69
-lines) from the playbook template. `docs/progress.json` with 35 items for sessions 2 to 12, 12 of
+lines) from the playbook template. `docs/progress.json` with 36 items (after the review fixes) for sessions 2 to 12, 12 of
 them owner=user (Kaggle runs, Hugging Face account and Space, the final scoring, example photos,
 video, rehearsal); sessions 0 and 1 are logged here only. Worktree note: the app sets an absolute
 `core.hooksPath` to the main checkout, so `check.sh` reported hooks disabled until
@@ -72,7 +72,22 @@ plus hash rather than committed.
 (items 2.01 to 2.03); then the user runs the first review (2.04) over the bootstrap and design
 range. Open question 1 (the TA's reading of the torchvision dataset rule) is due 2026-10-13.
 
-Review: tier 0 for the docs. CLAUDE.md is a control-plane file written by Fable 5.1 and has no
-code review machinery yet; the user decides whether it waits for the session 2 `/review-session`
-(with a second Opus run in place of the Fable risk-reviewer) or gets `/code-review xhigh
---max-findings all main..HEAD` now.
+**Review (same day).** CLAUDE.md is a control-plane file written by Fable 5.1 and the review
+machinery does not exist yet, so the user ran `/code-review xhigh --max-findings all main..HEAD`:
+21 findings, none high, all fixed in one commit. Steps that could not pass after the merge (2.02
+and 2.04 now name the explicit range 9788ae4..HEAD; 2.01 counts rows without assuming an id
+prefix; 11.02 relies on the guard's Hugging Face token pattern instead of `git grep`); the dry run
+now accepts `--dry-run=True` as `/dryrun` passes it and writes its own synthetic fixture
+(`trailcam/data/synthetic.py`, shared with the tests, replacing a `tests/fixtures/` generator and
+its needless 100-record cap); `docs/ledger.md` is created with its header in 5.03 before the first
+Kaggle row is pasted; a packaging item 5.04 (build-system table, `uv build`, wheel install in a
+fresh venv) precedes the Kaggle pip install; 5.01 adds the torch, torchvision and timm
+dependencies with the mypy overrides; 6.01 uses `uvx --from nbconvert`; CLAUDE.md names the
+notebook pip exception; Grad-CAM overlays are made only from the `assets/` photos so no dataset
+image lands in `docs/figures/` (the asset selection moved from 10.02 to 8.03, before the val
+evaluation 8.04; 8.02 writes fixture figures to a temporary `--out`); 11.01 pins grad-cam only if
+open question 5 says so and adds `deploy_space.py` to the mypy targets; the TA question is due
+2026-10-11 with Oxford-IIIT Pet named as the fallback; the sequence label for stratification is
+the first kept frame; four numbers corrected (57,864 images, about 21 MB of weights, 9 of 12
+classes in trans_val, 407 same-species multi-annotation images). Rejected: none.
+Review: tier 0 for the docs plus CLAUDE.md, ran /code-review xhigh; one round.
