@@ -71,7 +71,7 @@
      "passes": false},
 
     {"id": "6.01", "session": 6, "owner": "claude", "due": "2026-10-15",
-     "description": "scripts/kaggle_prepare_cct20.py committed from the user's draft (currently untracked in the main checkout): download the annotations and eccv_18_all_images_sm.tar.gz from LILA to /tmp, resize so the longer side is 512 px into /kaggle/working, compute the day/night flag per image from the pixels (three channels near-identical) and write it with the hour to a sidecar JSON next to the images, print counts and the tarball layout, fail if the count is not 57,864; the grayscale test factored into trailcam/data/daynight.py so it is unit-tested",
+     "description": "scripts/kaggle_prepare_cct20.py, written fresh in this session (an earlier draft was discarded): download the annotations and eccv_18_all_images_sm.tar.gz from LILA to /tmp, resize so the longer side is 512 px into /kaggle/working, compute the day/night flag per image from the pixels (three channels near-identical) and write it with the hour to a sidecar JSON next to the images, print counts and the tarball layout, fail if the count is not 57,864; the grayscale test factored into trailcam/data/daynight.py so it is unit-tested",
      "steps": "uv run pytest tests/test_daynight.py passes: a synthetic grayscale JPEG is flagged night and a colour one day; scripts/kaggle_prepare_cct20.py is in the mypy files list and `bash scripts/check.sh` is green; the script's two LILA URLs answer HTTP 200 (`curl -sI`)",
      "passes": false},
     {"id": "6.02", "session": 6, "owner": "claude", "due": "2026-10-15",

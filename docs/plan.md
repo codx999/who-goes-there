@@ -310,7 +310,7 @@ seed 0 is done by 10-16.
 | 3 | 10-12 | Data: class map, metadata loader with boxes and hour, filters, re-split by sequence with the leakage and coverage tests, data card | tier 3 |
 | 4 | 10-13 | Dataset, transforms, DataLoaders, synthetic fixture generator, box-guided crop sampler with tests | tier 2 |
 | 5 | 10-14 | Dependencies and mypy overrides, small CNN, ResNet-18, training loop with scheduler, early stopping, seeds, arm flag, ledger file, dry-run config, packaging for the Kaggle install; `/review-shapes`, `/dryrun` | tier 2 |
-| 6 | 10-15 | Kaggle: prepare script committed, 512 px cache with the day/night flag as a Kaggle dataset, notebook; small CNN run and arm A seed 0 (user) | run ledger |
+| 6 | 10-15 | Kaggle: prepare script written, 512 px cache with the day/night flag as a Kaggle dataset, notebook; small CNN run and arm A seed 0 (user) | run ledger |
 | 7 | 10-16 to 10-17 | Arm B seed 0 (10-16); seeds 1 and 2 of both arms if on schedule (10-17); ledger checker | run ledger |
 | 8 | 10-18 | Evaluation: metrics, per-class, confusion matrix, attention-in-box, animal-removed test, slices, per-camera chart, feature map, Grad-CAM, inference timer; example photos into `assets/` (user); val figures | tier 2 |
 | 9 | 10-19 | The single final scoring on cis and trans test, every reported arm and seed (user go-ahead) | tier 3 |

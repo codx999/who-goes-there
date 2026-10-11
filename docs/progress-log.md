@@ -116,8 +116,10 @@ committed split CSV (the guard refuses it; seed plus hash stays). CLAUDE.md gain
 report in the context list; boxes never a model input), 72 lines. `docs/progress.json` rewritten:
 42 items, 13 owner=user; new items for the box-guided sampler (4.04), the prepare script with the
 day/night test (6.01), arm A and arm B runs (6.05, 7.02, 7.03), attention and animal-removed
-(8.03), slices and feature map (8.04), calibration if early (12.03). The Kaggle script stays
-untracked in the main checkout until item 6.01 commits it, type-checked and with a test.
+(8.03), slices and feature map (8.04), calibration if early (12.03). The draft Kaggle script
+from the parallel session was deleted at the user's request; item 6.01 writes it fresh, type-checked and
+with a test. The untracked copy of the research prompt in the main checkout was removed too (identical
+to the committed one) so the merge is not blocked.
 
 **Next.** Session 2 (2026-10-11, today): the review machinery (2.01 to 2.03), then the user's first
 review (2.04) over 9788ae4..HEAD. Ask the TA about the torchvision dataset rule today (open
