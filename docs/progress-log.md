@@ -167,3 +167,42 @@ Review: tier 2 (every changed file is control plane: `.claude/`, `scripts/`, `te
 for the user: `/review-session 9788ae4..HEAD 2.01 2.02 2.03`, with a second Opus `code-reviewer`
 run in place of the Fable `risk-reviewer` because Fable wrote the files; or
 `/code-review xhigh --max-findings all 9788ae4..HEAD`. Not started by this session.
+
+## 2026-10-11: item 2.04, the first review and its fixes (Opus 5.5)
+
+**Done.** The user started `/review-session 9788ae4..HEAD 2.01 2.02 2.03` in this session after
+fast-forwarding to the session 2 tip (e777e14). Tier 2: `risk_files.sh` printed 22 control-plane
+files, no split or scoring code; 14 invariant rows selected (R01 to R04, R07, R14, R30, R37, R38,
+R41 to R45), every row "spec changed" because the range creates the cited documents. The agent
+types were not registered, so both reviewers ran as general-purpose agents on Opus at xhigh
+following `.claude/agents/code-reviewer.md`: one on the whole range, one on the risk files in
+place of the Fable risk-reviewer. 23 findings, 6 made by both; every one checked against the code,
+reproduced with a scratchpad test or a temporary repository where possible, and every fix has a
+regression test that fails on the old code. Eight fix commits: (1) the guard counts JSON-escaped
+and single-quoted record keys and refuses any notebook output or attachment (high, both
+reviewers); (2) more than 100 UUIDs in a blob is refused (every CCT image and sequence id is a
+UUID, 57,864 of 57,864, counted) and trailing `.`, `~` or space no longer hides a suffix; (3) an
+allowed image name must hold a JPEG, PNG or WebP, and WebP, TIFF and BMP signatures are refused
+elsewhere; (4) `--pre-push` checks the image budgets over the whole pushed tree, with
+`tests/test_guard_git.py` running the guard modes in a temporary repository; (5) `.gitignore`
+ignores `.env.*` and `secrets.toml` anywhere, and the suffix set is pinned in both directions;
+(6) `check.sh` fails when `.githooks/` is missing, and `tests/test_control_plane.py` pins hook
+modes, CI, check.sh, pytest config, deny lines and reviewer tools; (7) `risk_files.sh` lists root
+`config.yaml` and `configs/`, R25 names it; (8) `/review-session` makes the tier-3 tests tier 3
+and falls back to the read-only `Plan` type, `/review-shapes` covers both models and the eval
+transform, `/dryrun` says printed, rules `data.md` quotes the plan's eval transform. `check.sh`
+green before each commit (97 tests).
+
+Not fixed, the user's call: the Read deny rules are relative to the session's directory, so in a
+worktree session the main checkout's `data/`, `models/`, `outputs/` and `.env*` are not denied
+(high, both reviewers, reasoning only; needs absolute rules in the user's settings, which Claude
+does not edit); the CLAUDE.md line "val and test get resize and normalise"; item 3.03's real-data
+check may be skipped when `data/` is absent (items are not Claude's to edit); plan section 7 puts
+a camera's background photo next to the per-camera chart, which R04 forbids unless it comes from
+`assets/`; `.pdf` is not restricted by the guard.
+
+**Next.** A fix round on `e777e14..HEAD` (the fix commits touch the guard, check.sh,
+risk_files.sh and the commands), started by the user. Then session 3 (2026-10-12): class map,
+metadata loader, re-split with the leakage tests (tier 3).
+
+Review: tier 2, ran /review-session 9788ae4..HEAD (code-reviewer Opus xhigh on the range, second Opus run on the risk files)
