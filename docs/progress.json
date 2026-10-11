@@ -17,7 +17,7 @@
     {"id": "2.04", "session": 2, "owner": "user", "due": "2026-10-11",
      "description": "First review (playbook step 10) of the bootstrap and design range, covering CLAUDE.md and the review machinery, with a second Opus run in place of the Fable risk-reviewer where Fable wrote the files",
      "steps": "manual: the review covers the explicit range 9788ae4..HEAD (/review-session uses merge-base(main, HEAD)..HEAD, which excludes commits already merged, so pass the range to `/code-review xhigh --max-findings all 9788ae4..HEAD` or to the two reviewer agents); findings verified, fixed or rejected with reasons; progress-log entry ends with 'Review: tier N, ran X'",
-     "passes": false},
+     "passes": true},
 
     {"id": "3.01", "session": 3, "owner": "claude", "due": "2026-10-12",
      "description": "trailcam/data/classes.py: the 12-class list in plan.md order, name-to-index and CCT-category-id-to-index maps, the dropped ids (30 empty, 21 badger, 51 fox, 34 deer), written once",

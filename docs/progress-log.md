@@ -223,7 +223,9 @@ new `scripts/data_root.sh` so check.sh points `TRAILCAM_DATA_ROOT` at the main c
 citations in rules data.md and the UUID count in data-inspection.md; the whole pytest config and
 every agent file pinned. `check.sh` green before each commit. No third round unless the user asks.
 
-**Next.** The user merges and pushes from the main checkout. Then session 3 (2026-10-12): class map,
+**Next.** Merged and pushed by Claude at the user's go-ahead (d80be8c). Item 2.04 (owner: user)
+flipped to `passes: true` by Claude at the user's explicit request in chat. Open: the user checks
+the Read deny rules with a probe file in `data/`. Then session 3 (2026-10-12). Then session 3 (2026-10-12): class map,
 metadata loader, re-split with the leakage tests (tier 3).
 
 Review: tier 2, ran /review-session 9788ae4..HEAD (code-reviewer Opus xhigh on the range, second Opus run on the risk files)
