@@ -5,7 +5,7 @@
     {"id": "2.01", "session": 2, "owner": "claude", "due": "2026-10-11",
      "description": "docs/review/invariants.md from Part B of docs/review/playbook-reusable.md: 30 to 40 rows with id, rule, source, where, scenario, test; includes the 12-class map, the sequence and location split rules, train-only shuffle and augmentation, boxes never a model input and the box-guided sampler only in the arm B training transform, the inference timer, test scored once after every reported arm and seed has trained, demo images from trans-test only, weights never in git",
      "steps": "file exists with the columns above; `grep -c '^|' docs/review/invariants.md` prints between 32 and 42 (header and separator plus 30 to 40 rows); every 'where' path is matched by the risk regex (checked by the test in 2.02)",
-     "passes": false},
+     "passes": true},
     {"id": "2.02", "session": 2, "owner": "claude", "due": "2026-10-11",
      "description": "scripts/risk_files.sh with the control-plane regex plus ^trailcam/, ^space/ and \\.ipynb$, and tests/test_risk_files.py that parses the invariants 'where' column",
      "steps": "uv run pytest tests/test_risk_files.py passes; `bash scripts/risk_files.sh 9788ae4..HEAD` prints CLAUDE.md, scripts/guard_data.py and scripts/risk_files.sh and no path under docs/; `bash scripts/risk_files.sh bad..range; echo $?` prints 2",
