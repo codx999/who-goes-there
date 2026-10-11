@@ -29,6 +29,10 @@ RISKY = [
     "space/README.md",
     "notebooks/kaggle_train.ipynb",
     "kaggle_prepare.ipynb",
+    # Root training configs: they set the arms (R25).
+    "config.yaml",
+    "config.yml",
+    "configs/arm_b.yaml",
     # Control plane: a change here can switch off a check the invariant map relies on.
     "CLAUDE.md",
     "tests/test_split.py",
@@ -73,6 +77,8 @@ SAFE = [
     "docs/notebook.ipynb.md",
     "pyproject.toml.orig",
     "mypy.ini.example",
+    "docs/config.yaml",
+    "config.yaml.example",
     "assets/trans_001.jpg",
     "docs/figures/confusion_matrix.png",
     ".github/CODEOWNERS",
