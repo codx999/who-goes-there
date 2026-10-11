@@ -91,11 +91,18 @@ def _notebook(cells: list[dict[str, object]]) -> bytes:
     return json.dumps({"cells": cells}).encode()
 
 
+EMBEDDED = "1 embedded images (notebook outputs, attachments or data URIs)"
+NOT_CLEARED = "notebook outputs not cleared (1 cells)"
+
+
 def test_notebook_image_outputs_are_refused() -> None:
     out = {"cell_type": "code", "outputs": [{"data": {PNG_MIME: PAYLOAD}}]}
     assert guard.content_problems(_notebook([out]), "notebooks/explore.ipynb") == [
-        "1 embedded images (notebook outputs, attachments or data URIs)"
+        EMBEDDED,
+        NOT_CLEARED,
     ]
+    # Under another suffix the embedded-image check alone still catches it.
+    assert guard.content_problems(_notebook([out]), "notes/explore.json") == [EMBEDDED]
 
 
 def test_notebook_attachments_and_html_data_uris_are_refused() -> None:
@@ -105,32 +112,52 @@ def test_notebook_attachments_and_html_data_uris_are_refused() -> None:
         "outputs": [{"data": {"text/html": f"<img src='{DATA_URI}{PAYLOAD}'>"}}],
     }
     assert guard.content_problems(_notebook([attached]), "nb.ipynb") == [
-        "1 embedded images (notebook outputs, attachments or data URIs)"
+        EMBEDDED,
+        "notebook attachments (1 cells)",
     ]
-    assert guard.content_problems(_notebook([html]), "nb.ipynb") == [
-        "1 embedded images (notebook outputs, attachments or data URIs)"
-    ]
+    assert guard.content_problems(_notebook([html]), "nb.ipynb") == [EMBEDDED, NOT_CLEARED]
     assert guard.content_problems(f"<img src='{DATA_URI}{PAYLOAD}'>".encode(), "docs/x.md") == [
-        "1 embedded images (notebook outputs, attachments or data URIs)"
+        EMBEDDED
     ]
+    # Upper case and parameters before ;base64 are still a data URI.
+    odd_uri = DATA_URI.upper().replace(";BASE64,", ";charset=utf-8;base64,")
+    assert guard.content_problems(f"<img src='{odd_uri}{PAYLOAD}'>".encode(), "x.md") == [EMBEDDED]
     # Notebook JSON may split the payload into a list of lines.
     split = {"cell_type": "code", "outputs": [{"data": {PNG_MIME: [PAYLOAD[:600], PAYLOAD[600:]]}}]}
-    assert guard.content_problems(_notebook([split]), "nb.ipynb") == [
-        "1 embedded images (notebook outputs, attachments or data URIs)"
-    ]
+    assert guard.content_problems(_notebook([split]), "nb.ipynb") == [EMBEDDED, NOT_CLEARED]
 
 
 def test_mentioning_the_key_or_a_tiny_icon_passes() -> None:
     doc = f'The guard refuses any "{PNG_MIME}": output key in a notebook.'.encode()
     assert guard.content_problems(doc, "docs/plan.md") == []
     icon = {"cell_type": "code", "outputs": [{"data": {PNG_MIME: "iVBOR" + "A" * 400}}]}
-    assert guard.content_problems(_notebook([icon]), "nb.ipynb") == []
+    assert guard.embedded_problems(_notebook([icon])) == []
 
 
-def test_notebook_without_image_outputs_passes() -> None:
-    cell = {"cell_type": "code", "outputs": [{"data": {"text/plain": "accuracy 0.83"}}]}
-    assert guard.content_problems(_notebook([cell]), "notebooks/explore.ipynb") == []
+def test_notebook_with_cleared_outputs_passes() -> None:
+    cell = {"cell_type": "code", "source": ["acc = 0.83\n"], "outputs": []}
+    markdown = {"cell_type": "markdown", "source": ["# Train"]}
+    assert guard.content_problems(_notebook([cell, markdown]), "notebooks/explore.ipynb") == []
     assert guard.content_problems(b"not json at all", "notebooks/broken.ipynb") == []
+    assert guard.content_problems(b"[1, 2]", "notebooks/odd.ipynb") == []
+
+
+def test_notebook_text_and_svg_outputs_are_refused() -> None:
+    text = {"cell_type": "code", "outputs": [{"name": "stdout", "text": ["accuracy 0.83"]}]}
+    svg = {"cell_type": "code", "outputs": [{"data": {"image/" + "svg+xml": ["<svg/>"]}}]}
+    for cell in (text, svg):
+        assert guard.content_problems(_notebook([cell]), "nb.IPYNB") == [NOT_CLEARED]
+
+
+def test_metadata_dump_in_notebook_output_source_or_repr_is_refused() -> None:
+    dump = json.dumps(_records(3000))
+    expected = "dataset metadata (6000 record keys)"
+    stream = {"cell_type": "code", "outputs": [{"name": "stdout", "text": [dump]}]}
+    source = {"cell_type": "code", "source": [f"records = {dump}"], "outputs": []}
+    # Under a non-notebook name only the record check applies.
+    assert guard.content_problems(_notebook([stream]), "notes/peek.json") == [expected]
+    assert guard.content_problems(_notebook([source]), "notebooks/peek.ipynb") == [expected]
+    assert guard.content_problems(repr(_records(3000)).encode(), "notes/peek.txt") == [expected]
 
 
 def _records(n: int) -> list[dict[str, object]]:

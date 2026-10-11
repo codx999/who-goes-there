@@ -14,12 +14,14 @@ Web images (ALLOWED_IMAGE_SUFFIXES) are allowed only under the IMAGE_BUDGETS dir
 a file-count and byte budget: `--all` (check.sh, CI) enforces it over the whole index, `--history`
 and `--pre-push` per commit, `--staged` over the staged files. Every text blob is scanned for
 embedded images (notebook outputs and attachments, data URIs) and for dataset record keys, whatever
-its suffix, so a dump renamed to .txt or pasted into a notebook is still refused.
+its suffix, so a dump renamed to .txt or pasted into a notebook is still refused. A notebook
+(.ipynb) with any output or attachment left in it is refused: outputs are cleared before a commit.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import subprocess
 import sys
@@ -141,13 +143,16 @@ SECRET_PATTERNS = {
 # doc that mentions the key or a tiny icon does not count. Split literals: this file must not
 # match itself.
 IMAGE_MARKERS = re.compile(
-    rb'"image/(?:png|jpe?g|gif|webp|bmp|tiff?|heic|avif)"\s*:|data:' rb"image/[a-z+.-]+;base64,"
+    rb'"image/(?:png|jpe?g|gif|webp|bmp|tiff?|heic|avif)"\s*:|data:'
+    rb"image/[a-z+.-]+(?:;[a-z0-9_.+=-]+)*;base64,",  # parameters such as ;charset=utf-8
+    re.IGNORECASE,
 )
 MIN_IMAGE_PAYLOAD = 1000  # base64 characters, about 750 bytes; a camera-trap photo is 100x that
 _PAYLOAD = re.compile(rb'[\sA-Za-z0-9+/=",\[\]\\]{0,2000000}')  # base64 plus JSON list noise
 _NOT_BASE64 = re.compile(rb"[^A-Za-z0-9+/=]")
-# Dataset record keys (CCT20 metadata and anything derived from it, in JSON or notebook outputs).
-RECORD_KEYS = re.compile(rb'"(?:seq_id|file_name|image_id)"\s*:')
+# Dataset record keys (CCT20 metadata and anything derived from it): JSON, a notebook's
+# JSON-escaped source or output (\"seq_id\":) and a printed Python dict ('seq_id':).
+RECORD_KEYS = re.compile(rb"\\?[\"'](?:seq_id|file_name|image_id)\\?[\"']\s*:")
 
 GITLINK = "160000"  # a submodule commit, not a file
 
@@ -290,6 +295,25 @@ def embedded_problems(data: bytes) -> list[str]:
     return problems
 
 
+def notebook_problems(data: bytes) -> list[str]:
+    """Notebooks are committed with outputs cleared and no attachments (.claude/rules/training.md):
+    a text output can hold a metadata dump and an SVG plot carries no base64 payload, so any
+    output or attachment is refused, not only the images the checks above recognise."""
+    try:
+        cells = json.loads(data).get("cells", [])
+    except (ValueError, AttributeError):
+        return []  # not a notebook in the nbformat 4 shape; the other checks still apply
+    if not isinstance(cells, list):
+        return []
+    cells = [c for c in cells if isinstance(c, dict)]
+    problems = []
+    if n_out := sum(bool(c.get("outputs")) for c in cells):
+        problems.append(f"notebook outputs not cleared ({n_out} cells)")
+    if n_att := sum(bool(c.get("attachments")) for c in cells):
+        problems.append(f"notebook attachments ({n_att} cells)")
+    return problems
+
+
 def path_problems(path: str) -> list[str]:
     lower = path.lower()
     pure = PurePosixPath(lower)
@@ -316,6 +340,8 @@ def content_problems(data: bytes, path: str = "") -> list[str]:
         problems = [p for p in problems if p not in ("JPEG file", "PNG file")]
     else:
         problems += embedded_problems(data)
+    if path.lower().endswith(".ipynb"):
+        problems += notebook_problems(data)
     problems += [rule for rule, pattern in SECRET_PATTERNS.items() if pattern.search(data)]
     if len(data) > MAX_BYTES:
         problems.append(f"larger than {MAX_BYTES // 1_000_000} MB")
