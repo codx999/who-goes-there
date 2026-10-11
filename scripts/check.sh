@@ -3,10 +3,12 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# Outside CI, the guard hooks must be enabled (relative or absolute path to .githooks).
+# Outside CI, the guard hooks must be enabled (relative or absolute path to .githooks). A missing
+# .githooks/ fails too: an empty expected path would otherwise equal an unset hooksPath.
 hooks="$(git config --get core.hooksPath || true)"
 hooks_dir="$( { [ -n "$hooks" ] && cd "$hooks" 2>/dev/null && pwd -P; } || true)"
-if [ -z "${CI:-}" ] && [ "$hooks_dir" != "$(cd .githooks && pwd -P)" ]; then
+expected="$( { cd .githooks 2>/dev/null && pwd -P; } || true)"
+if [ -z "${CI:-}" ] && { [ -z "$expected" ] || [ "$hooks_dir" != "$expected" ]; }; then
   echo "check.sh: git hooks are not enabled; run: git config core.hooksPath .githooks" >&2
   exit 1
 fi
