@@ -370,12 +370,13 @@ tests that take a `Case` whose repr names its source only, and `quietly`, which 
 in `make_split` or the CLI as its type and message. After the fix: no id, `Record(` or
 `Metadata(` in any failure output. Invariant test cells filled: R10, R11, R12, R13, R14, R15, R27.
 
-Open, not done (needs the user's OK, since it changes 3.02's module): `Record` and `Metadata` keep
-the dataclass repr, which prints image ids. A later real-data test that takes them as fixture
-arguments, or a notebook cell that echoes one, would show ids; a counts-only repr on both would
-close that for every caller.
+Open: `Record` and `Metadata` keep the dataclass repr, which prints image ids. A later real-data
+test that takes them as fixture arguments, or a notebook cell that echoes one, would show ids; an
+id-free repr on both closes that for every caller. Added as item 3.05 with the user's OK (it
+changes 3.02's module); not built in this session, so it stays out of the 3.03 review range.
 
-**Next.** Item 3.04, the data card (counts from the seed 42 run above).
+**Next.** The 3.03 review (tier 3) and its fix round; then item 3.04, the data card (counts from
+the seed 42 run above), and item 3.05, the id-free reprs (tier 2).
 
 Review: tier 3 (split code). Commands for the user: `/review-session 3.03`, then
 `/code-review ultra`, leaving time for one fix round. Not started by this session.
