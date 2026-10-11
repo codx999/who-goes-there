@@ -36,7 +36,7 @@ DATE_FORMAT: Final = "%Y-%m-%d %H:%M:%S"
 
 # Written next to the image cache by scripts/kaggle_prepare_cct20.py (item 6.01): a JSON object
 # mapping image id to {"night": bool, "hour": int, ...} (plan.md section 2). Only "night" is read,
-# and only when the file is present.
+# only from a path passed explicitly, and every kept image must be in it.
 DAY_NIGHT_SIDECAR: Final = "day_night.json"
 
 # (x, y, width, height) as fractions of the image width and height: the COCO pixel box divided by
@@ -210,18 +210,21 @@ def load_split(
                 night=None if night_flags is None else night_flags.get(image["id"]),
             )
         )
+    if night_flags is not None:
+        missing = sum(1 for r in records if r.night is None)
+        if missing:
+            raise ValueError(f"{split}: {missing} kept images missing from the day/night sidecar")
     return tuple(records), dropped, clipped
 
 
 def load_metadata(root: Path, sidecar: Path | None = None) -> Metadata:
     """Load and filter all five files under `root`.
 
-    The day/night flags come from `sidecar` if given, else from `root / DAY_NIGHT_SIDECAR` if that
-    exists; without one every record has `night=None`.
+    The day/night flags come from `sidecar` only when it is passed (plan.md section 2): a
+    `DAY_NIGHT_SIDECAR` next to the annotation files is not picked up on its own. Without one every
+    record has `night=None`; with one, every kept image must be in it or loading fails.
     """
     files = find_annotation_files(root)
-    if sidecar is None and (root / DAY_NIGHT_SIDECAR).is_file():
-        sidecar = root / DAY_NIGHT_SIDECAR
     night_flags = None if sidecar is None else load_night_flags(sidecar)
     records: dict[str, tuple[Record, ...]] = {}
     dropped: dict[str, Mapping[str, int]] = {}

@@ -87,7 +87,8 @@ The day/night flag lives in a sidecar, `day_night.json`, written next to the ima
 `scripts/kaggle_prepare_cct20.py`: one JSON object mapping each image id to
 `{"night": <bool>, "hour": <int>}` (extra keys such as the grayscale score are allowed). Training
 passes its path explicitly (`--sidecar`), since the cache and the annotation files may sit in
-different folders; without it the flag is absent.
+different folders; without it the flag is absent, even if a sidecar sits next to the annotation
+files. A sidecar that lacks any kept image id is refused, so a mis-keyed file fails loudly.
 
 **Imbalance.** opossum alone is 20% of train; opossum + raccoon are 47% of trans test. Accuracy
 alone would reward predicting opossum, so macro-F1 sits next to accuracy everywhere (section 7).

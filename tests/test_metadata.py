@@ -163,14 +163,14 @@ def test_unboxed_animal_images_are_kept_in_every_split(fixture_dir: Path, meta: 
 
 
 def test_night_flag_from_sidecar_and_absent_without_it(fixture_dir: Path, meta: Metadata) -> None:
-    flags = json.loads((fixture_dir / "day_night.json").read_text())
+    sidecar = fixture_dir / "day_night.json"
+    flags = json.loads(sidecar.read_text())
+    flagged = load_metadata(fixture_dir, sidecar=sidecar)
     for split in SPLITS:
-        for r in meta.records[split]:
+        for r in flagged.records[split]:
             assert r.night is flags[r.image_id]["night"]
-    assert {r.night for r in meta.records["train"]} == {True, False}
-    (fixture_dir / "day_night.json").unlink()
-    bare = load_metadata(fixture_dir)
-    assert all(r.night is None for split in SPLITS for r in bare.records[split])
+    assert {r.night for r in flagged.records["train"]} == {True, False}
+    assert all(r.night is None for split in SPLITS for r in meta.records[split])
 
 
 def test_explicit_sidecar_path(tmp_path: Path) -> None:
@@ -181,6 +181,44 @@ def test_explicit_sidecar_path(tmp_path: Path) -> None:
     assert all(r.night is None for r in load_metadata(tmp_path / "meta").records["train"])
     with_flags = load_metadata(tmp_path / "meta", sidecar=moved)
     assert all(r.night is not None for r in with_flags.records["train"])
+
+
+def test_sidecar_next_to_the_annotations_is_ignored_without_the_flag(fixture_dir: Path) -> None:
+    """Plan section 2: training passes the sidecar path; without it the flag is absent, even when a
+    day_night.json sits next to the annotation files (review 3.02, both reviewers)."""
+    assert (fixture_dir / "day_night.json").is_file()
+    meta = load_metadata(fixture_dir)
+    assert all(r.night is None for split in SPLITS for r in meta.records[split])
+
+
+def test_sidecar_keyed_by_file_name_raises(fixture_dir: Path) -> None:
+    """A sidecar that matches no image id fails loudly instead of leaving every flag unset."""
+    sidecar = fixture_dir / "day_night.json"
+    flags = json.loads(sidecar.read_text())
+    sidecar.write_text(json.dumps({f"{k}.jpg": v for k, v in flags.items()}))
+    with pytest.raises(ValueError, match=r"missing from the day/night sidecar"):
+        load_metadata(fixture_dir, sidecar=sidecar)
+
+
+def test_sidecar_missing_one_kept_image_raises(fixture_dir: Path) -> None:
+    sidecar = fixture_dir / "day_night.json"
+    flags = json.loads(sidecar.read_text())
+    kept = load_metadata(fixture_dir).records["trans_val"][0].image_id
+    del flags[kept]
+    sidecar.write_text(json.dumps(flags))
+    with pytest.raises(ValueError, match=r"trans_val: 1 kept images missing"):
+        load_metadata(fixture_dir, sidecar=sidecar)
+
+
+def test_cli_tells_a_loaded_sidecar_from_none(
+    fixture_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    metadata.main(["--root", str(fixture_dir)])
+    assert "Night flag: no day/night sidecar" in capsys.readouterr().out
+    metadata.main(["--root", str(fixture_dir), "--sidecar", str(fixture_dir / "day_night.json")])
+    out = capsys.readouterr().out
+    total = sum(len(r) for r in load_metadata(fixture_dir).records.values())
+    assert re.search(rf"^Night flag: {total} of {total} images flagged, \d+ night", out, re.M)
 
 
 # Loading: the filters
@@ -410,3 +448,21 @@ def test_real_metadata_drops_match_data_inspection() -> None:
         assert dropped["empty"] == empty[split], split
         assert dropped["unannotated"] == 0, split
     assert sum(meta.dropped[s]["two_species"] for s in SPLITS) == 78
+
+
+@pytest.mark.skipif(not REAL_ROOT, reason="TRAILCAM_DATA_ROOT is not set (CI has no data)")
+def test_real_metadata_boxes_and_rare_drops() -> None:
+    """The box facts in plan section 2 and the rare drops of the item 3.02 CLI run (review 3.02).
+
+    Boxes must be in the pixel space of each image's original width and height: 1024 px boxes
+    divided by the 2048 to 2560 px originals would all end before 0.5 of the frame.
+    """
+    meta = load_metadata(Path(REAL_ROOT))
+    rare = {"train": 50, "cis_val": 4, "trans_val": 0, "cis_test": 168, "trans_test": 15}
+    assert {s: meta.dropped[s]["rare"] for s in SPLITS} == rare
+    boxes = [b for s in SPLITS for r in meta.records[s] for b in r.boxes]
+    assert len(boxes) == 47729
+    assert sum(meta.clipped_boxes.values()) == 100
+    assert max(x + w for x, _, w, _ in boxes) > 0.9
+    assert max(y + h for _, y, _, h in boxes) > 0.9
+    assert sum(1 for x, _, w, _ in boxes if x + w > 0.6) / len(boxes) > 0.2
