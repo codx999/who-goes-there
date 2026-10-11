@@ -259,6 +259,7 @@ __marimo__/
 *.npz
 *.onnx
 *.parquet
+*.pdf
 *.pickle
 *.pkl
 *.png

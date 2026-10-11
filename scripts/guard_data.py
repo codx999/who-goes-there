@@ -95,6 +95,8 @@ BLOCKED_SUFFIXES = (
             ".zst",
             # env files with another name, e.g. prod.env
             ".env",
+            # documents that embed photos; slides, if they enter the repo, get a budgeted path
+            ".pdf",
         }
     )
 )
@@ -118,6 +120,7 @@ MAGIC = {
     b"II*\x00": "TIFF",
     b"MM\x00*": "TIFF",
     b"\x89HDF\r\n\x1a\n": "HDF5",
+    b"%PDF-": "PDF",
     b"\x93NUMPY": "NumPy array",
     b"\x80\x02": "pickle",
     b"\x80\x03": "pickle",

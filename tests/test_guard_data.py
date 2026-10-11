@@ -105,6 +105,8 @@ def test_other_image_signatures_under_any_name() -> None:
     assert guard.content_problems(b"MM\x00*" + b"\0" * 8, "a.dat") == ["TIFF file"]
     assert guard.content_problems(b"BM\x36\x00\x0c\x00\0\0\0\0\x36", "a.dat") == ["BMP file"]
     assert guard.content_problems(b"BMW notes: 4 doors", "cars.md") == []
+    assert guard.content_problems(b"%PDF-1.7\n%", "docs/slides.txt") == ["PDF file"]
+    assert guard.path_problems("docs/slides.PDF")
 
 
 def _notebook(cells: list[dict[str, object]]) -> bytes:
@@ -278,7 +280,7 @@ EXPECTED_BLOCKED_SUFFIXES = {
     *(".db", ".db-journal", ".db-shm", ".db-wal", ".sqlite", ".sqlite3", ".sqlite-journal"),
     *(".sqlite-shm", ".sqlite-wal", ".arrow", ".csv", ".feather", ".jsonl", ".ndjson"),
     *(".parquet", ".tsv", ".xls", ".xlsx", ".pickle", ".pkl", ".7z", ".bak", ".bz2", ".gz"),
-    *(".rar", ".tar", ".tgz", ".xz", ".zip", ".zst", ".env"),
+    *(".rar", ".tar", ".tgz", ".xz", ".zip", ".zst", ".env", ".pdf"),
 }
 
 
