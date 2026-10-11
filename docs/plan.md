@@ -324,6 +324,29 @@ Slides: problem, the classifier and live demo, the honest test (cis vs trans), t
 (arm A vs arm B, attention-in-box, animal-removed), two errors from the confusion matrix, day vs
 night, limitations and next steps.
 
+### Setup maintenance
+
+The review machinery and the tooling were written before the code (sessions 0 to 2). Each
+session below also updates the setup it touches, in the same commit as the code:
+
+- **Every session**: fill the "test" cell of the `docs/review/invariants.md` rows the item builds
+  (the rows say "none yet" and name the item). A new high-stakes module or config file goes into
+  the `scripts/risk_files.sh` regex, its test and the map in the same commit (row R44); the root
+  `config.yaml` of item 5.02 is the first known case.
+- **Session 5** (dependencies): the mypy overrides for torch, torchvision and timm; a CPU-only
+  torch index in the lock so CI and the Mac do not download CUDA builds; the CI run (15-minute
+  timeout, `uv sync --locked`) checked once with the new wheels. Confirm `/dryrun` and
+  `/review-shapes` still match the module paths and flags 5.03 implements.
+- **Sessions 6 and 11** (new scripts): `scripts/check.sh` runs mypy on `trailcam/` and
+  `scripts/guard_data.py` by explicit path; `kaggle_prepare_cct20.py` and `deploy_space.py` are
+  added there (and to the mypy `files` list) when written.
+- **Sessions 10 and 11** (demo and Space): `.claude/rules/data.md` covers `trailcam/data/**` and
+  `trailcam/evaluate/**` only; decide whether `trailcam/demo/**` and `space/**` join its paths so
+  the "assets only, never `data/`" rules apply there.
+- **After the first review** (item 2.04): add to the allow list in `.claude/settings.json`
+  whatever read-only git commands the reviewers prompted for (`git show`, `git rev-parse` are
+  the likely ones).
+
 ## 11. Open questions
 
 1. **Course dataset rule.** Closed 2026-10-11: the user decided to proceed with CCT20 without
