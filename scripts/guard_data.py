@@ -11,8 +11,9 @@ Findings name the path and the rule only, never the matching text. Standard libr
 hooks can run it with `uv run --no-project`.
 
 Web images (ALLOWED_IMAGE_SUFFIXES) are allowed only under the IMAGE_BUDGETS directories, each with
-a file-count and byte budget: `--all` (check.sh, CI) enforces it over the whole index, `--history`
-and `--pre-push` per commit, `--staged` over the staged files. Every text blob is scanned for
+a file-count and byte budget: `--all` (check.sh, CI) enforces it over the whole index,
+`--pre-push` per commit and over the whole tree of each pushed commit, `--history` per commit,
+`--staged` over the staged files. Every text blob is scanned for
 embedded images (notebook outputs and attachments, data URIs) and for dataset record keys, whatever
 its suffix, so a dump renamed to .txt or pasted into a notebook is still refused. A notebook
 (.ipynb) with any output or attachment left in it is refused: outputs are cleared before a commit.
@@ -232,15 +233,40 @@ def commit_entries(*revs: str) -> list[Entry]:
     return list(dict.fromkeys(entries))
 
 
-def pre_push_revs(lines: list[str]) -> list[str]:
-    """rev-list arguments for the refs a pre-push hook gets on stdin: the pushed commits that no
-    remote-tracking branch has yet."""
+def pre_push_tips(lines: list[str]) -> list[str]:
+    """The local commits a pre-push hook gets on stdin, branch deletions left out."""
     tips = []
     for line in lines:
         fields = line.split()  # <local ref> <local sha> <remote ref> <remote sha>
         if len(fields) == 4 and set(fields[1]) != {"0"}:  # all zeros: a branch deletion
             tips.append(fields[1])
+    return tips
+
+
+def pre_push_revs(lines: list[str]) -> list[str]:
+    """rev-list arguments for the refs a pre-push hook gets on stdin: the pushed commits that no
+    remote-tracking branch has yet."""
+    tips = pre_push_tips(lines)
     return [*tips, "--not", "--remotes"] if tips else []
+
+
+def tree_entries(tip: str) -> list[Entry]:
+    """Every file in the tree of commit `tip`, labelled with the commit."""
+    entries: list[Entry] = []
+    for record in _git("ls-tree", "-r", "-z", "--full-tree", tip).split(b"\0"):
+        if record:
+            meta, path = record.split(b"\t", 1)
+            mode, _, blob = meta.decode().split()
+            if mode != GITLINK:
+                entries.append(Entry(_decode(path), blob, tip[:12]))
+    return entries
+
+
+def tree_budget_problems(tips: list[str]) -> list[tuple[Entry, str]]:
+    """Image budgets over the whole tree of each pushed tip, so images spread over several
+    commits are counted together before they reach the remote, not only by CI afterwards."""
+    entries = [e for tip in tips for e in tree_entries(tip) if is_allowed_image(e.path)]
+    return budget_problems(entries, read_blobs([e.blob for e in entries]))
 
 
 def read_blobs(blobs: list[str]) -> dict[str, bytes]:
@@ -405,15 +431,18 @@ def main(argv: list[str] | None = None) -> int:
     mode.add_argument("--history", action="store_true", help="every commit reachable from HEAD")
     args = parser.parse_args(argv)
 
+    lines = sys.stdin.readlines() if args.pre_push else []
     if args.staged:
         entries, advice = staged_entries(), ADVICE["staged"]
     elif args.all:
         entries, advice = index_entries(), ADVICE["all"]
     else:
-        revs = pre_push_revs(sys.stdin.readlines()) if args.pre_push else ["HEAD"]
+        revs = pre_push_revs(lines) if args.pre_push else ["HEAD"]
         entries, advice = (commit_entries(*revs) if revs else []), ADVICE["history"]
 
     findings = check(entries)
+    if args.pre_push:
+        findings += tree_budget_problems(pre_push_tips(lines))
     for entry, problem in findings:
         where = f" (commit {entry.commit})" if entry.commit else ""
         print(f"guard_data: {entry.path}{where}: {problem}", file=sys.stderr)
