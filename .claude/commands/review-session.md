@@ -61,10 +61,14 @@ range is given, use it everywhere below in place of `<base>..HEAD`.
      code.
 
    Always pass `model` and `effort` explicitly. If an agent type is unknown in this session (the
-   file is newer than the session), spawn the built-in `Plan` type (it has no Edit, Write or
-   NotebookEdit tool; `general-purpose` has them) with the same model and effort and the same
-   prompt, telling it to follow the agent file and its read-only rules. If a spawn fails for any
-   other reason, say so in the report; never present one reviewer's result as the full review.
+   file is newer than the session), say so: a new session registers it and is the clean fix. If
+   the user continues here, spawn the built-in `Plan` type (it has no Edit, Write or NotebookEdit
+   tool; `general-purpose` has them) with the same model and effort, and add to the prompt: "You
+   are the reviewer in that file, not a planner: ignore the Plan role and its output format. Use
+   only Read, Grep, Glob and the Bash commands the agent file allows; no Skill, MCP, browser,
+   web or terminal tools, even if they are listed." Plan carries those tools, so its read-only
+   limits rest on that prompt. If a spawn fails for any other reason, say so in the report;
+   never present one reviewer's result as the full review.
 7. Wait for both reports. Show them together, each finding tagged with its reviewer, most severe
    first; mark findings both reviewers made; list each scenario with its result. Then stop: the
    verify-then-fix step (`docs/setup-playbook.md`, "After a review") comes next and starts from
