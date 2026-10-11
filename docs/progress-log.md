@@ -210,8 +210,20 @@ steps edited by Claude at the user's explicit request in chat (an exception to "
 items"): the real-metadata coverage checks read `TRAILCAM_DATA_ROOT` and the item flips only when
 `pytest -rs tests/test_split.py` reports 0 skipped; the skip is allowed only in CI.
 
-**Next.** A fix round on `e777e14..HEAD` (the fix commits touch the guard, check.sh,
-risk_files.sh and the commands), started by the user. Then session 3 (2026-10-12): class map,
+Fix round, started by the user: `/review-session e777e14..HEAD`, tier 2, 12 risk files. Both
+agent types still unregistered, so both ran as the built-in `Plan` type: code-reviewer on Opus at
+xhigh over the range, risk-reviewer on Fable at high over the risk files (Opus wrote the fixes,
+so Fable is the different model). Nothing above low; every first-round fix confirmed working
+with a test that fails without it. Seven findings, all verified and fixed, plus two residual gaps
+closed: pytest.toml and dot-prefixed override configs in the regex and the control-plane test,
+no conftest.py (pytest 9.1.1's lookup order read from its source); the workflow folder, every
+secrets form and the image budgets pinned; the Plan fallback's limits stated in its prompt; a
+new `scripts/data_root.sh` so check.sh points `TRAILCAM_DATA_ROOT` at the main checkout's
+`data/` outside CI; the dry run's never-append rule in plan section 5 and rules training.md;
+citations in rules data.md and the UUID count in data-inspection.md; the whole pytest config and
+every agent file pinned. `check.sh` green before each commit. No third round unless the user asks.
+
+**Next.** The user merges and pushes from the main checkout. Then session 3 (2026-10-12): class map,
 metadata loader, re-split with the leakage tests (tier 3).
 
 Review: tier 2, ran /review-session 9788ae4..HEAD (code-reviewer Opus xhigh on the range, second Opus run on the risk files)
