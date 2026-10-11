@@ -69,8 +69,23 @@ def test_pytest_config_is_not_narrowed() -> None:
     config = tomllib.loads((ROOT / "pyproject.toml").read_text())["tool"]["pytest"]["ini_options"]
     assert config.get("testpaths") == ["tests"]
     assert "addopts" not in config
-    for name in ("pytest.ini", "tox.ini", "setup.cfg", "mypy.ini", "ruff.toml", ".ruff.toml"):
+    # pytest reads pytest.toml, .pytest.toml, pytest.ini and .pytest.ini before pyproject.toml,
+    # even when empty; mypy reads mypy.ini and .mypy.ini first.
+    overrides = (
+        *("pytest.toml", ".pytest.toml", "pytest.ini", ".pytest.ini", "tox.ini", "setup.cfg"),
+        *("mypy.ini", ".mypy.ini", "ruff.toml", ".ruff.toml"),
+    )
+    for name in overrides:
         assert not (ROOT / name).exists(), f"{name} would override pyproject.toml"
+
+
+def test_no_conftest() -> None:
+    """A conftest.py can deselect or skip tests without touching them. None exists yet; adding
+    one means changing this test in the same, reviewed commit."""
+    tracked = subprocess.run(
+        ["git", "ls-files", "*conftest.py"], cwd=ROOT, capture_output=True, text=True, check=True
+    ).stdout.split()
+    assert tracked == []
 
 
 def test_settings_keep_the_read_deny_lines() -> None:
