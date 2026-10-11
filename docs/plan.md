@@ -230,8 +230,10 @@ methods. Mixed outcomes are reported as mixed. A negative result is a result.
   among the `assets/` photos, which are trans-test samples and the only dataset images allowed in
   the repo (the data rule keeps raw dataset images out of `docs/figures/`).
 - **Slices of the same test predictions**, no extra training: day vs infrared night, per camera
-  group and per class; common vs rare species; accuracy per unseen camera as a bar chart with
-  that camera's background next to the worst bar.
+  group and per class; common vs rare species; accuracy per unseen camera as a bar chart (bars
+  only in `docs/figures/`: the worst camera is known only after the final scoring, too late to
+  pick its photo for `assets/`; the slide may show that camera's photo only if one is already in
+  `assets/`, with the Beery et al. citation).
 - **Feature map**: backbone features of the test photos projected to two dimensions, coloured
   once by species and once by camera, for arm A and arm B side by side.
 - **Inference timer**: `time.perf_counter()` around the forward pass for one image, after one
