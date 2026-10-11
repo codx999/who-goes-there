@@ -109,8 +109,11 @@ def test_check_sh_sets_the_data_root_outside_ci() -> None:
 
 def test_pytest_config_is_not_narrowed() -> None:
     config = tomllib.loads((ROOT / "pyproject.toml").read_text())["tool"]["pytest"]["ini_options"]
-    assert config.get("testpaths") == ["tests"]
-    assert "addopts" not in config
+    # Every key pinned: addopts, python_files, norecursedirs and the like can each narrow a run.
+    assert config == {"pythonpath": ["."], "testpaths": ["tests"]}
+    assert set(tomllib.loads((ROOT / "pyproject.toml").read_text())["tool"]["pytest"]) == {
+        "ini_options"
+    }
     # pytest reads pytest.toml, .pytest.toml, pytest.ini and .pytest.ini before pyproject.toml,
     # even when empty; mypy reads mypy.ini and .mypy.ini first.
     overrides = (
@@ -136,9 +139,16 @@ def test_settings_keep_the_read_deny_lines() -> None:
         assert rule in deny
 
 
-@pytest.mark.parametrize("agent", ["code-reviewer", "risk-reviewer"])
-def test_reviewer_agents_are_read_only(agent: str) -> None:
-    text = (ROOT / ".claude" / "agents" / f"{agent}.md").read_text()
+AGENTS = sorted((ROOT / ".claude" / "agents").glob("*.md"))
+
+
+def test_agent_files_are_the_two_reviewers() -> None:
+    assert [p.stem for p in AGENTS] == ["code-reviewer", "risk-reviewer"]
+
+
+@pytest.mark.parametrize("agent", AGENTS, ids=lambda p: p.stem)
+def test_reviewer_agents_are_read_only(agent: Path) -> None:
+    text = agent.read_text()
     front = text.split("---")[1]
     assert re.search(r"^tools: Read, Grep, Glob, Bash$", front, re.MULTILINE)
 
