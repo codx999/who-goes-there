@@ -1,5 +1,7 @@
 # Who Goes There: handoff from the planning session
 
+> Retired 2026-10-10: the decisions here were folded into `docs/plan.md`, which is the source of truth. Kept for history.
+
 Written 2026-10-10 in the Animal Spirits repo, where the project was chosen. The first session in
 this repo reads this file and `docs/setup-playbook.md`, sets up the repo (playbook checklist), then
 turns this file into `docs/plan.md`. Facts marked "verify" were not confirmed from primary data.
