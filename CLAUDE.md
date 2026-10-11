@@ -13,6 +13,7 @@ scope: detection, sequence-level classification, the `empty` class, anything bey
 - `docs/progress.json`: one item per unit of work; `docs/progress-log.md`: dated done / next.
 - `docs/data-inspection.md`: verified CCT20 facts. `docs/course-guideline.md`: class requirements.
 - `docs/setup-playbook.md`: session protocol and review tiers. `docs/references.md`: how to work.
+- `docs/research-report.md`: literature review and the evidence behind the experiment (section 6 of the plan).
 - If documents disagree: `plan.md` wins, then the document that owns the topic. `docs/HANDOFF.md`
   and `docs/setup-review.md` are inputs to the plan, not rules.
 
@@ -30,6 +31,7 @@ scope: detection, sequence-level classification, the `empty` class, anything bey
   trans accuracy close to cis accuracy.
 - The class-to-index map lives in `trailcam/data/classes.py` and is imported everywhere.
 - Augmentation on the training transform only; val and test get resize and normalise.
+- Bounding boxes are training-time augmentation (arm B) and attention scoring only; never a model input.
 - Stack: Python 3.12, uv, torch, torchvision, timm, gradio, grad-cam. Kaggle runs training; the Mac
   runs code, tests and the dry-run. Never start a long training run on your own.
 - Licence: code MIT; data CDLA-Permissive 1.0, cite Beery et al. 2018 wherever the data is shown.
