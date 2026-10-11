@@ -176,6 +176,27 @@ def test_metadata_dump_is_refused_whatever_its_shape_or_suffix() -> None:
     assert guard.content_problems(as_list, "notebooks/peek.ipynb") == expected
 
 
+def _uuid(i: int) -> str:
+    return f"{i:08x}-0000-4000-8000-{i:012x}"
+
+
+def test_id_lists_and_tabular_dumps_are_refused() -> None:
+    expected = ["dataset ids (3000 UUIDs)"]
+    split = json.dumps(
+        {"train": [_uuid(i) for i in range(2000)], "val": [_uuid(i) for i in range(1000)]}
+    )
+    rows = "\n".join(f"{_uuid(i)}\t{_uuid(i).upper()}\t3\tcoyote" for i in range(1500))
+    assert guard.content_problems(split.encode(), "docs/split.json") == expected
+    assert guard.content_problems(rows.encode(), "docs/notes.txt") == expected
+    few = json.dumps([_uuid(i) for i in range(guard.MAX_METADATA_RECORDS)]).encode()
+    assert guard.content_problems(few, "docs/ids.json") == []
+
+
+@pytest.mark.parametrize("path", ["docs/split.csv~", "docs/split.csv.", "docs/split.csv ", "m.pt~"])
+def test_trailing_characters_do_not_hide_a_suffix(path: str) -> None:
+    assert guard.path_problems(path)
+
+
 def test_small_fixture_and_plain_json_pass() -> None:
     tiny = json.dumps({"images": _records(guard.MAX_METADATA_RECORDS // 2)}).encode()
     assert guard.content_problems(tiny, "tests/fixtures/tiny_annotations.json") == []

@@ -153,6 +153,10 @@ _NOT_BASE64 = re.compile(rb"[^A-Za-z0-9+/=]")
 # Dataset record keys (CCT20 metadata and anything derived from it): JSON, a notebook's
 # JSON-escaped source or output (\"seq_id\":) and a printed Python dict ('seq_id':).
 RECORD_KEYS = re.compile(rb"\\?[\"'](?:seq_id|file_name|image_id)\\?[\"']\s*:")
+# CCT20 image and sequence ids are UUIDs (every one of the 57,864 images, docs/data-inspection.md
+# file name pattern): more than MAX_METADATA_RECORDS of them in one blob is a split saved as id
+# lists, or a CSV, TSV or text dump of the metadata under any name.
+UUID = re.compile(rb"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.IGNORECASE)
 
 GITLINK = "160000"  # a submodule commit, not a file
 
@@ -292,6 +296,9 @@ def embedded_problems(data: bytes) -> list[str]:
     n_records = len(RECORD_KEYS.findall(data))
     if n_records > MAX_METADATA_RECORDS:
         problems.append(f"dataset metadata ({n_records} record keys)")
+    n_ids = len(UUID.findall(data))
+    if n_ids > MAX_METADATA_RECORDS:
+        problems.append(f"dataset ids ({n_ids} UUIDs)")
     return problems
 
 
@@ -316,7 +323,7 @@ def notebook_problems(data: bytes) -> list[str]:
 
 def path_problems(path: str) -> list[str]:
     lower = path.lower()
-    pure = PurePosixPath(lower)
+    pure = PurePosixPath(lower.rstrip(". ~"))  # split.csv~, split.csv. and "split.csv " too
     problems = []
     if lower.startswith(BLOCKED_DIRS):
         problems.append("file under data/, models/ or outputs/")
