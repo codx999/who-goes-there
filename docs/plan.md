@@ -326,11 +326,10 @@ night, limitations and next steps.
 
 ## 11. Open questions
 
-1. **Course dataset rule.** CCT20 is not in `torchvision.datasets`; it is loaded through a custom
-   `Dataset` as chapter 04 teaches. Confirm the TA's reading by 2026-10-11, before the data
-   session commits to CCT20, mentioning the location-split motivation. Fallback if the answer is
-   no: Food-101 (in `torchvision.datasets`, 101 classes), which loses the unseen-camera story and
-   the experiment but keeps the pipeline, the demo and the Space.
+1. **Course dataset rule.** Closed 2026-10-11: the user decided to proceed with CCT20 without
+   waiting on the TA. It is not in `torchvision.datasets` and is loaded through a custom `Dataset`
+   as chapter 04 teaches; if asked, cite the location-split motivation. Food-101 remains the named
+   fallback only if the course later rejects the dataset outright.
 2. **Submission format.** The Space (app.py, weights, requirements.txt) is known; whether a report,
    notebook or video is also required is not.
 3. **Tarball layout.** The folder structure inside `eccv_18_all_images_sm.tar.gz` is unknown until
