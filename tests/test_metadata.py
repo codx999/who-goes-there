@@ -443,7 +443,9 @@ def test_real_metadata_drops_match_data_inspection() -> None:
     empty = {"train": 0, "cis_val": 995, "trans_val": 61, "cis_test": 1180, "trans_test": 1778}
     for split in SPLITS:
         dropped = meta.dropped[split]
-        assert len(meta.records[split]) + sum(dropped.values()) == images[split], split
+        # Counts are taken before the assert, so a failure prints numbers, never a record (R03).
+        kept = len(meta.records[split])
+        assert kept + sum(dropped.values()) == images[split], split
         assert dropped["two_species"] == two_species[split], split
         assert dropped["empty"] == empty[split], split
         assert dropped["unannotated"] == 0, split
@@ -461,8 +463,9 @@ def test_real_metadata_boxes_and_rare_drops() -> None:
     rare = {"train": 50, "cis_val": 4, "trans_val": 0, "cis_test": 168, "trans_test": 15}
     assert {s: meta.dropped[s]["rare"] for s in SPLITS} == rare
     boxes = [b for s in SPLITS for r in meta.records[s] for b in r.boxes]
-    assert len(boxes) == 47729
+    n_boxes = len(boxes)  # counted before the assert, so a failure prints no box values (R03)
+    assert n_boxes == 47729
     assert sum(meta.clipped_boxes.values()) == 100
     assert max(x + w for x, _, w, _ in boxes) > 0.9
     assert max(y + h for _, y, _, h in boxes) > 0.9
-    assert sum(1 for x, _, w, _ in boxes if x + w > 0.6) / len(boxes) > 0.2
+    assert sum(1 for x, _, w, _ in boxes if x + w > 0.6) / n_boxes > 0.2

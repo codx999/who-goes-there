@@ -305,4 +305,17 @@ fe6c301:
 `check.sh` green (152 passed). The fix commit touches `trailcam/data/metadata.py` and modifies
 one existing test, so one fix round on fe6c301 is due.
 
+Fix round, started by the user: `/review-session bcc04ec..HEAD 3.02`, tier 2, risk files
+`tests/test_metadata.py` and `trailcam/data/metadata.py`; code-reviewer on Opus at xhigh,
+risk-reviewer on Fable at high. Nothing found in the range by either; every scenario held (R01,
+R03, R05, R10, R15, R42 to R45). Spec changed: plan section 2's two sidecar rules, which the code
+matches. One low note outside the range from code-reviewer (R03, reasoning only), fixed: two
+real-metadata asserts called `len()` inside the assert, so a failure would have printed a real
+record (with its image id and file name) or real box values; the counts are now taken first.
+Checked by breaking both expectations in a scratch copy: the failures print counts only. No
+third round.
+
 **Next.** Item 3.03, the re-split and the leakage tests (tier 3, xhigh).
+
+Review: tier 2, ran /review-session 3.02 (72613c9..bcc04ec) and the fix round /review-session
+bcc04ec..HEAD 3.02 (code-reviewer Opus xhigh, risk-reviewer Fable high)
