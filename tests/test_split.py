@@ -3,7 +3,8 @@ and the leakage and coverage tests of plan.md section 3 (R10 to R15; R27 for the
 
 Every rule test runs twice: on the synthetic metadata from trailcam/data/synthetic.py (written to
 a temporary directory, never committed) and on the real metadata in `TRAILCAM_DATA_ROOT` (check.sh
-sets it locally; CI has no data and skips the real runs). Expectations are computed here from the
+sets it locally; CI has no data and skips the real runs, anywhere else a missing root fails).
+Expectations are computed here from the
 records, not by the module's own checks.
 
 A failure on the real metadata prints numbers, never an id or a record (R03): every assert
@@ -47,7 +48,6 @@ from trailcam.data.split import (
 
 ROOT = Path(__file__).resolve().parents[1]
 REAL_ROOT = os.environ.get("TRAILCAM_DATA_ROOT", "")
-NO_DATA = "TRAILCAM_DATA_ROOT is not set (CI has no data)"
 SEED = 42  # the split seed of item 3.03's CLI run and of the data card (item 3.04)
 
 CIS = ("train", "val", "cis_test")
@@ -78,6 +78,16 @@ REAL_POOL_IMAGES = 15981  # plan section 3: 17,037 before the class filters
 REAL_CROSS_FILE_SEQUENCES = 222  # of the 224 shared; two keep frames in one file after filtering
 
 UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.IGNORECASE)
+
+
+def real_root() -> str:
+    """The real metadata root. CI has no data, so the real-data tests skip there; anywhere else a
+    missing root fails, since item 3.03 allows the skip only in CI (review 3.03)."""
+    if REAL_ROOT:
+        return REAL_ROOT
+    if os.environ.get("CI"):
+        pytest.skip("TRAILCAM_DATA_ROOT is not set (CI has no data)")
+    pytest.fail("TRAILCAM_DATA_ROOT is not set; bash scripts/check.sh sets it", pytrace=False)
 
 
 @dataclass(frozen=True, repr=False)
@@ -129,9 +139,7 @@ def synthetic_case(synthetic_meta: Metadata) -> Case:
 
 @pytest.fixture(scope="module")
 def real_case() -> Case:
-    if not REAL_ROOT:
-        pytest.skip(NO_DATA)
-    meta = load_metadata(Path(REAL_ROOT))
+    meta = load_metadata(Path(real_root()))
     return Case("real", meta, resplit(meta, SEED))
 
 
@@ -432,7 +440,6 @@ def test_synthetic_split_is_pinned(synthetic_case: Case) -> None:
 # The real metadata only: the 30-image floor and the pinned split for the seed
 
 
-@pytest.mark.skipif(not REAL_ROOT, reason=NO_DATA)
 def test_real_every_class_has_30_val_images(real_case: Case) -> None:
     """R13, test 4 (smallest on the real metadata for seed 42: skunk, 40)."""
     val = class_counts(real_case.split.records["val"])
@@ -440,7 +447,6 @@ def test_real_every_class_has_30_val_images(real_case: Case) -> None:
     assert below == 0, val
 
 
-@pytest.mark.skipif(not REAL_ROOT, reason=NO_DATA)
 def test_real_split_is_pinned(real_case: Case) -> None:
     """Plan section 3 test 5: sizes, per-class counts, sequences and the hash for seed 42."""
     records, meta = real_case.split.records, real_case.meta
@@ -461,10 +467,9 @@ def test_real_split_is_pinned(real_case: Case) -> None:
     assert pinned == REAL_HASH
 
 
-@pytest.mark.skipif(not REAL_ROOT, reason=NO_DATA)
 def test_real_cli_prints_counts_and_the_hash_only(capsys: pytest.CaptureFixture[str]) -> None:
     """R03: the item's CLI run prints counts and the hash, no image or sequence id."""
-    status = quietly(split_module.main, ["--root", REAL_ROOT, "--seed", str(SEED)])
+    status = quietly(split_module.main, ["--root", real_root(), "--seed", str(SEED)])
     assert status == 0
     out = capsys.readouterr().out
     n_ids, n_files = len(UUID.findall(out)), out.count(".jpg")
@@ -472,6 +477,34 @@ def test_real_cli_prints_counts_and_the_hash_only(capsys: pytest.CaptureFixture[
     assert f"Split hash {REAL_HASH}" in out
     assert re.search(r"^skunk\s+232\s+40\s+63\s+194\s+328\s+857$", out, re.M)
     assert re.search(r"mixed-label sequences 3 \(majority ties 0\)$", out, re.M)
+
+
+def test_missing_data_root_fails_outside_ci_and_skips_in_ci() -> None:
+    """Item 3.03 allows the real-data tests to skip only in CI, where data is absent (review 3.03,
+    both reviewers). Runs them without `TRAILCAM_DATA_ROOT` in a subprocess, as a local run and as
+    CI: locally every one fails, in CI every one skips."""
+    files = ["tests/test_split.py", "tests/test_metadata.py"]
+    base = {k: v for k, v in os.environ.items() if k not in ("TRAILCAM_DATA_ROOT", "CI")}
+    outcomes = {}
+    for run, env in (("local", base), ("ci", {**base, "CI": "true"})):
+        result = subprocess.run(
+            [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-k", "real", *files],
+            cwd=ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        summary = result.stdout.strip().splitlines()[-1]
+        counts = Counter(
+            {word.rstrip("s"): int(n) for n, word in re.findall(r"(\d+) ([a-z]+)", summary)}
+        )
+        outcomes[run] = (result.returncode, counts["passed"], counts["skipped"])
+        outcomes[f"{run} failed or errored"] = (counts["failed"] + counts["error"],)
+    n_real = outcomes["local failed or errored"][0]
+    assert n_real >= 23  # 21 in this file, 2 in tests/test_metadata.py
+    assert outcomes["local"] == (1, 0, 0)
+    assert outcomes["ci"] == (0, 0, n_real)
+    assert outcomes["ci failed or errored"] == (0,)
 
 
 # The majority class and the val quotas

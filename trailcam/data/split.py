@@ -83,12 +83,17 @@ def _draw(seed: int, *parts: object) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
 
 
+def _majority(counts: Counter[int]) -> int:
+    """The label with the most frames in `counts`; ties go to the lower class index."""
+    return max(counts, key=lambda label: (counts[label], -label))
+
+
 def majority_label(frames: Iterable[Record]) -> int:
     """The most common label over a sequence's kept frames; ties go to the lower class index."""
     counts = Counter(r.label for r in frames)
     if not counts:
         raise ValueError("a sequence has no frames")
-    return max(counts, key=lambda label: (counts[label], -label))
+    return _majority(counts)
 
 
 def val_quotas(
@@ -179,7 +184,7 @@ def make_split(meta: Metadata, seed: int) -> Split:
             mixed += 1
             top = sorted(counts.values(), reverse=True)
             ties += top[0] == top[1]
-        strata.setdefault((majority_label(frames), frames[0].location), []).append(seq_id)
+        strata.setdefault((_majority(counts), frames[0].location), []).append(seq_id)
 
     quotas = val_quotas({s: len(ids) for s, ids in strata.items()}, seed)
     val_sequences: set[str] = set()
