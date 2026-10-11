@@ -19,3 +19,6 @@ paths:
   redefine it inline.
 - Val and test transforms are resize and normalize only; augmentation belongs to the training
   transform alone.
+- Generated figures go in `docs/figures/` and must never contain raw dataset images; demo samples
+  (a few trans-test photos) go in `assets/`. Both folders have a file-count and size budget in
+  `scripts/guard_data.py`.

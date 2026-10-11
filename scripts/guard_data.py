@@ -10,31 +10,36 @@ Contents are read by blob ID from git (the index or the commits), never from the
 Findings name the path and the rule only, never the matching text. Standard library only, so the
 hooks can run it with `uv run --no-project`.
 
-Demo sample images are allowed under `assets/` only (ALLOWED_IMAGE_SUFFIXES, ALLOWED_IMAGE_DIRS),
-within a count and total-size budget that `--all` (check.sh, CI) enforces over the whole index.
-Notebooks must have no image outputs, and a JSON file with more than MAX_METADATA_RECORDS image
-records is treated as dataset metadata.
+Web images (ALLOWED_IMAGE_SUFFIXES) are allowed only under the IMAGE_BUDGETS directories, each with
+a file-count and byte budget: `--all` (check.sh, CI) enforces it over the whole index, `--history`
+and `--pre-push` per commit, `--staged` over the staged files. Every text blob is scanned for
+embedded images (notebook outputs and attachments, data URIs) and for dataset record keys, whatever
+its suffix, so a dump renamed to .txt or pasted into a notebook is still refused.
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 import re
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import PurePosixPath
-from typing import Any
 
 BLOCKED_DIRS = ("data/", "models/", "outputs/")
-IMAGE_SUFFIXES = frozenset({".bmp", ".gif", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"})
-ALLOWED_IMAGE_DIRS = ("assets/",)  # demo samples from trans-test locations, a few files only
+IMAGE_SUFFIXES = frozenset(
+    {".avif", ".bmp", ".gif", ".heic", ".heif", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"}
+)
 ALLOWED_IMAGE_SUFFIXES = frozenset({".jpeg", ".jpg", ".png", ".webp"})  # mirrored in .gitignore
-MAX_ASSET_IMAGES = 24
-MAX_ASSET_BYTES = 12_000_000
+# Directories where web images may live, with (max files, max total bytes). Mirrored in .gitignore.
+IMAGE_BUDGETS: dict[str, tuple[int, int]] = {
+    "assets/": (24, 12_000_000),  # demo samples from trans-test locations
+    "docs/figures/": (40, 20_000_000),  # generated plots: curves, confusion matrix, Grad-CAM
+}
+ALLOWED_IMAGE_DIRS = tuple(IMAGE_BUDGETS)
 VIDEO_SUFFIXES = frozenset({".avi", ".m4v", ".mkv", ".mov", ".mp4", ".webm"})
-MAX_METADATA_RECORDS = 100  # a JSON "images"/"annotations" list longer than this is a dataset dump
+MAX_METADATA_RECORDS = 100  # more dataset record keys than this in one blob is a dataset dump
+HEIF_BRANDS = (b"avif", b"avis", b"heic", b"heix", b"heif", b"hevc", b"mif1", b"msf1")
 BLOCKED_SUFFIXES = (
     IMAGE_SUFFIXES
     | VIDEO_SUFFIXES
@@ -90,6 +95,7 @@ BLOCKED_SUFFIXES = (
         }
     )
 )
+NON_IMAGE_BLOCKED = BLOCKED_SUFFIXES - ALLOWED_IMAGE_SUFFIXES
 ALLOWED_ENV_FILES = frozenset({".env.example"})
 SECRET_FILES = frozenset({"secrets.toml", "kaggle.json"})  # Streamlit and Kaggle credentials
 MAX_BYTES = 5_000_000
@@ -129,6 +135,19 @@ SECRET_PATTERNS = {
         re.IGNORECASE,
     ),
 }
+
+# Embedded images in any text blob: a notebook output or attachment MIME key, or a data URI (HTML
+# outputs, markdown), followed by a base64 payload of at least MIN_IMAGE_PAYLOAD characters, so a
+# doc that mentions the key or a tiny icon does not count. Split literals: this file must not
+# match itself.
+IMAGE_MARKERS = re.compile(
+    rb'"image/(?:png|jpe?g|gif|webp|bmp|tiff?|heic|avif)"\s*:|data:' rb"image/[a-z+.-]+;base64,"
+)
+MIN_IMAGE_PAYLOAD = 1000  # base64 characters, about 750 bytes; a camera-trap photo is 100x that
+_PAYLOAD = re.compile(rb'[\sA-Za-z0-9+/=",\[\]\\]{0,2000000}')  # base64 plus JSON list noise
+_NOT_BASE64 = re.compile(rb"[^A-Za-z0-9+/=]")
+# Dataset record keys (CCT20 metadata and anything derived from it, in JSON or notebook outputs).
+RECORD_KEYS = re.compile(rb'"(?:seq_id|file_name|image_id)"\s*:')
 
 GITLINK = "160000"  # a submodule commit, not a file
 
@@ -238,43 +257,37 @@ def is_allowed_image(path: str) -> bool:
         lower.startswith(ALLOWED_IMAGE_DIRS)
         and bool(suffixes)
         and suffixes[-1] in ALLOWED_IMAGE_SUFFIXES
-        and not any(s in BLOCKED_SUFFIXES - ALLOWED_IMAGE_SUFFIXES for s in suffixes)
+        and not any(s in NON_IMAGE_BLOCKED for s in suffixes)
     )
 
 
-def _load_json(data: bytes) -> Any:
-    try:
-        return json.loads(data)
-    except ValueError:  # includes UnicodeDecodeError
-        return None
+def image_dir(path: str) -> str | None:
+    """The IMAGE_BUDGETS directory an allowed image sits in, else None."""
+    lower = path.lower()
+    return next((d for d in IMAGE_BUDGETS if lower.startswith(d)), None)
 
 
-def notebook_problems(data: bytes) -> list[str]:
-    """Cell outputs carrying image data (a rendered dataset sample ends up as base64 in git)."""
-    nb = _load_json(data)
-    if not isinstance(nb, dict):
-        return []
+def embedded_images(data: bytes) -> int:
+    """Image markers followed by a payload of at least MIN_IMAGE_PAYLOAD base64 characters."""
     n_images = 0
-    for cell in nb.get("cells", []):
-        if not isinstance(cell, dict):
-            continue
-        for out in cell.get("outputs", []):
-            mime = out.get("data", {}) if isinstance(out, dict) else {}
-            if isinstance(mime, dict) and any(str(k).startswith("image/") for k in mime):
-                n_images += 1
-    return [f"notebook with {n_images} image outputs (clear outputs first)"] if n_images else []
+    for marker in IMAGE_MARKERS.finditer(data):
+        chunk = _PAYLOAD.match(data, marker.end())
+        payload = _NOT_BASE64.sub(b"", chunk.group()) if chunk else b""
+        if len(payload) >= MIN_IMAGE_PAYLOAD:
+            n_images += 1
+    return n_images
 
 
-def metadata_problems(data: bytes) -> list[str]:
-    """A COCO-style dump: more than MAX_METADATA_RECORDS image or annotation records."""
-    obj = _load_json(data)
-    if not isinstance(obj, dict):
-        return []
-    for key in ("images", "annotations"):
-        records = obj.get(key)
-        if isinstance(records, list) and len(records) > MAX_METADATA_RECORDS:
-            return [f"dataset metadata ({len(records)} {key} records)"]
-    return []
+def embedded_problems(data: bytes) -> list[str]:
+    """Images or dataset records hidden inside a text file, whatever its suffix."""
+    problems = []
+    n_images = embedded_images(data)
+    if n_images:
+        problems.append(f"{n_images} embedded images (notebook outputs, attachments or data URIs)")
+    n_records = len(RECORD_KEYS.findall(data))
+    if n_records > MAX_METADATA_RECORDS:
+        problems.append(f"dataset metadata ({n_records} record keys)")
+    return problems
 
 
 def path_problems(path: str) -> list[str]:
@@ -297,14 +310,12 @@ def path_problems(path: str) -> list[str]:
 def content_problems(data: bytes, path: str = "") -> list[str]:
     problems = [f"{kind} file" for magic, kind in MAGIC.items() if data.startswith(magic)]
     if data[4:8] == b"ftyp":
-        problems.append("MP4/MOV video file")
+        is_image = data[8:12] in HEIF_BRANDS
+        problems.append("HEIC/AVIF image file" if is_image else "MP4/MOV video file")
     if is_allowed_image(path):
         problems = [p for p in problems if p not in ("JPEG file", "PNG file")]
-    lower = path.lower()
-    if lower.endswith(".ipynb"):
-        problems += notebook_problems(data)
-    elif lower.endswith(".json"):
-        problems += metadata_problems(data)
+    else:
+        problems += embedded_problems(data)
     problems += [rule for rule, pattern in SECRET_PATTERNS.items() if pattern.search(data)]
     if len(data) > MAX_BYTES:
         problems.append(f"larger than {MAX_BYTES // 1_000_000} MB")
@@ -317,19 +328,29 @@ def check(entries: list[Entry]) -> list[tuple[Entry, str]]:
     for entry in entries:
         problems = path_problems(entry.path) + content_problems(contents[entry.blob], entry.path)
         findings.extend((entry, problem) for problem in problems)
-    assets = {e.path: e for e in entries if is_allowed_image(e.path)}
-    if len(assets) > MAX_ASSET_IMAGES:
-        findings.append(
-            (Entry("assets/", ""), f"{len(assets)} images under assets/ (cap {MAX_ASSET_IMAGES})")
-        )
-    total = sum(len(contents[e.blob]) for e in assets.values())
-    if total > MAX_ASSET_BYTES:
-        findings.append(
-            (
-                Entry("assets/", ""),
-                f"assets/ images total {total:,} bytes (cap {MAX_ASSET_BYTES:,})",
+    findings += budget_problems(entries, contents)
+    return findings
+
+
+def budget_problems(entries: list[Entry], contents: dict[str, bytes]) -> list[tuple[Entry, str]]:
+    """File-count and byte budgets per IMAGE_BUDGETS directory, per commit (commit "" is the
+    index or the staged set, so --all sees the whole tree)."""
+    groups: dict[tuple[str, str], dict[str, Entry]] = {}
+    for entry in entries:
+        directory = image_dir(entry.path) if is_allowed_image(entry.path) else None
+        if directory is not None:
+            groups.setdefault((entry.commit, directory), {})[entry.path] = entry
+    findings: list[tuple[Entry, str]] = []
+    for (commit, directory), by_path in sorted(groups.items()):
+        max_files, max_bytes = IMAGE_BUDGETS[directory]
+        where = Entry(directory, "", commit)
+        if len(by_path) > max_files:
+            findings.append((where, f"{len(by_path)} images under {directory} (cap {max_files})"))
+        total = sum(len(contents[e.blob]) for e in by_path.values())
+        if total > max_bytes:
+            findings.append(
+                (where, f"images under {directory} total {total:,} bytes (cap {max_bytes:,})")
             )
-        )
     return findings
 
 

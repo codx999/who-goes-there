@@ -228,6 +228,7 @@ __marimo__/
 *.7z
 *.arrow
 *.avi
+*.avif
 *.bak
 *.bin
 *.bmp
@@ -244,6 +245,8 @@ __marimo__/
 *.gz
 *.h5
 *.hdf5
+*.heic
+*.heif
 *.jpeg
 *.jpg
 *.jsonl
@@ -280,11 +283,15 @@ __marimo__/
 *.xz
 *.zip
 *.zst
-# Demo sample images are allowed under assets/ only (guard: ALLOWED_IMAGE_SUFFIXES, with a budget)
+# Web images are allowed only in these folders (guard: IMAGE_BUDGETS, with a count and size cap)
 !assets/**/*.jpeg
 !assets/**/*.jpg
 !assets/**/*.png
 !assets/**/*.webp
+!docs/figures/**/*.jpeg
+!docs/figures/**/*.jpg
+!docs/figures/**/*.png
+!docs/figures/**/*.webp
 # Credentials
 kaggle.json
 # macOS

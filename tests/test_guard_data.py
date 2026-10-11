@@ -14,6 +14,13 @@ guard = importlib.util.module_from_spec(_spec)
 sys.modules["guard_data"] = guard
 _spec.loader.exec_module(guard)
 
+# Markers are assembled at runtime so this file never contains them literally (the guard scans
+# every text blob, this one included).
+PNG_MIME = "image/" + "png"
+DATA_URI = "data:" + "image/png;base64,"
+PAYLOAD = "iVBORw0KGgo" + "A" * 1200  # a real embedded image is tens of thousands of characters
+JPEG = b"\xff\xd8\xff\xe0" + b"\0" * 100
+
 
 @pytest.mark.parametrize(
     "path",
@@ -22,7 +29,7 @@ _spec.loader.exec_module(guard)
         "models/best.pth",
         "outputs/run1/log.txt",
         "trailcam/demo/sample.jpg",
-        "docs/figure.PNG",
+        "docs/figure.PNG",  # figures go under docs/figures/
         "notebooks/weights.pt",
         "export.safetensors",
         "features.npy",
@@ -33,8 +40,10 @@ _spec.loader.exec_module(guard)
         "prod.env",
         "assets/weights.pt",
         "assets/photo.jpg.zip",
-        "assets/demo/a.gif",  # only the four web image types are allowed under assets/
+        "assets/demo/a.gif",  # only the four web image types are allowed in image folders
         "assets/demo/a.tif",
+        "assets/demo/photo.heic",
+        "docs/figures/curve.bmp",
         "docs/backup.mp4",
         "assets/demo/clip.mov",
     ],
@@ -49,6 +58,8 @@ def test_blocked_paths(path: str) -> None:
         "assets/demo/coyote_night.jpg",
         "assets/README.png",
         "assets/demo/a.webp",
+        "docs/figures/confusion_matrix.png",
+        "docs/figures/gradcam/trans_001.jpg",
         "trailcam/data/splits.py",
         "docs/plan.md",
         ".env.example",
@@ -61,45 +72,86 @@ def test_allowed_paths(path: str) -> None:
 
 
 def test_magic_bytes_catch_renamed_files() -> None:
-    assert "JPEG file" in guard.content_problems(b"\xff\xd8\xff\xe0rest", "docs/notes.txt")
+    assert "JPEG file" in guard.content_problems(JPEG, "docs/notes.txt")
     assert "PNG file" in guard.content_problems(b"\x89PNG\r\n\x1a\nrest", "x.md")
     assert "NumPy array file" in guard.content_problems(b"\x93NUMPY\x01", "x.md")
     assert "zip (also torch .pt/.pth and .npz) file" in guard.content_problems(b"PK\x03\x04", "m")
     mp4 = b"\x00\x00\x00\x18ftypmp42" + b"\0" * 32
     assert "MP4/MOV video file" in guard.content_problems(mp4, "docs/demo.bin.txt")
+    heic = b"\x00\x00\x00\x18ftypheic" + b"\0" * 32
+    assert guard.content_problems(heic, "assets/demo/photo.heic") == ["HEIC/AVIF image file"]
 
 
 def test_allowed_asset_image_passes_content_check() -> None:
-    assert guard.content_problems(b"\xff\xd8\xff\xe0rest", "assets/demo/a.jpg") == []
+    assert guard.content_problems(JPEG, "assets/demo/a.jpg") == []
+    assert guard.content_problems(JPEG, "docs/figures/a.jpg") == []
 
 
-def _notebook(outputs: list[dict[str, object]]) -> bytes:
-    return json.dumps({"cells": [{"cell_type": "code", "outputs": outputs}]}).encode()
+def _notebook(cells: list[dict[str, object]]) -> bytes:
+    return json.dumps({"cells": cells}).encode()
 
 
 def test_notebook_image_outputs_are_refused() -> None:
-    nb = _notebook([{"data": {"image/png": "iVBORw0KGgo" + "A" * 400, "text/plain": "<Figure>"}}])
-    assert guard.content_problems(nb, "notebooks/explore.ipynb") == [
-        "notebook with 1 image outputs (clear outputs first)"
+    out = {"cell_type": "code", "outputs": [{"data": {PNG_MIME: PAYLOAD}}]}
+    assert guard.content_problems(_notebook([out]), "notebooks/explore.ipynb") == [
+        "1 embedded images (notebook outputs, attachments or data URIs)"
     ]
+
+
+def test_notebook_attachments_and_html_data_uris_are_refused() -> None:
+    attached = {"cell_type": "markdown", "attachments": {"x.png": {PNG_MIME: PAYLOAD}}}
+    html = {
+        "cell_type": "code",
+        "outputs": [{"data": {"text/html": f"<img src='{DATA_URI}{PAYLOAD}'>"}}],
+    }
+    assert guard.content_problems(_notebook([attached]), "nb.ipynb") == [
+        "1 embedded images (notebook outputs, attachments or data URIs)"
+    ]
+    assert guard.content_problems(_notebook([html]), "nb.ipynb") == [
+        "1 embedded images (notebook outputs, attachments or data URIs)"
+    ]
+    assert guard.content_problems(f"<img src='{DATA_URI}{PAYLOAD}'>".encode(), "docs/x.md") == [
+        "1 embedded images (notebook outputs, attachments or data URIs)"
+    ]
+    # Notebook JSON may split the payload into a list of lines.
+    split = {"cell_type": "code", "outputs": [{"data": {PNG_MIME: [PAYLOAD[:600], PAYLOAD[600:]]}}]}
+    assert guard.content_problems(_notebook([split]), "nb.ipynb") == [
+        "1 embedded images (notebook outputs, attachments or data URIs)"
+    ]
+
+
+def test_mentioning_the_key_or_a_tiny_icon_passes() -> None:
+    doc = f'The guard refuses any "{PNG_MIME}": output key in a notebook.'.encode()
+    assert guard.content_problems(doc, "docs/plan.md") == []
+    icon = {"cell_type": "code", "outputs": [{"data": {PNG_MIME: "iVBOR" + "A" * 400}}]}
+    assert guard.content_problems(_notebook([icon]), "nb.ipynb") == []
 
 
 def test_notebook_without_image_outputs_passes() -> None:
-    nb = _notebook([{"data": {"text/plain": "accuracy 0.83"}}, {"name": "stdout", "text": "ok"}])
-    assert guard.content_problems(nb, "notebooks/explore.ipynb") == []
+    cell = {"cell_type": "code", "outputs": [{"data": {"text/plain": "accuracy 0.83"}}]}
+    assert guard.content_problems(_notebook([cell]), "notebooks/explore.ipynb") == []
     assert guard.content_problems(b"not json at all", "notebooks/broken.ipynb") == []
 
 
-def _metadata(n_images: int) -> bytes:
-    images = [{"id": str(i), "seq_id": "s", "location": 1} for i in range(n_images)]
-    return json.dumps({"images": images, "annotations": [], "categories": []}).encode()
+def _records(n: int) -> list[dict[str, object]]:
+    return [{"id": str(i), "seq_id": "s", "location": 1, "file_name": f"{i}.jpg"} for i in range(n)]
 
 
-def test_metadata_dump_is_refused_but_small_fixture_passes() -> None:
-    assert guard.content_problems(_metadata(3000), "tests/fixtures/cis_val_annotations.json") == [
-        "dataset metadata (3000 images records)"
-    ]
-    assert guard.content_problems(_metadata(guard.MAX_METADATA_RECORDS), "tests/f.json") == []
+def test_metadata_dump_is_refused_whatever_its_shape_or_suffix() -> None:
+    expected = ["dataset metadata (6000 record keys)"]
+    as_dict = json.dumps({"images": _records(3000), "annotations": []}).encode()
+    as_list = json.dumps(_records(3000)).encode()
+    nested = json.dumps({"splits": {"train": {"images": _records(3000)}}}).encode()
+    assert guard.content_problems(as_dict, "tests/fixtures/cis_val_annotations.json") == expected
+    assert guard.content_problems(as_list, "tests/fixtures/ids.json") == expected
+    assert guard.content_problems(nested, "tests/fixtures/splits.json") == expected
+    assert guard.content_problems(as_list, "notes/dump.txt") == expected
+    assert guard.content_problems(as_list, "notebooks/peek.ipynb") == expected
+
+
+def test_small_fixture_and_plain_json_pass() -> None:
+    tiny = json.dumps({"images": _records(guard.MAX_METADATA_RECORDS // 2)}).encode()
+    assert guard.content_problems(tiny, "tests/fixtures/tiny_annotations.json") == []
     assert guard.content_problems(b'{"a": 1}', "config.json") == []
 
 
@@ -117,20 +169,37 @@ def test_size_limit() -> None:
     assert "larger than 5 MB" in guard.content_problems(b"0" * (guard.MAX_BYTES + 1), "big.md")
 
 
-def test_asset_budget(monkeypatch: pytest.MonkeyPatch) -> None:
-    jpeg = b"\xff\xd8\xff\xe0" + b"\0" * 100
-    n = guard.MAX_ASSET_IMAGES + 1
-    entries = [guard.Entry(f"assets/live/{i:03d}.jpg", f"blob{i}") for i in range(n)]
-    monkeypatch.setattr(guard, "read_blobs", lambda blobs: dict.fromkeys(blobs, jpeg))
-    findings = guard.check(entries)
-    assert [p for _, p in findings] == [f"{n} images under assets/ (cap {guard.MAX_ASSET_IMAGES})"]
-    assert guard.check(entries[:-1]) == []
-    big = (
-        b"\xff\xd8\xff\xe0" + b"\0" * 4_500_000
-    )  # under the per-file cap, 3 of them over the budget
+def _images(directory: str, n: int, commit: str = "") -> list[guard.Entry]:
+    return [
+        guard.Entry(f"{directory}live/{i:03d}.jpg", f"{commit}blob{i}", commit) for i in range(n)
+    ]
+
+
+def test_image_budgets_per_directory(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(guard, "read_blobs", lambda blobs: dict.fromkeys(blobs, JPEG))
+    for directory, (max_files, _) in guard.IMAGE_BUDGETS.items():
+        over = _images(directory, max_files + 1)
+        assert [p for _, p in guard.check(over)] == [
+            f"{max_files + 1} images under {directory} (cap {max_files})"
+        ]
+        assert guard.check(over[:-1]) == []
+    # 24 in assets/ plus 24 in docs/figures/ is fine: the budgets are separate.
+    assert guard.check(_images("assets/", 24) + _images("docs/figures/", 24)) == []
+
+
+def test_image_byte_budget(monkeypatch: pytest.MonkeyPatch) -> None:
+    big = b"\xff\xd8\xff\xe0" + b"\0" * 4_500_000  # under the per-file cap, 3 of them over budget
     monkeypatch.setattr(guard, "read_blobs", lambda blobs: dict.fromkeys(blobs, big))
-    findings = guard.check(entries[:3])
-    assert len(findings) == 1 and findings[0][1].startswith("assets/ images total")
+    findings = guard.check(_images("assets/", 3))
+    assert len(findings) == 1 and findings[0][1].startswith("images under assets/ total")
+
+
+def test_history_budget_is_per_commit(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(guard, "read_blobs", lambda blobs: dict.fromkeys(blobs, JPEG))
+    two_commits = _images("assets/", 20, "c1") + _images("assets/", 20, "c2")
+    assert guard.check(two_commits) == []
+    findings = guard.check(_images("assets/", 25, "c1") + _images("assets/", 3, "c2"))
+    assert [(e.commit, p) for e, p in findings] == [("c1", "25 images under assets/ (cap 24)")]
 
 
 def test_gitignore_matches_guard() -> None:
@@ -139,10 +208,12 @@ def test_gitignore_matches_guard() -> None:
     assert missing == [], f".gitignore lacks patterns for {missing}"
     for directory in guard.BLOCKED_DIRS:
         assert f"/{directory}" in lines
-    allowed = sorted(f"!assets/**/*{s}" for s in guard.ALLOWED_IMAGE_SUFFIXES)
+    allowed = sorted(
+        f"!{d}**/*{s}" for d in guard.IMAGE_BUDGETS for s in guard.ALLOWED_IMAGE_SUFFIXES
+    )
     assert [p for p in allowed if p not in lines] == []
-    extra = sorted(p for p in lines if p.startswith("!assets/") and p not in allowed)
-    assert extra == [], f".gitignore re-includes types the guard refuses: {extra}"
+    extra = sorted(p for p in lines if p.startswith("!") and p not in allowed)
+    assert extra == [], f".gitignore re-includes paths the guard refuses: {extra}"
 
 
 def test_parse_raw() -> None:

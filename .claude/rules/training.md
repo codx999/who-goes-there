@@ -15,3 +15,6 @@ paths:
   scheduler, val score, checkpoint hash). The ledger row is what gets reviewed.
 - Hyperparameters and the checkpoint are chosen on val only. cis test and trans test are scored
   once, at the end, by the user's go-ahead.
+- Notebooks are committed with outputs cleared (Kaggle: Edit > Clear all outputs, or
+  `jupyter nbconvert --clear-output --inplace <nb>.ipynb`). The guard refuses any embedded image,
+  including plots; save figures as PNG under `docs/figures/` instead (40 files, 20 MB budget).
