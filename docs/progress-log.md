@@ -128,3 +128,42 @@ question 1).
 Review: tier 0 for the docs plus CLAUDE.md (two added lines). The user decides whether the
 CLAUDE.md change waits for the session 2 review or gets `/code-review xhigh --max-findings all
 9c0c2e4..HEAD` now.
+
+## 2026-10-11: session 2, the review machinery (Fable 5.1)
+
+The user asked for Opus 5.5 at high; the session ran on Fable 5.1 and said so before writing
+anything. Item 2.04 therefore replaces the Fable risk-reviewer with a second Opus run.
+
+**Done.** Step 0, approved by the user: the two rules files brought in line with the final design.
+`.claude/rules/training.md` lists the ledger-row fields of plan.md section 5 in order (run id,
+model, arm, config, split seed, run seed, split hash, epochs run, best epoch, scheduler, val
+accuracy, val macro-F1, trans_val accuracy, checkpoint hash) and states that arm A and arm B
+configs differ only in the `arm` field; `.claude/rules/data.md` gains the rule that boxes are
+training-time augmentation and attention scoring only, never a model input, with the sampler in
+`trailcam/data/boxcrop.py` unreachable from the eval transform, and drops the `tests/fixtures/**`
+path (the generator is `trailcam/data/synthetic.py`, covered by `trailcam/data/**`). Then items
+2.01 to 2.03, one commit each, Part B of `docs/review/playbook-reusable.md` filled for this repo:
+`docs/review/invariants.md` with 38 rows in one table (R01 to R07 what never enters git, R10 to R17
+splits and test-set isolation, R20 to R27 transforms, boxes and the experiment, R30 to R38 model,
+training, evaluation, demo and Space, R40 to R45 the ledger row and the control plane; the
+playbook's "15 classes plus empty" starter row superseded by the 12-class map); `scripts/risk_files.sh`
+(regex: `^trailcam/`, `^space/`, `\.ipynb$` plus the control plane; exit 2 on a bad range) with
+`tests/test_risk_files.py` (12 tests: risky and safe samples, bad ranges, a move out of a risky
+path, a non-ASCII path, the invariants table shape, and every "where" path matched by the regex);
+`.claude/agents/code-reviewer.md` (Opus 5.5, xhigh, whole range), `.claude/agents/risk-reviewer.md`
+(Fable 5.1, high, given files) and `.claude/commands/review-session.md` (tier 3 for 3.03 and 9.01,
+run items through the ledger row R40). Acceptance steps run and passed: the grep count is 40, the
+test file passes, `risk_files.sh 9788ae4..HEAD` prints CLAUDE.md, `scripts/guard_data.py` and
+`scripts/risk_files.sh` and no `docs/` path, a bad range exits 2, `check.sh` green (61 tests).
+Not changed: `.claude/settings.json` and CLAUDE.md (Part B steps 5 and 6 were done at bootstrap
+and in session 1).
+
+**Next.** Item 2.04 (user): the first review over the explicit range `9788ae4..HEAD`
+(`/review-session` alone computes merge-base(main, HEAD)..HEAD and would cover only this session's
+commits after the merge). Then session 3 (2026-10-12): the class map, the metadata loader, the
+re-split by sequence with the leakage tests (tier 3, xhigh) and the data card.
+
+Review: tier 2 (every changed file is control plane: `.claude/`, `scripts/`, `tests/`). Command
+for the user: `/review-session 9788ae4..HEAD 2.01 2.02 2.03`, with a second Opus `code-reviewer`
+run in place of the Fable `risk-reviewer` because Fable wrote the files; or
+`/code-review xhigh --max-findings all 9788ae4..HEAD`. Not started by this session.
