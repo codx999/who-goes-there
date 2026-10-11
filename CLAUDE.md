@@ -30,7 +30,8 @@ scope: detection, sequence-level classification, the `empty` class, anything bey
 - Leakage alarms: an image or sequence id in two splits, a location in both train and trans, or
   trans accuracy close to cis accuracy.
 - The class-to-index map lives in `trailcam/data/classes.py` and is imported everywhere.
-- Augmentation on the training transform only; val and test get resize and normalise.
+- Augmentation on the training transform only; val and test get resize (shorter side 256),
+  centre crop 224 and normalise.
 - Bounding boxes are training-time augmentation (arm B) and attention scoring only; never a model input.
 - Stack: Python 3.12, uv, torch, torchvision, timm, gradio, grad-cam. Kaggle runs training; the Mac
   runs code, tests and the dry-run. Never start a long training run on your own.
