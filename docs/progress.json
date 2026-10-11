@@ -22,7 +22,7 @@
     {"id": "3.01", "session": 3, "owner": "claude", "due": "2026-10-12",
      "description": "trailcam/data/classes.py: the 12-class list in plan.md order, name-to-index and CCT-category-id-to-index maps, the dropped ids (30 empty, 21 badger, 51 fox, 34 deer), written once",
      "steps": "uv run pytest tests/test_classes.py passes: 12 classes, indices 0 to 11 in plan.md order, CCT ids match docs/data-inspection.md, dropped ids are rejected by the lookup",
-     "passes": false},
+     "passes": true},
     {"id": "3.02", "session": 3, "owner": "claude", "due": "2026-10-12",
      "description": "trailcam/data/metadata.py: load the five COCO-style JSON files into one record per image with label, location, seq_id, frame_num, capture hour from date_captured, every bounding box (possibly none), and an optional day/night flag read from the cache's sidecar when present; drop empties, the three rare classes and images with more than one distinct species, keep same-species multi-annotation images; prints counts only. Also trailcam/data/synthetic.py (metadata part): writes a synthetic five-file metadata set (12 classes, 2 cis and 1 trans location, 3-frame sequences, boxes on about 90% of annotations, enough sequences per class to stratify) into a given directory; the images part is added in 4.03",
      "steps": "uv run pytest tests/test_metadata.py passes on the synthetic metadata written to tmp_path (never committed, so the guard's 100-record cap does not apply): boxes and hours survive loading, filters remove the right records; `uv run python -m trailcam.data.metadata --root <abs path to data/>` prints images per class per split, boxed fraction, hour histogram and the number dropped per rule, no file names",

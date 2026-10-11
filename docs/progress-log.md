@@ -229,3 +229,26 @@ the Read deny rules with a probe file in `data/`. Then session 3 (2026-10-12). T
 metadata loader, re-split with the leakage tests (tier 3).
 
 Review: tier 2, ran /review-session 9788ae4..HEAD (code-reviewer Opus xhigh on the range, second Opus run on the risk files)
+
+## 2026-10-11: session 3, item 3.01, the class map (Opus 5.5)
+
+**Done.** `trailcam/data/classes.py`: the 12 classes of plan section 2 in index order 0 to 11
+with their CCT ids, read-only name-to-index and CCT-id-to-index maps, `INDEX_TO_CCT_ID`,
+`NUM_CLASSES`, the four dropped ids (30 empty, 21 badger, 51 fox, 34 deer) and lookups that
+raise `DroppedClassError` for a dropped id or name and `KeyError` for an unknown one.
+`tests/test_classes.py` reads the expected order and ids from the plan's class table and the
+category table in `docs/data-inspection.md`, checks kept plus dropped equals the 16 categories,
+and that the maps are read-only. R05's test cell names the file; the two-species filter stays
+"none yet" until 3.02. `uv run pytest tests/test_classes.py` passes; item 3.01 flipped.
+
+Unblocker, edited by the user: the project Read deny rules `./data/**`, `./models/**` and
+`./outputs/**` were applied to folders of that name at any depth and refused `trailcam/data/`
+(probe: `tests/data/` refused, `trailcam/model/` allowed). The user changed them to `/data/**`,
+`/models/**`, `/outputs/**` (anchored at the project root) in this worktree's and in the main
+checkout's `.claude/settings.json`; an app-made worktree also loads the main checkout's project
+settings, so the worktree edit alone did not help. Probes after both edits: nested folders
+readable; top-level `data/`, `models/`, `outputs/` in the worktree and the main checkout still
+refused. `tests/test_control_plane.py` pins the new lines. The main checkout's copy is an
+uncommitted edit: `git restore .claude/settings.json` there before merging this branch.
+
+**Next.** Item 3.02, the metadata loader and the synthetic metadata writer.

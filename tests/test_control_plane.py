@@ -134,8 +134,10 @@ def test_no_conftest() -> None:
 
 
 def test_settings_keep_the_read_deny_lines() -> None:
+    """The folder rules are anchored at the project root (`/data/**`): the `./data/**` form was
+    applied to every `data/` folder at any depth and refused `trailcam/data/` (session 3)."""
     deny = json.loads((ROOT / ".claude" / "settings.json").read_text())["permissions"]["deny"]
-    for rule in ("Read(./data/**)", "Read(./models/**)", "Read(./outputs/**)", "Read(./.env)"):
+    for rule in ("Read(/data/**)", "Read(/models/**)", "Read(/outputs/**)", "Read(./.env)"):
         assert rule in deny
 
 
