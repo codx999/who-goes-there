@@ -9,7 +9,7 @@
     {"id": "2.02", "session": 2, "owner": "claude", "due": "2026-10-11",
      "description": "scripts/risk_files.sh with the control-plane regex plus ^trailcam/, ^space/ and \\.ipynb$, and tests/test_risk_files.py that parses the invariants 'where' column",
      "steps": "uv run pytest tests/test_risk_files.py passes; `bash scripts/risk_files.sh 9788ae4..HEAD` prints CLAUDE.md, scripts/guard_data.py and scripts/risk_files.sh and no path under docs/; `bash scripts/risk_files.sh bad..range; echo $?` prints 2",
-     "passes": false},
+     "passes": true},
     {"id": "2.03", "session": 2, "owner": "claude", "due": "2026-10-11",
      "description": ".claude/agents/code-reviewer.md (Opus 5.5 xhigh, whole range) and risk-reviewer.md (Fable 5.1 high, given files), both read-only with Read, Grep, Glob, Bash, and .claude/commands/review-session.md that refuses uncommitted changes, computes merge-base(main, HEAD)..HEAD, runs risk_files.sh, selects invariant rows, reports the tier and spawns both agents",
      "steps": "the three files exist; each agent file states its tools, read-only, severity definition and that 'nothing found' is valid; `bash scripts/check.sh` green",
