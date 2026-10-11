@@ -126,7 +126,12 @@ def test_fields_boxes_and_hours_survive_loading(fixture_dir: Path, meta: Metadat
             assert r.seq_num_frames == image["seq_num_frames"]
             assert (r.width, r.height) == (image["width"], image["height"])
             assert r.hour == int(image["date_captured"][11:13])
-            assert [list(b) for b in r.boxes] == boxes.get(r.image_id, [])
+            # The fixture's boxes lie inside the frame, so each is its pixel box over the size.
+            expected = [
+                (x / r.width, y / r.height, w / r.width, h / r.height)
+                for x, y, w, h in boxes.get(r.image_id, [])
+            ]
+            assert r.boxes == pytest.approx(expected)
             assert INDEX_TO_CCT_ID[r.label] == cats[r.image_id][0]
 
 
@@ -289,6 +294,56 @@ def test_repeated_image_raises(fixture_dir: Path) -> None:
         load_metadata(fixture_dir)
 
 
+def test_boxes_are_fractions_inside_the_frame(meta: Metadata) -> None:
+    boxes = [b for split in SPLITS for r in meta.records[split] for b in r.boxes]
+    assert boxes
+    for x, y, w, h in boxes:
+        assert 0 <= x < 1 and 0 <= y < 1 and 0 < w <= 1 and 0 < h <= 1
+        assert x + w <= 1 + 1e-9 and y + h <= 1 + 1e-9
+    assert all(n == 0 for n in meta.clipped_boxes.values())
+
+
+def test_normalise_box() -> None:
+    inside, clipped = metadata.normalise_box([10, 20, 30, 40], 100, 200)
+    assert inside == pytest.approx((0.1, 0.1, 0.3, 0.2)) and not clipped
+    whole, clipped = metadata.normalise_box([0, 0, 100, 200], 100, 200)
+    assert whole == pytest.approx((0.0, 0.0, 1.0, 1.0)) and not clipped
+    over, clipped = metadata.normalise_box([-5, 190, 110, 20], 100, 200)
+    assert over == pytest.approx((0.0, 0.95, 1.0, 0.05)) and clipped
+    with pytest.raises(ValueError, match="outside"):
+        metadata.normalise_box([100, 0, 10, 10], 100, 200)
+    with pytest.raises(ValueError, match="image"):
+        metadata.normalise_box([0, 0, 10, 10], 0, 200)
+
+
+def test_overrunning_boxes_are_clipped_and_counted(fixture_dir: Path) -> None:
+    path = fixture_dir / "trans_test_annotations.json"
+    data = json.loads(path.read_text())
+    images = {image["id"]: image for image in data["images"]}
+    cats = categories_by_image(data)
+    kept_boxed = [
+        a
+        for a in data["annotations"]
+        if "bbox" in a
+        and len(set(cats[a["image_id"]])) == 1
+        and a["category_id"] not in DROPPED_CCT_IDS
+    ]
+    right, bottom = kept_boxed[0], kept_boxed[1]
+    width, height = images[right["image_id"]]["width"], images[right["image_id"]]["height"]
+    right["bbox"] = [width - 10.0, 0.0, 30.0, 12.0]  # 20 px past the right edge
+    bottom["bbox"] = [-4.0, height - 6.0, 16.0, 9.0]  # past the left and bottom edges
+    path.write_text(json.dumps(data))
+    meta = load_metadata(fixture_dir)
+    assert meta.clipped_boxes == {s: 2 if s == "trans_test" else 0 for s in SPLITS}
+    by_id = {r.image_id: r for r in meta.records["trans_test"]}
+    assert by_id[right["image_id"]].boxes[0] == pytest.approx(
+        ((width - 10) / width, 0.0, 10 / width, 12 / height)
+    )
+    assert by_id[bottom["image_id"]].boxes[0] == pytest.approx(
+        (0.0, (height - 6) / height, 12 / width, 6 / height)
+    )
+
+
 def test_malformed_box_raises(fixture_dir: Path) -> None:
     def bad_box(data: dict[str, Any]) -> None:
         next(a for a in data["annotations"] if "bbox" in a)["bbox"] = [1.0, 2.0, 0.0, 5.0]
@@ -329,6 +384,7 @@ def test_cli_prints_counts_and_no_ids_or_file_names(
     for rule in DROP_RULES:
         assert re.search(rf"^{rule}\s", out, re.MULTILINE), rule
     assert "Boxed fraction" in out and "Capture hour histogram" in out
+    assert "Boxes clipped to the frame" in out
     assert re.search(r"^  23\s+\d+$", out, re.MULTILINE)
     total = sum(len(meta.records[s]) for s in SPLITS)
     assert re.search(rf"^total\s.*\s{total}$", out, re.MULTILINE)

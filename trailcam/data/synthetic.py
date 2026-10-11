@@ -53,7 +53,7 @@ class _Writer:
     files: dict[str, dict[str, list[dict[str, Any]]]] = field(
         default_factory=lambda: {split: {"images": [], "annotations": []} for split in SPLITS}
     )
-    night: dict[str, dict[str, bool]] = field(default_factory=dict)
+    night: dict[str, dict[str, bool | int]] = field(default_factory=dict)
     n_images: int = 0
     n_sequences: int = 0
     n_annotations: int = 0
@@ -112,7 +112,7 @@ class _Writer:
                     "rights_holder": "synthetic",
                 }
             )
-            self.night[image_id] = {"night": hour in NIGHT_HOURS}
+            self.night[image_id] = {"night": hour in NIGHT_HOURS, "hour": hour}
             self.annotate(split, image_id, cct_id)
             for other in (extra or {}).get(frame, []):
                 self.annotate(split, image_id, other)

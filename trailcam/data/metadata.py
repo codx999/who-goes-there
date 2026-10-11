@@ -2,7 +2,9 @@
 
 Each kept image becomes a `Record` with its label index from `trailcam.data.classes`, location,
 sequence id and frame, capture hour, every bounding box (possibly none) and an optional day/night
-flag from the cache's sidecar. Images are dropped by these rules, checked in this order:
+flag from the cache's sidecar. Boxes are stored as fractions of the image (0 to 1), clipped to the
+frame, so they hold at every resolution the image is read at (1024 px tarball, 512 px cache, crop).
+Images are dropped by these rules, checked in this order:
 
 1. `two_species`: annotations with more than one distinct category (78 images in CCT20).
    Several annotations of one species keep that label and all their boxes.
@@ -33,10 +35,13 @@ EMPTY_CCT_ID: Final = 30
 DATE_FORMAT: Final = "%Y-%m-%d %H:%M:%S"
 
 # Written next to the image cache by scripts/kaggle_prepare_cct20.py (item 6.01): a JSON object
-# mapping image id to {"night": bool, ...}. Read only when present.
+# mapping image id to {"night": bool, "hour": int, ...} (plan.md section 2). Only "night" is read,
+# and only when the file is present.
 DAY_NIGHT_SIDECAR: Final = "day_night.json"
 
-Box = tuple[float, float, float, float]  # COCO [x, y, width, height] in pixels of width x height
+# (x, y, width, height) as fractions of the image width and height: the COCO pixel box divided by
+# the image's `width` and `height`, after clipping to the frame.
+Box = tuple[float, float, float, float]
 
 
 @dataclass(frozen=True)
@@ -60,10 +65,12 @@ class Record:
 
 @dataclass(frozen=True)
 class Metadata:
-    """Kept records per official split, in file order, and images dropped per split per rule."""
+    """Kept records per official split, in file order, images dropped per split per rule, and
+    the number of kept boxes per split that ran past the frame and were clipped."""
 
     records: Mapping[str, tuple[Record, ...]]
     dropped: Mapping[str, Mapping[str, int]]
+    clipped_boxes: Mapping[str, int]
 
 
 def annotation_file_name(split: str) -> str:
@@ -90,13 +97,25 @@ def capture_hour(date_captured: str) -> int:
     return datetime.strptime(date_captured, DATE_FORMAT).hour
 
 
-def _parse_box(raw: Any) -> Box:
+def normalise_box(raw: Any, width: int, height: int) -> tuple[Box, bool]:
+    """A COCO pixel box as fractions of `width` x `height`, clipped to the frame.
+
+    Returns the box and whether clipping changed it. Raises ValueError for a malformed box or one
+    with no area left inside the frame.
+    """
     if not isinstance(raw, list) or len(raw) != 4:
         raise ValueError("a bbox is not a list of four numbers")
     x, y, w, h = (float(v) for v in raw)
     if w <= 0 or h <= 0:
         raise ValueError("a bbox has a non-positive width or height")
-    return (x, y, w, h)
+    if width <= 0 or height <= 0:
+        raise ValueError("an image has a non-positive width or height")
+    x0, y0 = max(x, 0.0), max(y, 0.0)
+    x1, y1 = min(x + w, float(width)), min(y + h, float(height))
+    if x1 <= x0 or y1 <= y0:
+        raise ValueError("a bbox lies outside its image")
+    clipped = (x0, y0, x1, y1) != (x, y, x + w, y + h)
+    return (x0 / width, y0 / height, (x1 - x0) / width, (y1 - y0) / height), clipped
 
 
 def _check_categories(categories: Sequence[Mapping[str, Any]], split: str) -> None:
@@ -129,8 +148,8 @@ def load_night_flags(path: Path) -> dict[str, bool]:
 
 def load_split(
     path: Path, split: str, night_flags: Mapping[str, bool] | None = None
-) -> tuple[tuple[Record, ...], dict[str, int]]:
-    """Kept records of one annotation file and the number of images dropped per rule."""
+) -> tuple[tuple[Record, ...], dict[str, int], int]:
+    """Kept records of one annotation file, images dropped per rule and boxes clipped."""
     data = json.loads(path.read_text())
     _check_categories(data["categories"], split)
 
@@ -146,6 +165,7 @@ def load_split(
         raise ValueError(f"{split}: annotations for {orphans} image ids not in the file")
 
     dropped = dict.fromkeys(DROP_RULES, 0)
+    clipped = 0
     records: list[Record] = []
     for image in data["images"]:
         anns = annotations.get(image["id"], [])
@@ -166,6 +186,13 @@ def load_split(
         location = image["location"]
         if not isinstance(location, int) or isinstance(location, bool):
             raise ValueError(f"{split}: a location is not an integer")
+        width, height = int(image["width"]), int(image["height"])
+        boxes: list[Box] = []
+        for ann in anns:
+            if "bbox" in ann:
+                box, was_clipped = normalise_box(ann["bbox"], width, height)
+                boxes.append(box)
+                clipped += was_clipped
         records.append(
             Record(
                 image_id=image["id"],
@@ -176,14 +203,14 @@ def load_split(
                 seq_id=image["seq_id"],
                 frame_num=int(image["frame_num"]),
                 seq_num_frames=int(image["seq_num_frames"]),
-                width=int(image["width"]),
-                height=int(image["height"]),
+                width=width,
+                height=height,
                 hour=capture_hour(image["date_captured"]),
-                boxes=tuple(_parse_box(ann["bbox"]) for ann in anns if "bbox" in ann),
+                boxes=tuple(boxes),
                 night=None if night_flags is None else night_flags.get(image["id"]),
             )
         )
-    return tuple(records), dropped
+    return tuple(records), dropped, clipped
 
 
 def load_metadata(root: Path, sidecar: Path | None = None) -> Metadata:
@@ -198,9 +225,12 @@ def load_metadata(root: Path, sidecar: Path | None = None) -> Metadata:
     night_flags = None if sidecar is None else load_night_flags(sidecar)
     records: dict[str, tuple[Record, ...]] = {}
     dropped: dict[str, Mapping[str, int]] = {}
+    clipped: dict[str, int] = {}
     for split in SPLITS:
-        records[split], dropped[split] = load_split(files[split], split, night_flags)
-    return Metadata(records=records, dropped=dropped)
+        records[split], dropped[split], clipped[split] = load_split(
+            files[split], split, night_flags
+        )
+    return Metadata(records=records, dropped=dropped, clipped_boxes=clipped)
 
 
 def summary(meta: Metadata) -> str:
@@ -226,6 +256,11 @@ def summary(meta: Metadata) -> str:
         boxed = sum(1 for r in recs if r.boxes)
         share = boxed / len(recs) if recs else 0.0
         lines.append(f"  {split:<12}{boxed:>7} of {len(recs):>6}  {share:.3f}")
+
+    lines += ["", "Boxes clipped to the frame (kept images)"]
+    for split in SPLITS:
+        n_boxes = sum(len(r.boxes) for r in meta.records[split])
+        lines.append(f"  {split:<12}{meta.clipped_boxes[split]:>7} of {n_boxes:>6} boxes")
 
     every = [r for split in SPLITS for r in meta.records[split]]
     hours = Counter(r.hour for r in every)

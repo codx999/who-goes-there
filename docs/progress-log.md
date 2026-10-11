@@ -276,4 +276,14 @@ dropped two_species 78, empty 4,014, rare 237, unannotated 0; boxed fraction 0.6
 0.92 (trans_val); hour 12 holds 4,525 images against about 1,100 to 1,800 for its neighbours, as
 plan section 2 says. Invariant test cells filled: R03, R05, R10, R15, R37.
 
+Follow-up, at the user's go-ahead after reviewing the two open decisions: boxes are now stored as
+fractions of the image's `width` and `height`, clipped to the frame in the loader
+(`normalise_box`) and counted per file; on the real metadata 100 of 47,729 kept boxes are clipped
+(train 33, cis_val 3, trans_val 2, cis_test 11, trans_test 51), and the CLI prints the count.
+The sidecar format, `day_night.json` mapping image id to `{"night": bool, "hour": int}` with
+extra keys allowed and its path passed with `--sidecar`, is written into plan section 2, along
+with the box format; R24's scenario names the double-scaling failure. The synthetic sidecar
+carries the hour too. `tests/test_metadata.py`: 26 tests (fractions against the written pixel
+boxes, `normalise_box` cases, two planted overrunning boxes clipped and counted).
+
 **Next.** Item 3.03, the re-split and the leakage tests (tier 3, xhigh).

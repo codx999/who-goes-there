@@ -79,6 +79,16 @@ and a day/night flag computed during the Kaggle resize from the pixels (infrared
 grayscale JPEGs whose three channels are near-identical; the clock alone is unreliable, hour 12
 holds about twice as many images as its neighbours). About half the images are night shots.
 
+Boxes are stored once, in `trailcam/data/metadata.py`, as fractions (x, y, width, height) of the
+image's original `width` and `height`, so the same box holds on the 1024 px tarball, the 512 px
+cache and every crop (the resizes keep the aspect ratio); nothing downstream converts pixels
+again. Boxes that run past the frame are clipped to it and counted (100 of 47,729 kept boxes).
+The day/night flag lives in a sidecar, `day_night.json`, written next to the image cache by
+`scripts/kaggle_prepare_cct20.py`: one JSON object mapping each image id to
+`{"night": <bool>, "hour": <int>}` (extra keys such as the grayscale score are allowed). Training
+passes its path explicitly (`--sidecar`), since the cache and the annotation files may sit in
+different folders; without it the flag is absent.
+
 **Imbalance.** opossum alone is 20% of train; opossum + raccoon are 47% of trans test. Accuracy
 alone would reward predicting opossum, so macro-F1 sits next to accuracy everywhere (section 7).
 
