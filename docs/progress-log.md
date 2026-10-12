@@ -479,8 +479,14 @@ Notes, not fixed: displays that go around the repr (`vars(r)`, `dataclasses.asdi
 `Record` on Kaggle was reasoned, not run (code-reviewer). `check.sh` green (213 passed). The fix
 commit touches `trailcam/data/metadata.py`, so one fix round on it is due.
 
-**Next.** The fix round, `/review-session 6860117..HEAD 3.05`; then session 4, item 4.01, the
-Dataset and transforms.
+Fix round, started by the user: `/review-session 6860117..HEAD 3.05`, tier 2, risk files
+`tests/test_metadata.py`, `trailcam/data/metadata.py`; code-reviewer on Opus at xhigh,
+risk-reviewer on Fable at high. Nothing found by either; every scenario held (R01, R03, R05, R10,
+R15, R42 to R45). Spec changed: none. Both traced pytest 9.1.1 and confirmed that the written-out
+`__eq__` turns off its field-by-field listing; neither ran the new test against the old code
+(read-only), which this session did before the fix (ids shown 2 and 24 times). No third round.
 
-Review: tier 2, ran `/review-session 3.05` (56bf5b0..6860117; code-reviewer Opus xhigh,
-risk-reviewer Fable high); fix round pending.
+**Next.** Session 4, item 4.01, the Dataset and transforms.
+
+Review: tier 2, ran `/review-session 3.05` (56bf5b0..6860117) and the fix round
+`/review-session 6860117..HEAD 3.05` (code-reviewer Opus xhigh, risk-reviewer Fable high)
