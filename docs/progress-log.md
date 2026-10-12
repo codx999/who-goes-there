@@ -546,4 +546,24 @@ download once, then `setup-uv` caches them). For 5.04, `uv add` wrote the lower 
 of the package would replace it with a PyPI CUDA build, so check the bounds against Kaggle's
 versions there.
 
+Review, started by the user: `/review-session 4.01`, tier 2, range c5b2a74..8ef7d6f, risk files
+`pyproject.toml`, `tests/test_dataset.py`, `trailcam/data/dataset.py`, `uv.lock`; code-reviewer
+on Opus at xhigh, risk-reviewer on Fable at high. Nothing above low; every scenario held (R01,
+R03, R20, R21, R23, R24 hook only, R38, R42 to R45). Known gaps passed: the R24 sampler (4.04),
+the R38 build-system table (5.04). Spec changed: plan section 10 only, cited by no row. One
+finding, verified and fixed in 4bea66b:
+- code-reviewer, low: the runtime minimums equalled the versions locked that day
+  (`torch>=2.14.1`, `torchvision>=0.29.1`, `pillow>=12.3.0`), so pip on Kaggle, which ignores
+  `[tool.uv.sources]`, would replace an older preinstalled CUDA torch with PyPI's build. Before
+  lowering them, `tests/test_dataset.py` was run in a scratch venv outside the repo on torch
+  2.3.0, torchvision 0.18.0 and Pillow 10.1.0 (the first torch built for NumPy 2, the first
+  Pillow with Python 3.12 wheels; NumPy 2.5.4, deprecation warnings as errors): 17 passed. The
+  minimums are now `torch>=2.3`, `torchvision>=0.18`, `pillow>=10.1`; the lock resolves the same
+  versions. New `tests/test_dependencies.py` pins them and checks they sit below the locked
+  versions; both tests fail on the old `pyproject.toml`. R38's test cell names it.
+Noted, not a finding (code-reviewer): the dataset's refusal of the training transform checks
+`split != "train"`, which cannot tell the re-split train from the official train file; 4.02 must
+test that the train loader is built from `Split.records["train"]` (R12). `check.sh` green (232
+passed). The fix commit touches `pyproject.toml`, so one fix round on it is due.
+
 **Next.** Item 4.02, the DataLoaders (tier 2).
