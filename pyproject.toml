@@ -3,7 +3,11 @@ name = "trailcam"
 version = "0.1.0"
 description = "Who Goes There: camera-trap species classifier on Caltech Camera Traps (CCT20)"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "pillow>=12.3.0",
+    "torch>=2.14.1",
+    "torchvision>=0.29.1",
+]
 
 [dependency-groups]
 dev = [
@@ -11,6 +15,18 @@ dev = [
     "pytest>=9.1.1",
     "ruff>=0.17.0",
 ]
+
+# Every platform but macOS (so CI's Linux) takes torch and torchvision from the CPU-only PyTorch
+# index and never downloads the CUDA builds; the macOS wheels on PyPI are CPU-only already. These
+# two tables are uv's alone: pip on Kaggle never reads them.
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform != 'darwin'" }]
+torchvision = [{ index = "pytorch-cpu", marker = "sys_platform != 'darwin'" }]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
@@ -20,6 +36,11 @@ testpaths = ["tests"]
 python_version = "3.12"
 strict = true
 files = ["trailcam", "scripts/guard_data.py"]
+
+# torchvision ships no type information (no py.typed); its names are typed Any.
+[[tool.mypy.overrides]]
+module = ["torchvision", "torchvision.*"]
+ignore_missing_imports = true
 
 [tool.ruff]
 line-length = 100

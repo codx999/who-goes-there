@@ -490,3 +490,60 @@ R15, R42 to R45). Spec changed: none. Both traced pytest 9.1.1 and confirmed tha
 
 Review: tier 2, ran `/review-session 3.05` (56bf5b0..6860117) and the fix round
 `/review-session 6860117..HEAD 3.05` (code-reviewer Opus xhigh, risk-reviewer Fable high)
+
+## 2026-10-12: session 4, item 4.01, the Dataset and transforms (Opus 5.5)
+
+**Done.** Dependencies first, brought forward from 5.01 by the user's decision at session start
+(the Dataset needs them; asked rather than widened): `uv add torch torchvision pillow` (torch
+2.14.1, torchvision 0.29.1, Pillow 12.3.0), with a CPU-only PyTorch index for every platform but
+macOS in `[tool.uv.sources]`, so the lock gives Linux `torch 2.14.1+cpu` and holds no nvidia, cuda
+or triton package; a mypy override (`ignore_missing_imports`) for torchvision, which ships no
+`py.typed` (torch and Pillow ship types). timm and its override stay in 5.01. Plan section 10,
+"Setup maintenance", records the move (spec changed).
+
+`trailcam/data/dataset.py`: `CCT20Dataset`, the chapter 04 pattern (`classes`, `class_to_idx`,
+`load_image`, `__len__`, `__getitem__`) over one split's records and an image folder, returning
+`(float32 tensor (3, 224, 224), class index)`; a grayscale JPEG loads as three equal channels.
+The training transform is called with the image and the record's boxes and hands the boxes to
+its crop sampler; the eval transform is called with the image alone, and its `__call__` takes
+nothing else. `TrainTransform` (arm A): the sampler's crop resized to 224, horizontal flip
+p=0.5, colour jitter, random grayscale p=0.1, ImageNet normalisation; `ControlCropSampler`
+draws torchvision's `RandomResizedCrop.get_params` at scale 0.65 to 1.0, aspect 3/4 to 4/3, and
+ignores the boxes. `EvalTransform`: shorter side to 256, centre crop 224, normalise. The dataset
+refuses the training transform for records outside train and any transform of another type
+(R20). An unreadable image raises `ImageReadError` with the item's position, class and split,
+never the file name (the image id), and the original exception suppressed (R03). All randomness
+comes from torch's generator.
+
+Chosen here, since the plan does not pin it: "mild" colour jitter is brightness, contrast and
+saturation up to 20%, no hue. Left to their items: the box sampler and the `arm` switch (4.04,
+which plugs in through `TrainTransform(sampler=...)`) and the fixture JPEG writer with drawn
+boxes (4.03); the tests write their own noise JPEGs, grayscale for night records, for the
+synthetic metadata's seed 42 split.
+
+`tests/test_dataset.py`, 17 tests: shape, dtype and label (0 to 11, all 12 present, in record
+order) for every train and val item; the eval transform equal over two calls under different
+torch and Python seeds; six train outputs pairwise different; the train transform reproducible
+under one torch seed whatever Python's `random` state; the eval transform's signature and a spy
+in the dataset show it never receives a box; a spy sampler receives every record's boxes in
+order; over 2,000 draws the control sampler's area fraction stays within 0.65 to 1.0 and spans
+it; a black-third image shows the shorter-side resize and centre crop (a direct 224 resize
+fails it); a grey image normalises to the ImageNet constants; the transform refusals; a missing
+and a corrupt file raise without the file name; the dataset pickles. The pickling test found a
+bug, fixed before the commit: `class_to_idx` held the class map's `mappingproxy`, which cannot
+be pickled, so DataLoader workers started with spawn (macOS, the dry run) would have failed; it
+is now a dict copy. Eight mutations of `dataset.py` (a direct 224 resize, a flip in eval,
+torchvision's default scale from 0.08, boxes passed to eval, boxes dropped before the sampler,
+no normalisation, Python's `random` in the train path, the path in the error) each fail their
+test. The R20, R21 and R23 test cells name the file.
+
+`uv run pytest tests/test_dataset.py` 17 passed; `check.sh` green (230 passed), so `passes` is
+flipped.
+
+Notes for later: the first CI run with torch is the user's push of this commit (the CPU wheels
+download once, then `setup-uv` caches them). For 5.04, `uv add` wrote the lower bounds
+`torch>=2.14.1` and `torchvision>=0.29.1`; if Kaggle's preinstalled torch is older, `pip install`
+of the package would replace it with a PyPI CUDA build, so check the bounds against Kaggle's
+versions there.
+
+**Next.** Item 4.02, the DataLoaders (tier 2).

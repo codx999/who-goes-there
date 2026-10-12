@@ -357,7 +357,11 @@ session below also updates the setup it touches, in the same commit as the code:
 - **Session 5** (dependencies): the mypy overrides for torch, torchvision and timm; a CPU-only
   torch index in the lock so CI and the Mac do not download CUDA builds; the CI run (15-minute
   timeout, `uv sync --locked`) checked once with the new wheels. Confirm `/dryrun` and
-  `/review-shapes` still match the module paths and flags 5.03 implements.
+  `/review-shapes` still match the module paths and flags 5.03 implements. Brought forward to
+  item 4.01 by the user's decision of 2026-10-12, since the Dataset needs them: torch,
+  torchvision and Pillow, the CPU-only index for every platform but macOS, the torchvision
+  override (torch and Pillow ship types) and the first CI run with the new wheels; timm and its
+  override stay in 5.01.
 - **Sessions 6 and 11** (new scripts): `scripts/check.sh` runs mypy on `trailcam/` and
   `scripts/guard_data.py` by explicit path; `kaggle_prepare_cct20.py` and `deploy_space.py` are
   added there (and to the mypy `files` list) when written.

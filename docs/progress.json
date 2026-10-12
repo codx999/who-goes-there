@@ -43,7 +43,7 @@
     {"id": "4.01", "session": 4, "owner": "claude", "due": "2026-10-13",
      "description": "trailcam/data/dataset.py: a torch Dataset over the split (chapter 04 style) returning (tensor, index) and, for training, passing the image's boxes to the crop sampler; control-arm training transform with random resized crop (scale 0.65 to 1.0), horizontal flip, mild colour jitter and random grayscale p=0.1; eval transform with resize 256 shorter side, centre crop 224, ImageNet normalisation",
      "steps": "uv run pytest tests/test_dataset.py passes using synthetic JPEGs written to tmp_path: item shape (3, 224, 224), dtype float32, labels in 0..11, eval transform is deterministic over two calls and never receives boxes, train transform is not deterministic",
-     "passes": false},
+     "passes": true},
     {"id": "4.02", "session": 4, "owner": "claude", "due": "2026-10-13",
      "description": "trailcam/data/loaders.py: DataLoaders for train, val, trans_val, cis_test, trans_test; shuffle on train only; num_workers and pin_memory from config",
      "steps": "uv run pytest tests/test_loaders.py passes: a batch has shape (N, 3, 224, 224); the train loader uses a RandomSampler and every other loader a SequentialSampler",
