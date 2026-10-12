@@ -3,10 +3,12 @@ name = "trailcam"
 version = "0.1.0"
 description = "Who Goes There: camera-trap species classifier on Caltech Camera Traps (CCT20)"
 requires-python = ">=3.12"
+# Minimums are the oldest versions tests/test_dataset.py passed on (Python 3.12, NumPy 2), not the
+# locked ones: pip on Kaggle then keeps the preinstalled CUDA torch instead of replacing it.
 dependencies = [
-    "pillow>=12.3.0",
-    "torch>=2.14.1",
-    "torchvision>=0.29.1",
+    "pillow>=10.1",
+    "torch>=2.3",
+    "torchvision>=0.18",
 ]
 
 [dependency-groups]
