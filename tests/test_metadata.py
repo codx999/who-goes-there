@@ -11,6 +11,8 @@ import dataclasses
 import json
 import os
 import re
+import subprocess
+import sys
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -458,6 +460,55 @@ def test_reprs_show_no_image_id_seq_id_or_file_name(meta: Metadata) -> None:
     drops = ", ".join(f"{rule}={sum(meta.dropped[s][rule] for s in SPLITS)}" for rule in DROP_RULES)
     clipped = sum(meta.clipped_boxes.values())
     assert text == f"Metadata(records: {sizes}; dropped: {drops}; clipped_boxes={clipped})"
+
+
+# Two records that differ only in their ids, kept in a module of their own: pytest prints the
+# failing test's source, so the ids must not be written in the test itself.
+RECORDS_MODULE = """
+from trailcam.data.metadata import Record
+
+left = Record(image_id="leakmark-img-a", file_name="leakmark-img-a.jpg", split="train", label=0,
+              location=1, seq_id="leakmark-seq-a", frame_num=0, seq_num_frames=1, width=8,
+              height=8, hour=0, boxes=(), night=None)
+right = Record(image_id="leakmark-img-b", file_name="leakmark-img-b.jpg", split="train", label=0,
+               location=1, seq_id="leakmark-seq-b", frame_num=0, seq_num_frames=1, width=8,
+               height=8, hour=0, boxes=(), night=None)
+"""
+FAILING_TEST = """
+from leak_records import left, right
+
+
+def test_records_equal() -> None:
+    assert left == right
+"""
+
+
+def test_failed_record_equality_shows_no_id(tmp_path: Path) -> None:
+    """R03: pytest explains a failed `==` between two dataclasses field by field, printing every
+    differing field, ids included, without calling the repr (review 3.05, both reviewers). Runs a
+    failing comparison in a subprocess at default and -vv verbosity: the output holds the id-free
+    repr and no id."""
+    (tmp_path / "leak_records.py").write_text(RECORDS_MODULE)
+    (tmp_path / "test_leak.py").write_text(FAILING_TEST)
+    root = str(Path(__file__).resolve().parents[1])
+    env = {
+        **os.environ,
+        "PYTHONPATH": os.pathsep.join(filter(None, [root, os.environ.get("PYTHONPATH")])),
+    }
+    outcomes = []
+    for verbosity in ([], ["-vv"]):
+        result = subprocess.run(
+            [sys.executable, "-m", "pytest", "-p", "no:cacheprovider", *verbosity, "test_leak.py"],
+            cwd=tmp_path,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        out = result.stdout + result.stderr
+        outcomes.append(
+            (result.returncode, "1 failed" in out, "Record(class=" in out, out.count("leakmark"))
+        )
+    assert outcomes == [(1, True, True, 0), (1, True, True, 0)]
 
 
 # The real metadata (local runs; CI has no data and skips them)

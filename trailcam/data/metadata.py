@@ -22,7 +22,7 @@ import argparse
 import json
 from collections import Counter
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Final
@@ -49,7 +49,8 @@ class Record:
     """One kept image. `split` is the official file it came from; in a `trailcam.data.split.Split`
     it is the split the image is assigned to (train or val for the pooled files). The repr shows
     the class, split, location, frame, box count and night flag, never the image id, file name or
-    sequence id (R03); equality still compares every field.
+    sequence id (R03); equality still compares every field. `__eq__` is written out so pytest
+    explains a failed `==` with the repr instead of printing each differing field (review 3.05).
     """
 
     image_id: str
@@ -65,6 +66,14 @@ class Record:
     hour: int
     boxes: tuple[Box, ...]
     night: bool | None
+
+    def __eq__(self, other: object) -> bool:
+        """Every field in order, as the generated `__eq__` compared; the dataclass still adds the
+        frozen `__hash__` over the same fields."""
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        names = [f.name for f in fields(self)]
+        return [getattr(self, n) for n in names] == [getattr(other, n) for n in names]
 
     def __repr__(self) -> str:
         name = CLASSES[self.label] if 0 <= self.label < NUM_CLASSES else f"label {self.label}"
