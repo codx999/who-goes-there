@@ -2,8 +2,9 @@
 R15).
 
 The fixture is written to tmp_path and never committed. Expected values are read back from the
-written JSON, so the loader is checked against the files, not against itself. One test runs on
-the real metadata when `TRAILCAM_DATA_ROOT` is set (check.sh sets it locally; CI has no data).
+written JSON, so the loader is checked against the files, not against itself. Two tests run on
+the real metadata in `TRAILCAM_DATA_ROOT` (check.sh sets it locally; CI has no data and skips
+them; anywhere else a missing root fails).
 """
 
 import json
@@ -428,15 +429,24 @@ def test_cli_prints_counts_and_no_ids_or_file_names(
     assert re.search(rf"^total\s.*\s{total}$", out, re.MULTILINE)
 
 
-# The real metadata, when present (local runs; CI has no data)
+# The real metadata (local runs; CI has no data and skips them)
 
 REAL_ROOT = os.environ.get("TRAILCAM_DATA_ROOT", "")
 
 
-@pytest.mark.skipif(not REAL_ROOT, reason="TRAILCAM_DATA_ROOT is not set (CI has no data)")
+def real_root() -> str:
+    """The real metadata root. CI has no data, so the real-data tests skip there; anywhere else a
+    missing root fails, since item 3.03 allows the skip only in CI (review 3.03)."""
+    if REAL_ROOT:
+        return REAL_ROOT
+    if os.environ.get("CI"):
+        pytest.skip("TRAILCAM_DATA_ROOT is not set (CI has no data)")
+    pytest.fail("TRAILCAM_DATA_ROOT is not set; bash scripts/check.sh sets it", pytrace=False)
+
+
 def test_real_metadata_drops_match_data_inspection() -> None:
     """Counts from docs/data-inspection.md: images per file, two-species and empty images."""
-    meta = load_metadata(Path(REAL_ROOT))
+    meta = load_metadata(Path(real_root()))
     images = {"train": 13553, "cis_val": 3484, "trans_val": 1725, "cis_test": 15827,
               "trans_test": 23275}  # fmt: skip
     two_species = {"train": 7, "cis_val": 0, "trans_val": 61, "cis_test": 1, "trans_test": 9}
@@ -452,14 +462,13 @@ def test_real_metadata_drops_match_data_inspection() -> None:
     assert sum(meta.dropped[s]["two_species"] for s in SPLITS) == 78
 
 
-@pytest.mark.skipif(not REAL_ROOT, reason="TRAILCAM_DATA_ROOT is not set (CI has no data)")
 def test_real_metadata_boxes_and_rare_drops() -> None:
     """The box facts in plan section 2 and the rare drops of the item 3.02 CLI run (review 3.02).
 
     Boxes must be in the pixel space of each image's original width and height: 1024 px boxes
     divided by the 2048 to 2560 px originals would all end before 0.5 of the frame.
     """
-    meta = load_metadata(Path(REAL_ROOT))
+    meta = load_metadata(Path(real_root()))
     rare = {"train": 50, "cis_val": 4, "trans_val": 0, "cis_test": 168, "trans_test": 15}
     assert {s: meta.dropped[s]["rare"] for s in SPLITS} == rare
     boxes = [b for s in SPLITS for r in meta.records[s] for b in r.boxes]

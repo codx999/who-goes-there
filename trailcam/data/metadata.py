@@ -46,7 +46,8 @@ Box = tuple[float, float, float, float]
 
 @dataclass(frozen=True)
 class Record:
-    """One kept image. `split` is the official file it came from."""
+    """One kept image. `split` is the official file it came from; in a `trailcam.data.split.Split`
+    it is the split the image is assigned to (train or val for the pooled files)."""
 
     image_id: str
     file_name: str
