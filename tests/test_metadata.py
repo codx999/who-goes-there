@@ -7,6 +7,7 @@ the real metadata in `TRAILCAM_DATA_ROOT` (check.sh sets it locally; CI has no d
 them; anywhere else a missing root fails).
 """
 
+import dataclasses
 import json
 import os
 import re
@@ -427,6 +428,36 @@ def test_cli_prints_counts_and_no_ids_or_file_names(
     assert re.search(r"^  23\s+\d+$", out, re.MULTILINE)
     total = sum(len(meta.records[s]) for s in SPLITS)
     assert re.search(rf"^total\s.*\s{total}$", out, re.MULTILINE)
+
+
+def test_reprs_show_no_image_id_seq_id_or_file_name(meta: Metadata) -> None:
+    """R03: printing a Record or the Metadata (a log line, a failing test, a notebook cell) shows
+    no id; equality and hashing still use every field."""
+    records = [r for split in SPLITS for r in meta.records[split]]
+    leaks = 0
+    for r in records:
+        text = repr(r)
+        leaks += any(s in text for s in (r.image_id, r.seq_id, r.file_name, "syn-", ".jpg"))
+    assert (leaks, len(records) > 0) == (0, True)
+
+    first = records[0]
+    name, frame = CLASSES[first.label], f"{first.frame_num}/{first.seq_num_frames}"
+    assert repr(first) == (
+        f"Record(class={name}, split={first.split}, location={first.location}, "
+        f"frame={frame}, boxes={len(first.boxes)}, night={first.night})"
+    )
+    assert str(first) == repr(first)
+    other = dataclasses.replace(first, image_id="other", file_name="other.jpg", seq_id="other")
+    assert repr(other) == repr(first)
+    assert other != first and dataclasses.replace(first) == first
+    assert hash(dataclasses.replace(first)) == hash(first)
+
+    text = repr(meta)
+    assert "Record(" not in text and "syn-" not in text and ".jpg" not in text
+    sizes = ", ".join(f"{s}={len(meta.records[s])}" for s in SPLITS)
+    drops = ", ".join(f"{rule}={sum(meta.dropped[s][rule] for s in SPLITS)}" for rule in DROP_RULES)
+    clipped = sum(meta.clipped_boxes.values())
+    assert text == f"Metadata(records: {sizes}; dropped: {drops}; clipped_boxes={clipped})"
 
 
 # The real metadata (local runs; CI has no data and skips them)

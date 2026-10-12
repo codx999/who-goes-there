@@ -44,10 +44,13 @@ DAY_NIGHT_SIDECAR: Final = "day_night.json"
 Box = tuple[float, float, float, float]
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, repr=False)
 class Record:
     """One kept image. `split` is the official file it came from; in a `trailcam.data.split.Split`
-    it is the split the image is assigned to (train or val for the pooled files)."""
+    it is the split the image is assigned to (train or val for the pooled files). The repr shows
+    the class, split, location, frame, box count and night flag, never the image id, file name or
+    sequence id (R03); equality still compares every field.
+    """
 
     image_id: str
     file_name: str
@@ -63,15 +66,35 @@ class Record:
     boxes: tuple[Box, ...]
     night: bool | None
 
+    def __repr__(self) -> str:
+        name = CLASSES[self.label] if 0 <= self.label < NUM_CLASSES else f"label {self.label}"
+        return (
+            f"Record(class={name}, split={self.split}, location={self.location}, "
+            f"frame={self.frame_num}/{self.seq_num_frames}, boxes={len(self.boxes)}, "
+            f"night={self.night})"
+        )
 
-@dataclass(frozen=True)
+
+@dataclass(frozen=True, repr=False)
 class Metadata:
     """Kept records per official split, in file order, images dropped per split per rule, and
-    the number of kept boxes per split that ran past the frame and were clipped."""
+    the number of kept boxes per split that ran past the frame and were clipped. The repr shows
+    records per split, drops per rule and clipped boxes summed over the splits, never a record
+    (R03).
+    """
 
     records: Mapping[str, tuple[Record, ...]]
     dropped: Mapping[str, Mapping[str, int]]
     clipped_boxes: Mapping[str, int]
+
+    def __repr__(self) -> str:
+        sizes = ", ".join(f"{split}={len(rs)}" for split, rs in self.records.items())
+        rules = Counter[str]()
+        for per_rule in self.dropped.values():
+            rules.update(per_rule)
+        drops = ", ".join(f"{rule}={n}" for rule, n in rules.items())
+        clipped = sum(self.clipped_boxes.values())
+        return f"Metadata(records: {sizes}; dropped: {drops}; clipped_boxes={clipped})"
 
 
 def annotation_file_name(split: str) -> str:

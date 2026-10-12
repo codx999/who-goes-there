@@ -441,3 +441,25 @@ records the share in 6.03) and the trans-test locations used for `assets/` (chos
 42, `check.sh` green) all hold, so `passes` is flipped. `check.sh` green (211 passed).
 
 **Next.** Item 3.05, the id-free reprs for `Record` and `Metadata` (tier 2).
+
+## 2026-10-11: session 3, item 3.05, id-free reprs for Record and Metadata (Opus 5.5)
+
+**Done.** `trailcam/data/metadata.py`: `Record` and `Metadata` are `repr=False` dataclasses with
+their own `__repr__`, after the counts-only `Split` repr of 3.03. A record prints as
+`Record(class=..., split=..., location=..., frame=n/m, boxes=k, night=...)` (a label outside the
+class map prints as `label n` rather than raising); the metadata prints the records per split,
+the drops per rule and the clipped boxes, each summed over the splits. No image id, file name or
+seq id in either. Equality and hashing are unchanged (still every field, `eq` was not touched).
+New test `test_reprs_show_no_image_id_seq_id_or_file_name` in `tests/test_metadata.py`: no
+synthetic record's repr holds its image id, seq id or file name (nor `syn-` or `.jpg`), the exact
+format of one record and of the metadata, two records differing only in ids print the same but
+compare unequal, and a copy compares and hashes equal. R03's test cell in
+`docs/review/invariants.md` names the test. `uv run pytest tests/test_metadata.py` 32 passed
+(with `TRAILCAM_DATA_ROOT` exported); `check.sh` green (212 passed), so `passes` is flipped.
+
+Not covered, noted: pytest's own explanation of a failing `assert record == other` drills into
+the differing attributes and prints their values (checked on a scratch dataclass at default
+verbosity), so an id field that differs is shown; this goes through pytest's dataclass
+comparison, not the repr. Tests should compare counts or reprs, not whole records.
+
+**Next.** Session 4, item 4.01, the Dataset and transforms.

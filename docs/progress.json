@@ -38,7 +38,7 @@
     {"id": "3.05", "session": 3, "owner": "claude", "due": "2026-10-12",
      "description": "trailcam/data/metadata.py: id-free reprs for Record (class, split, location, frame, box count, night; no image id, file name or seq id) and Metadata (records per split, drops per rule, clipped boxes), so a printed record, a failing test or a notebook cell never shows an id (R03)",
      "steps": "uv run pytest tests/test_metadata.py passes, including: the repr of every synthetic record and of the Metadata contains no image id, seq id or file name, and record equality is unchanged; R03's test cell names the test; `bash scripts/check.sh` green",
-     "passes": false},
+     "passes": true},
 
     {"id": "4.01", "session": 4, "owner": "claude", "due": "2026-10-13",
      "description": "trailcam/data/dataset.py: a torch Dataset over the split (chapter 04 style) returning (tensor, index) and, for training, passing the image's boxes to the crop sampler; control-arm training transform with random resized crop (scale 0.65 to 1.0), horizontal flip, mild colour jitter and random grayscale p=0.1; eval transform with resize 256 shorter side, centre crop 224, ImageNet normalisation",
