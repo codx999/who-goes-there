@@ -411,3 +411,33 @@ id-free reprs (tier 2).
 
 Review: tier 3, ran `/code-review ultra` and `/review-session 3.03` (d889a44..e3a2cb5) and the fix
 round `/review-session e3a2cb5..HEAD 3.03` (code-reviewer Opus xhigh, risk-reviewer Fable high)
+
+## 2026-10-11: session 3, item 3.04, the data card (Opus 5.5)
+
+**Done.** `docs/data-card.md`: licence (CDLA-Permissive 1.0) and the Beery et al. 2018 citation,
+the 12 classes with CCT ids, the four drop rules with images dropped per official file, the
+per-split per-class counts after the re-split (seed 42) with sequences and locations, the boxed
+fraction per split, the capture-hour histogram, the seed and split hash, and the paper's two
+contradictions with the released files (57,868 vs 57,864 images; 224 sequences shared by train
+and cis_val). Counts come from `python -m trailcam.data.metadata` and `python -m
+trailcam.data.split --seed 42` on the main checkout's `data/`; the boxed fraction per re-split
+split was counted with the same modules (the metadata CLI prints it per official file only). A
+scratch script parsed the card and compared it with both CLI outputs: the 15 rows of the split
+table (12 classes, images, sequences, locations), the hash, the drop table and the hour table
+match exactly. Hash `c78a9c10...b009`, as logged for 3.03 and pinned in `tests/test_split.py`.
+
+Cross-check of the 3.03 pins against plan sections 2 and 3 and `docs/data-inspection.md`: the
+pool is 13,553 + 3,484 = 17,037 released, 13,496 + 2,485 = 15,981 kept = train 13,587 + val
+2,394; per file, released minus two_species, empty and rare gives the kept count in all five
+files, and 57,864 - 78 - 4,014 - 237 = 53,535; empties 995 + 61 + 1,180 + 1,778 = 4,014 and
+two-species 78 match the inspection; rare in train is 50, not 56, because the six badger + coyote
+images are dropped as two_species first (coyote 1,409 to 1,403); trans_val's rabbit falls from 70
+to 9 (the 59 bobcat + rabbit and 2 coyote + rabbit images); clipped boxes total 100 of 47,729, as
+the plan says. No disagreement found.
+
+Pending in the card, by design: the day/night share (the sidecar comes from 6.01, the user
+records the share in 6.03) and the trans-test locations used for `assets/` (chosen by the user in
+8.05; `assets/` does not exist yet). The item's steps (file exists, counts equal 3.03's for seed
+42, `check.sh` green) all hold, so `passes` is flipped. `check.sh` green (211 passed).
+
+**Next.** Item 3.05, the id-free reprs for `Record` and `Metadata` (tier 2).

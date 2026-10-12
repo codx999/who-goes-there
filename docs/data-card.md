@@ -1,0 +1,172 @@
+# Data card: CCT20 as used by Who Goes There
+
+Written 2026-10-11 (item 3.04) from `python -m trailcam.data.metadata` and
+`python -m trailcam.data.split --seed 42` run on the released annotation files. Counts, shapes and
+class distributions only: no image, sequence or file name appears here. Design and the reasons
+behind each rule: `docs/plan.md` sections 2 and 3. Raw facts before filtering:
+`docs/data-inspection.md`.
+
+## Source, licence and citation
+
+Caltech Camera Traps, CCT20 benchmark subset, from LILA BC
+(https://lila.science/datasets/caltech-camera-traps): 57,864 images from 20 camera locations in
+the American Southwest, five COCO-style annotation files (train, cis_val, trans_val, cis_test,
+trans_test) and the benchmark tarball `eccv_18_all_images_sm.tar.gz` (images resized to at most
+1024 px per side). Originals are 2048 x 1494 or 2560 x 1920; every image has `location`, `seq_id`,
+`frame_num`, `seq_num_frames`, `date_captured`, `width` and `height`.
+
+Licence: Community Data License Agreement, Permissive, version 1.0
+(https://cdla.dev/permissive-1-0/). The images and the metadata are not in this repository; the
+only dataset images in it are the demo photos in `assets/` (see the last section). Wherever the
+data or a photo from it is shown, cite:
+
+> Sara Beery, Grant Van Horn, Pietro Perona. "Recognition in Terra Incognita." Proceedings of the
+> European Conference on Computer Vision (ECCV), 2018. https://arxiv.org/abs/1807.04975
+
+## The 12 classes
+
+16 categories in the metadata, with non-contiguous ids; 12 are kept. The index order is the
+official train count order and is defined once in `trailcam/data/classes.py`.
+
+| index | class | CCT id |
+| --- | --- | --- |
+| 0 | opossum | 1 |
+| 1 | rabbit | 10 |
+| 2 | coyote | 9 |
+| 3 | cat | 16 |
+| 4 | squirrel | 5 |
+| 5 | raccoon | 3 |
+| 6 | dog | 8 |
+| 7 | bobcat | 6 |
+| 8 | car | 33 |
+| 9 | bird | 11 |
+| 10 | rodent | 99 |
+| 11 | skunk | 7 |
+
+## Dropped classes and rules
+
+Applied per image to all five files, in this order (an image is counted under the first rule that
+drops it):
+
+1. **two_species**: the image carries two different species (62 of the 78 are bobcat + rabbit).
+   Images with several annotations of one species (407 in official train) keep that label.
+2. **empty** (CCT id 30): zero images in official train, so it cannot be learned from the files as
+   given; filtered out of every split.
+3. **rare**: badger (21), fox (51) and deer (34). Official train holds 9, 5 and 42 of them; deer
+   has none in trans_test.
+4. **unannotated**: an image with no annotation; none exist in the released files.
+
+Images dropped per official file:
+
+| rule | train | cis_val | trans_val | cis_test | trans_test | all |
+| --- | --- | --- | --- | --- | --- | --- |
+| two_species | 7 | 0 | 61 | 1 | 9 | 78 |
+| empty | 0 | 995 | 61 | 1180 | 1778 | 4014 |
+| rare | 50 | 4 | 0 | 168 | 15 | 237 |
+| unannotated | 0 | 0 | 0 | 0 | 0 | 0 |
+| kept | 13496 | 2485 | 1603 | 14478 | 21473 | 53535 |
+| released | 13553 | 3484 | 1725 | 15827 | 23275 | 57864 |
+
+Train's rare count is 50, not 9 + 5 + 42 = 56, because six badger images also carry a coyote and
+fall under two_species first. trans_val loses 61 of its 70 rabbit images to two_species.
+
+## Counts per split after filtering and re-splitting
+
+The official train and cis_val files are pooled (17,037 images released, 15,981 kept) and re-split
+by `seq_id` into train and val, about 85 to 15, stratified by the sequence's majority class and by
+location (`trailcam/data/split.py`). cis_test, trans_val and trans_test pass through as filtered.
+Seed 42:
+
+| class | train | val | trans_val | cis_test | trans_test | all |
+| --- | --- | --- | --- | --- | --- | --- |
+| opossum | 2733 | 483 | 444 | 4524 | 5504 | 13688 |
+| rabbit | 2494 | 442 | 9 | 1757 | 843 | 5545 |
+| coyote | 1437 | 251 | 49 | 1326 | 2249 | 5312 |
+| cat | 1257 | 222 | 72 | 1632 | 1418 | 4601 |
+| squirrel | 1250 | 221 | 0 | 659 | 1050 | 3180 |
+| raccoon | 1016 | 180 | 129 | 1047 | 5469 | 7841 |
+| dog | 817 | 142 | 96 | 845 | 888 | 2788 |
+| bobcat | 799 | 140 | 734 | 897 | 2329 | 4899 |
+| car | 603 | 106 | 0 | 791 | 1113 | 2613 |
+| bird | 509 | 89 | 7 | 573 | 224 | 1402 |
+| rodent | 440 | 78 | 0 | 233 | 58 | 809 |
+| skunk | 232 | 40 | 63 | 194 | 328 | 857 |
+| **images** | 13587 | 2394 | 1603 | 14478 | 21473 | 53535 |
+| sequences | 5334 | 940 | 538 | 5882 | 8258 | 20952 |
+| locations | 10 | 10 | 1 | 10 | 9 | 20 |
+
+- val holds 2,394 of the 15,981 pool images (0.150) and 940 of the 6,274 pool sequences (0.150);
+  per pool location the val share of sequences is 0.147 to 0.154. The smallest val class is skunk
+  with 40 images (the floor is 30).
+- 3 pool sequences carry more than one label among their kept frames (0 majority ties); each image
+  keeps its own label.
+- train and val share all 10 cis locations; the 10 trans locations (1 in trans_val, 9 in
+  trans_test) appear in no cis split.
+- trans_val covers 9 of the 12 classes (no squirrel, car or rodent); it is a sanity check only and
+  is reported with macro-F1 over the classes present.
+- Imbalance: opossum is 20% of train; opossum and raccoon are 51% of trans_test after filtering.
+
+## Bounding boxes
+
+Boxes are stored as fractions of the original image size, clipped to the frame; they are
+training-time augmentation (arm B) and attention scoring only, never a model input.
+
+| split | images with at least one box | kept images | boxed fraction | boxes |
+| --- | --- | --- | --- | --- |
+| train | 11633 | 13587 | 0.856 | 12177 |
+| val | 2072 | 2394 | 0.865 | 2133 |
+| trans_val | 1472 | 1603 | 0.918 | 1551 |
+| cis_test | 12551 | 14478 | 0.867 | 13116 |
+| trans_test | 18010 | 21473 | 0.839 | 18752 |
+| all | 45738 | 53535 | 0.854 | 47729 |
+
+By official file the boxed fraction is 0.892 for train and 0.669 for cis_val (1,819 of its 3,582
+annotations lack a box); the re-split mixes the two. 100 of the 47,729 kept boxes ran past the
+frame and were clipped (33 train, 3 cis_val, 2 trans_val, 11 cis_test, 51 trans_test, by official
+file).
+
+## Day and night
+
+**Day/night share: pending item 6.03.** The flag is computed from the pixels during the Kaggle
+resize (item 6.01, `scripts/kaggle_prepare_cct20.py`: infrared frames are grayscale JPEGs with
+near-identical channels) and written to the `day_night.json` sidecar; the user records the share
+here when the cache is built (item 6.03). No sidecar exists yet, so no number is given.
+
+The capture clock is not a substitute: hour 12 holds 4,525 kept images against 1,769 at hour 11
+and 1,124 at hour 13. Kept images per capture hour, all splits:
+
+| hours | 00 | 01 | 02 | 03 | 04 | 05 | 06 | 07 | 08 | 09 | 10 | 11 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| images | 197 | 3097 | 3329 | 3401 | 3288 | 2824 | 1978 | 2375 | 2631 | 2398 | 1958 | 1769 |
+
+| hours | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22 | 23 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| images | 4525 | 1124 | 1119 | 903 | 965 | 981 | 1162 | 1919 | 2773 | 3135 | 2664 | 3020 |
+
+## Split seed and hash
+
+| seed | split hash (SHA-256 over split, image id and label, sorted by image id) |
+| --- | --- |
+| 42 | `c78a9c1048f63aa52f34578ca17a6391315afdc2e478b4dbfd8a3aa954d1b009` |
+
+The split is not stored as a file: `uv run python -m trailcam.data.split --root <data dir> --seed 42`
+rebuilds it and prints this hash. `tests/test_split.py` pins the counts and the hash above, and
+every training run records the hash in `docs/ledger.md`.
+
+## Where the paper and the released files disagree
+
+1. **Image count.** The paper gives 57,868 images; the released files hold 57,864. The four
+   splits the paper counts match the files exactly (train 13,553, cis_val 3,484, cis_test 15,827,
+   trans_test 23,275), and with the 1,725 trans_val images they sum to 57,864, so the four-image
+   discrepancy is in the paper's total, not in the files.
+2. **Shared sequences.** The paper says no sequence is split across train and cis_val; the
+   released files share 224 sequences between them (222 after filtering still have frames in both
+   files). This breaks the one-burst-one-split invariant, which is why the two files are pooled and
+   re-split by sequence. cis_test, trans_val and trans_test share no sequence with anything.
+
+## Trans-test locations used for assets/
+
+**Pending item 8.05.** The 6 to 12 demo photos in `assets/` (the Gradio examples and the only
+images Grad-CAM overlays are made from) are chosen by the user in item 8.05, from trans_test
+locations only, with at least two infrared night frames. Their locations are listed here then.
+None are chosen yet; `assets/` does not exist.
