@@ -457,9 +457,30 @@ compare unequal, and a copy compares and hashes equal. R03's test cell in
 `docs/review/invariants.md` names the test. `uv run pytest tests/test_metadata.py` 32 passed
 (with `TRAILCAM_DATA_ROOT` exported); `check.sh` green (212 passed), so `passes` is flipped.
 
-Not covered, noted: pytest's own explanation of a failing `assert record == other` drills into
-the differing attributes and prints their values (checked on a scratch dataclass at default
-verbosity), so an id field that differs is shown; this goes through pytest's dataclass
-comparison, not the repr. Tests should compare counts or reprs, not whole records.
+Not covered at first, noted: pytest's own explanation of a failing `assert record == other`
+drills into the differing attributes and prints their values (checked on a scratch dataclass at
+default verbosity), so an id field that differs is shown; this goes through pytest's dataclass
+comparison, not the repr. Fixed after the review, below.
 
-**Next.** Session 4, item 4.01, the Dataset and transforms.
+Review, started by the user: `/review-session 3.05`, tier 2, range 56bf5b0..6860117, risk files
+`tests/test_metadata.py`, `trailcam/data/metadata.py`; code-reviewer on Opus at xhigh,
+risk-reviewer on Fable at high. Nothing above low; every scenario held (R01, R03, R05, R10, R15,
+R42 to R45). Spec changed: none. Known gaps: none. One finding, verified and fixed in a99065c:
+- both reviewers, low: a failed `==` between two `Record`s still printed the differing image id,
+  file name and seq id, because pytest explains a dataclass with a generated `__eq__` field by
+  field without calling the repr. `Record` now writes its `__eq__` out (every field in order, as
+  before; the dataclass still adds the frozen `__hash__`), so pytest shows the id-free repr.
+  Took the code-reviewer's fix over the risk-reviewer's docstring note, which would have left
+  the gap open; a `conftest.py` hook was ruled out by R42 (both). New subprocess test
+  `test_failed_record_equality_shows_no_id` runs a failing comparison at default and `-vv`
+  verbosity; on the old code the ids appeared 2 and 24 times. R03's test cell names it.
+Notes, not fixed: displays that go around the repr (`vars(r)`, `dataclasses.asdict(r)`,
+`pd.DataFrame(records)`) still show ids, outside a repr change; how IPython and Rich show a
+`Record` on Kaggle was reasoned, not run (code-reviewer). `check.sh` green (213 passed). The fix
+commit touches `trailcam/data/metadata.py`, so one fix round on it is due.
+
+**Next.** The fix round, `/review-session 6860117..HEAD 3.05`; then session 4, item 4.01, the
+Dataset and transforms.
+
+Review: tier 2, ran `/review-session 3.05` (56bf5b0..6860117; code-reviewer Opus xhigh,
+risk-reviewer Fable high); fix round pending.
