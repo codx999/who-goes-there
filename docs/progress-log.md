@@ -725,13 +725,17 @@ cache, so the first fixed version is not known offline. `check.sh` and CI use th
 unaffected; Kaggle never writes the fixture (the dry run is Mac only), and the Dataset there only
 decodes, which passes on 10.1.
 
-Not changed, pending the user's decision: the minimum `pillow>=10.1`. `tests/test_dependencies.py`
-states it is verified; that holds for the Dataset and its tests, not for the fixture's tests. The
-options are to keep it and document the limit, or to raise the floor to the first version that
-writes reproducibly, found with network (touches `pyproject.toml`, `uv.lock` and
-`tests/test_dependencies.py`, R38, and needs a fix round). For 6.01: the prepare script writes
-the 512 px cache with Kaggle's Pillow, so check that version and that re-encoding an image there
-is reproducible.
+Kept by the user's decision (2026-10-13): the minimum `pillow>=10.1`, with no change to
+`pyproject.toml`, `uv.lock` or `tests/test_dependencies.py`. The floor covers what trailcam does
+at runtime (decode, which passes on 10.1); the fixture writes only on the Mac, with the locked
+12.3. The Pillow or libjpeg-turbo version that fixed the encoder is not known (not found in the
+release notes), and the nondeterminism was seen on macOS arm64 only, not shown on Kaggle's
+x86_64.
+
+Handoff to 6.01 (the prepare script is the only code that writes JPEGs on Kaggle): print Kaggle's
+Pillow version; before writing the cache, encode the same image in two separate processes and
+require identical bytes, refusing to continue otherwise; if it fails, upgrade Pillow in the
+notebook, and raise the `pyproject.toml` minimum only to a version that passes the same check.
 
 Noted, not fixed (risk-reviewer), by the user's decision: `mypy tests/test_synthetic.py` reports 7
 errors (Pillow's union return types compared as ints at lines 135, 138 and 146; the loop variable
