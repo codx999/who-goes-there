@@ -842,8 +842,23 @@ Grad-CAM mass inside any of the image's boxes. 4.03's handoff suggested checking
 fixture's drawn rectangles; the tests check it geometrically on every crop instead, which is
 exact, where the drawn pixels after JPEG and the resize would need a tolerance.
 
+Review, started by the user: `/review-session 4.04`, tier 2, range 3feec64..d257ca2 (the item
+commit 1722369 and the merge of main with 4.03; the diff against main holds only the 4.04 files),
+risk files `tests/test_boxcrop.py`, `trailcam/data/boxcrop.py`, `trailcam/data/dataset.py`,
+`trailcam/data/loaders.py`; code-reviewer on Opus at xhigh, risk-reviewer on Fable at high.
+Nothing found by either; every scenario held (R01, R03, R12, R16 loader part, R20, R21 and R23
+data side, R22, R24, R42 to R45). Known gaps passed: R16's run alarms (5.03); the model, demo,
+Space and attention parts of R20, R21 and R23 (5.01, 8.03, 10.01, 11.01). Spec changed: none.
+The code-reviewer's `check.sh` run was green (305 passed). The risk-reviewer probed 400 random
+image sizes from 8 to 2048 px with one to three boxes in a scratch script: 3,990 of 4,000
+box-path crops held a box at a fill of 0.2003 to 0.9925, and the other 10 were sub-pixel boxes
+handed to the control sampler. Noted, not findings: `make_loaders` falls back to arm A when no
+training transform is passed, so the 5.03 review should check that the training script passes
+`TrainTransform(arm)` (risk-reviewer); arm B's sampler is pickled in-process only, not through
+spawned workers, where 4.02's spawn test covers arm A's dataset (code-reviewer). No fix commit,
+so no fix round.
+
 **Next.** Session 5, item 5.01.
 
-Review: tier 2, risk files `tests/test_boxcrop.py`, `trailcam/data/boxcrop.py`,
-`trailcam/data/dataset.py`, `trailcam/data/loaders.py` (docstring only). Command for the user:
-`/review-session 4.04`. Not started by this session.
+Review: tier 2, ran `/review-session 4.04` (3feec64..d257ca2; code-reviewer Opus xhigh,
+risk-reviewer Fable high)
