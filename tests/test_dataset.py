@@ -2,10 +2,9 @@
 and 6; R20 augmentation on the training transform only, R21 ImageNet normalisation, R23 boxes
 never a model input and never seen by the eval transform).
 
-The images are synthetic JPEGs written into a temporary directory (never committed), one per
-record of the synthetic metadata's split for seed 42: random noise at the record's size, and a
-grayscale JPEG for a night record. Item 4.03 writes the fixture images with drawn boxes for the
-dry run; these tests need only readable files.
+The images are the synthetic fixture's JPEGs (trailcam/data/synthetic.py, item 4.03), written
+into a temporary directory (never committed) and split with seed 42: one per image at its size, a
+noisy background with a drawn rectangle per box, and a grayscale (mode L) JPEG for a night record.
 """
 
 import inspect
@@ -34,28 +33,18 @@ from trailcam.data.dataset import (
     ImageReadError,
     TrainTransform,
 )
-from trailcam.data.metadata import Box, Record, load_metadata
+from trailcam.data.metadata import Box, load_metadata
 from trailcam.data.split import Split, make_split
 
 SEED = 42
 
 
-def write_jpegs(records: Sequence[Record], root: Path, seed: int = 0) -> None:
-    rng = random.Random(seed)
-    root.mkdir(parents=True, exist_ok=True)
-    for r in records:
-        mode, bands = ("L", 1) if r.night else ("RGB", 3)
-        noise = rng.randbytes(r.width * r.height * bands)
-        Image.frombytes(mode, (r.width, r.height), noise).save(root / r.file_name, quality=90)
-
-
 @pytest.fixture(scope="module")
 def fixture(tmp_path_factory: pytest.TempPathFactory) -> tuple[Split, Path]:
     tmp = tmp_path_factory.mktemp("dataset")
-    paths = synthetic.write_synthetic_metadata(tmp / "meta")
-    split = make_split(load_metadata(tmp / "meta", paths["sidecar"]), SEED)
-    write_jpegs([r for name in ("train", "val") for r in split.records[name]], tmp / "images")
-    return split, tmp / "images"
+    written = synthetic.write_synthetic_fixture(tmp)
+    split = make_split(load_metadata(tmp, written.paths["sidecar"]), SEED)
+    return split, written.image_root
 
 
 @pytest.fixture(scope="module")

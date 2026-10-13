@@ -2,7 +2,8 @@
 
 This module writes only into the directory it is given (a pytest `tmp_path` or the dry run's
 temporary directory); nothing it writes is committed. The metadata part (item 3.02) writes the five
-`<split>_annotations.json` files and a day/night sidecar; the images part is item 4.03.
+`<split>_annotations.json` files and a day/night sidecar; the images part (item 4.03) adds one
+small JPEG per image of those files.
 
 Layout: the 12 kept classes; 2 cis locations (train, cis_val, cis_test) and 1 trans location
 (trans_val, trans_test); every sequence has 3 frames; about 90% of animal annotations carry a box.
@@ -11,18 +12,36 @@ a re-split stratified by class and location has sequences to put on both sides. 
 loader must filter are planted on purpose: empty sequences outside train, one badger, deer and fox
 sequence, a bobcat + rabbit frame in train and trans_test, a two-opossum frame in train and
 cis_test (kept), and one sequence split across train and cis_val as in the released files.
+
+Images: `write_synthetic_fixture` writes the metadata into the directory and the JPEGs into its
+`images/` folder, each under the image's `file_name` at its `width` x `height`, read back from the
+written files. A JPEG is a dark background (one colour per location, as each camera sees one
+scene) with mild noise, and a bright rectangle in the annotation's class colour, outlined in
+white, where each box is. A night image (the sidecar's flag) is saved as a grayscale (mode L) JPEG.
+`python -m trailcam.data.synthetic <dir>` (or `--root <dir>`) writes the fixture into a new or
+empty directory and prints counts only.
 """
 
 from __future__ import annotations
 
+import argparse
+import colorsys
 import json
 import random
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final
 
+from PIL import Image, ImageDraw
+
 from trailcam.data.classes import CLASSES, DROPPED_CCT_IDS, INDEX_TO_CCT_ID, index_of_name
-from trailcam.data.metadata import DAY_NIGHT_SIDECAR, SPLITS, annotation_file_name
+from trailcam.data.metadata import (
+    DAY_NIGHT_SIDECAR,
+    SPLITS,
+    annotation_file_name,
+    load_night_flags,
+)
 
 CIS_LOCATIONS: Final = (101, 102)
 TRANS_LOCATIONS: Final = (201,)
@@ -37,6 +56,12 @@ EMPTY: Final = 30
 BADGER: Final = 21
 DEER: Final = 34
 FOX: Final = 51
+
+IMAGE_DIR: Final = "images"
+JPEG_QUALITY: Final = 90
+NOISE: Final = 0.25  # share of uniform noise blended into the background
+GOLDEN: Final = 0.618033988749895  # hue step, so neighbouring ids get distant hues
+OUTLINE: Final = (255, 255, 255)
 
 
 def _categories() -> list[dict[str, Any]]:
@@ -165,3 +190,143 @@ def write_synthetic_metadata(out_dir: Path, seed: int = 0) -> dict[str, Path]:
     paths["sidecar"] = out_dir / DAY_NIGHT_SIDECAR
     paths["sidecar"].write_text(json.dumps(w.night))
     return paths
+
+
+def _colour(hue: float, saturation: float, value: float) -> tuple[int, int, int]:
+    r, g, b = colorsys.hsv_to_rgb(hue % 1.0, saturation, value)
+    return round(r * 255), round(g * 255), round(b * 255)
+
+
+def background_colour(location: int) -> tuple[int, int, int]:
+    """Dark (value 0.3, at most 77 per channel), one colour per location."""
+    return _colour(location * GOLDEN, 0.5, 0.3)
+
+
+def box_colour(cct_id: int) -> tuple[int, int, int]:
+    """Bright (value 1, saturation 0.5: every channel at least 127), one colour per category, so
+    a rectangle stays brighter than the background in a grayscale JPEG too."""
+    return _colour(cct_id * GOLDEN, 0.5, 1.0)
+
+
+@dataclass(frozen=True)
+class ImageCounts:
+    """The JPEGs written: per official split, how many are grayscale (night), how many carry at
+    least one rectangle, the rectangles drawn and their bytes."""
+
+    per_split: Mapping[str, int]
+    night: int
+    boxed: int
+    rectangles: int
+    jpeg_bytes: int
+
+    @property
+    def images(self) -> int:
+        return sum(self.per_split.values())
+
+
+@dataclass(frozen=True)
+class Fixture:
+    """What `write_synthetic_fixture` wrote: `paths` as `write_synthetic_metadata` returns them
+    (one annotation file per split, plus `"sidecar"`), the folder holding the JPEGs (each record's
+    `file_name` under it) and the counts."""
+
+    paths: Mapping[str, Path]
+    image_root: Path
+    counts: ImageCounts
+
+
+def _draw_image(
+    image: Mapping[str, Any], anns: Sequence[Mapping[str, Any]], night: bool, seed: int
+) -> Image.Image:
+    size = (int(image["width"]), int(image["height"]))
+    rng = random.Random(f"{seed}:{image['id']}")  # an image depends on its id and the seed only
+    base = Image.new("RGB", size, background_colour(int(image["location"])))
+    noise = Image.frombytes("RGB", size, rng.randbytes(size[0] * size[1] * 3))
+    canvas = Image.blend(base, noise, NOISE)
+    draw = ImageDraw.Draw(canvas)
+    for ann in anns:
+        if "bbox" in ann:
+            x, y, w, h = (float(v) for v in ann["bbox"])
+            corners = (round(x), round(y), round(x + w) - 1, round(y + h) - 1)  # inclusive
+            draw.rectangle(corners, fill=box_colour(int(ann["category_id"])), outline=OUTLINE)
+    return canvas.convert("L") if night else canvas
+
+
+def _write_images(paths: Mapping[str, Path], image_dir: Path, seed: int = 0) -> ImageCounts:
+    """One JPEG per image of the five annotation files in `paths` (as `write_synthetic_metadata`
+    returns them), drawn from those files and the sidecar's night flags, into `image_dir`."""
+    image_dir.mkdir(parents=True, exist_ok=True)
+    flags = load_night_flags(paths["sidecar"])
+    per_split = dict.fromkeys(SPLITS, 0)
+    night = boxed = rectangles = written = 0
+    for split in SPLITS:
+        data = json.loads(paths[split].read_text())
+        anns: dict[str, list[Mapping[str, Any]]] = {}
+        for ann in data["annotations"]:
+            anns.setdefault(ann["image_id"], []).append(ann)
+        missing = sum(1 for image in data["images"] if image["id"] not in flags)
+        if missing:
+            raise ValueError(f"{split}: {missing} images missing from the day/night sidecar")
+        for image in data["images"]:
+            own = anns.get(image["id"], [])
+            is_night = flags[image["id"]]
+            path = image_dir / image["file_name"]
+            _draw_image(image, own, is_night, seed).save(path, "JPEG", quality=JPEG_QUALITY)
+            per_split[split] += 1
+            night += is_night
+            drawn = sum(1 for ann in own if "bbox" in ann)
+            boxed += drawn > 0
+            rectangles += drawn
+            written += path.stat().st_size
+    return ImageCounts(per_split, night, boxed, rectangles, written)
+
+
+def write_synthetic_fixture(out_dir: Path, seed: int = 0) -> Fixture:
+    """Write the metadata (`write_synthetic_metadata`) into `out_dir` and its JPEGs into
+    `out_dir / IMAGE_DIR`. `out_dir` must be new or empty, so a mistyped path cannot mix the
+    fixture into real data. Same seed, same files."""
+    if out_dir.exists() and any(out_dir.iterdir()):
+        raise FileExistsError("the synthetic fixture is written into a new or empty directory only")
+    paths = write_synthetic_metadata(out_dir, seed)
+    counts = _write_images(paths, out_dir / IMAGE_DIR, seed)
+    return Fixture(paths=paths, image_root=out_dir / IMAGE_DIR, counts=counts)
+
+
+def summary(fixture: Fixture, seed: int) -> str:
+    """Counts only: files written, JPEGs per official split, night and boxed JPEGs, bytes."""
+    counts = fixture.counts
+    lines = [
+        f"Synthetic CCT20 fixture, seed {seed}",
+        f"Annotation files: {len(SPLITS)}, day/night sidecar: 1",
+        "JPEGs per official split",
+    ]
+    lines += [f"  {split:<12}{counts.per_split[split]:>6}" for split in SPLITS]
+    lines += [
+        f"  {'total':<12}{counts.images:>6}",
+        f"Grayscale (night) JPEGs: {counts.night} of {counts.images}",
+        f"JPEGs with a drawn box: {counts.boxed} of {counts.images} "
+        f"({counts.rectangles} rectangles)",
+        f"JPEG bytes: {counts.jpeg_bytes}",
+    ]
+    return "\n".join(lines)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
+    parser.add_argument("out_dir", nargs="?", type=Path, help="new or empty directory")
+    parser.add_argument("--root", type=Path, default=None, help="the same, as an option")
+    parser.add_argument("--seed", type=int, default=0)
+    args = parser.parse_args(argv)
+    if (args.out_dir is None) == (args.root is None):
+        parser.error("give the output directory once: as OUT_DIR or as --root")
+    out_dir: Path = args.root if args.out_dir is None else args.out_dir
+    try:
+        fixture = write_synthetic_fixture(out_dir, args.seed)
+    except FileExistsError as error:
+        parser.error(str(error))
+    print(summary(fixture, args.seed))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

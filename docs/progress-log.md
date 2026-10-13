@@ -658,6 +658,97 @@ before c545b61. No third round.
 Review: tier 2, ran `/review-session 4.02` (c6c65f5..b11eff2) and the fix round
 `/review-session b11eff2..HEAD 4.02` (code-reviewer Opus xhigh, risk-reviewer Fable high)
 
+## 2026-10-13: session 4, item 4.03, the synthetic fixture images (Opus 5.5)
+
+**Done.** `trailcam/data/synthetic.py`, the images part: `write_synthetic_fixture(out_dir, seed)`
+writes the 3.02 metadata (five annotation files and the sidecar) into `out_dir` and one JPEG per
+image of those five files into `out_dir/images/`, under the image's `file_name` at its `width` x
+`height` (96 x 72), read back from the written files and the sidecar, not from the writer's state.
+A JPEG is a dark per-location background (each camera sees one scene) blended with 25% noise,
+and a bright rectangle in the annotation's class colour, outlined in white, at each box; a night
+record (the sidecar's flag) is saved as a grayscale mode L JPEG, as 4.01's own writer did. Every
+image of the files gets one, filtered ones included (684 JPEGs, 312 grayscale, 606 with a box,
+610 rectangles, about 2.4 MB, under half a second). An image depends only on the seed and its
+id; the same seed gives the same bytes. `out_dir` must be new or empty, so a mistyped path cannot
+mix the fixture into real data. It returns a `Fixture` (the paths, the image root, the counts) for
+5.03's dry run. `python -m trailcam.data.synthetic <dir>` or `--root <dir>` (both, since the
+item names `--root` and its step a bare directory; giving neither or both is a usage error, as is
+a non-empty directory) prints counts only: no ids, file names or paths.
+
+New `tests/test_synthetic.py`, 13 tests: the fixture writes only into its directory (five files,
+the sidecar, `images/` holding exactly the files' `file_name`s), refuses a non-empty directory and
+accepts an empty one; every JPEG is a JPEG at its image's size, mode L exactly for night images,
+and the counts match; every box's one-pixel edge averages at least 220 in luminance (measured
+239 or more) and the ring just outside it at most 140 (measured 114 or less), an unboxed image
+has no pixel at 160 or above; a day box's centre is its class colour within 12; same seed same
+bytes, a different seed different images; the fixture loads through 3.02 (each record's night
+flag matches its JPEG's mode), splits through 3.03 to the hash pinned in `tests/test_split.py`
+(images leave the metadata unchanged) and every record of the five splits reads through 4.01's
+`CCT20Dataset` as a (3, 224, 224) float32 tensor with its label; the CLI in both forms, its two
+usage errors and `python -m` print counts only. Eleven mutations of the writer each fail a test:
+exclusive corners (one pixel off), width and height taken as corners, x and y swapped, no
+grayscale, grayscale saved as RGB, width and height swapped, the JPEGs flat in `out_dir`, no
+non-empty refusal, colour by location, the path printed, only the first box of an image drawn.
+
+`tests/test_dataset.py` now writes its images with `write_synthetic_fixture` instead of its own
+noise writer; no assertion changed, its 17 tests pass, and the 4.01 mutations whose detection
+depends on the images (a flip in eval, Python's `random` in the train path, a deterministic
+training transform) still fail it. R03's and R37's test cells name `tests/test_synthetic.py`.
+
+Steps: `uv run python -m trailcam.data.synthetic <scratch dir>` wrote the fixture and printed
+counts only; `uv run python scripts/guard_data.py --all` passed; `python -m trailcam.data.metadata`
+with `--root` and `--sidecar` on it loaded 661 kept images (302 night) and `python -m
+trailcam.data.split --root <dir> --seed 42` split it (hash `7a13478e…`, the pinned synthetic
+hash), both exit 0. `check.sh` green (245 passed), so `passes` is flipped.
+
+Review, started by the user: `/review-session 4.03`, tier 2, range c6c65f5..0a46547, risk files
+`tests/test_dataset.py`, `tests/test_synthetic.py`, `trailcam/data/synthetic.py`; code-reviewer
+on Opus at xhigh, risk-reviewer on Fable at high. Nothing found by either; every scenario held
+(R01, R03, R37 for the fixture, R42 to R45). Known gap passed: R37's dry run (5.03). Spec changed:
+none. The code-reviewer's `check.sh` run was green (245 passed, none skipped).
+
+Could not verify (code-reviewer): the new image code on the declared minimum Pillow 10.1. Checked
+afterwards at the user's request, as in the 4.01 fix round: a scratch venv outside the repo,
+offline from the uv cache, torch 2.3.0, torchvision 0.18.0, Pillow 10.1.0, NumPy 2.5.4,
+deprecation warnings as errors. `tests/test_dataset.py` passes (17) and so do 12 of the 13 tests
+in `tests/test_synthetic.py`, but one fails in every run (ten runs):
+`test_a_rectangle_is_drawn_exactly_where_each_box_is` (an unboxed night image with a pixel at
+166, above the 160 the test allows) or `test_same_seed_same_bytes` (two writes in one process
+differ). The cause, isolated in scratch scripts, is Pillow 10.1's JPEG encoder on this Mac (macOS
+arm64): over 300 drawn images the pixels before saving hash the same in every process, but the
+saved mode L JPEGs differ between processes (2 of 6 runs), always in the last 8 x 8 block, by up
+to 95 grey levels; the same grey images saved as three-channel JPEGs differ too (2 of 6 runs),
+and 8 of 300 decode with unequal channels. On Pillow 12.3, the locked version, every hash is the
+same in every run. So the writer is correct and Pillow 10.1 cannot write it reproducibly; writing
+night frames as three-channel JPEGs would not avoid it. Only 10.1.0 and 12.3.0 are in the uv
+cache, so the first fixed version is not known offline. `check.sh` and CI use the lock and are
+unaffected; Kaggle never writes the fixture (the dry run is Mac only), and the Dataset there only
+decodes, which passes on 10.1.
+
+Kept by the user's decision (2026-10-13): the minimum `pillow>=10.1`, with no change to
+`pyproject.toml`, `uv.lock` or `tests/test_dependencies.py`. The floor covers what trailcam does
+at runtime (decode, which passes on 10.1); the fixture writes only on the Mac, with the locked
+12.3. The Pillow or libjpeg-turbo version that fixed the encoder is not known (not found in the
+release notes), and the nondeterminism was seen on macOS arm64 only, not shown on Kaggle's
+x86_64.
+
+Handoff to 6.01 (the prepare script is the only code that writes JPEGs on Kaggle): print Kaggle's
+Pillow version; before writing the cache, encode the same image in two separate processes and
+require identical bytes, refusing to continue otherwise; if it fails, upgrade Pillow in the
+notebook, and raise the `pyproject.toml` minimum only to a version that passes the same check.
+
+Noted, not fixed (risk-reviewer), by the user's decision: `mypy tests/test_synthetic.py` reports 7
+errors (Pillow's union return types compared as ints at lines 135, 138 and 146; the loop variable
+`split` reused for a `Split` at lines 196 to 207). Tests are outside `check.sh`'s mypy scope and
+the code is correct at runtime; fixing them would touch a reviewed high-stakes file and need
+another round. No fix commit, so no fix round.
+
+**Next.** Item 4.04, the arm B box-crop sampler (tier 2); its tests can draw on the fixture's
+rectangles to check a crop contains its box. Item 4.02 runs in a parallel session.
+
+Review: tier 2, ran `/review-session 4.03` (c6c65f5..0a46547; code-reviewer Opus xhigh,
+risk-reviewer Fable high)
+
 ## 2026-10-13: session 4, item 4.04, the arm B crop sampler (Opus 5.5)
 
 **Done.** `trailcam/data/boxcrop.py`: `BoxCropSampler(p=0.5)`, the arm B crop sampler, a
@@ -739,14 +830,19 @@ instead of floored; in `dataset.py` a top-level `boxcrop` import. The R24 test c
 R23's name the file.
 
 `uv run pytest tests/test_boxcrop.py` 31 passed; `check.sh` green (292 passed), so `passes` is
-flipped.
+flipped. After merging main with 4.03 into this branch, `check.sh` is green with 305 passed, and
+`mypy --strict tests/test_boxcrop.py` is clean (tests are outside `check.sh`'s mypy scope; one
+line was tightened for it: the eval pipeline is asserted to be a `Compose` before its steps are
+read).
 
 Note for 5.02 and 5.03: `TrainTransform(config.arm)` is the whole switch. The transform half of
 R25 is tested here (`test_the_arms_differ_only_in_the_crop_sampler`); the config half is 5.02's.
 Note for 8.03: arm B crops around one animal at a time, so attention-in-box should count the
-Grad-CAM mass inside any of the image's boxes.
+Grad-CAM mass inside any of the image's boxes. 4.03's handoff suggested checking containment on the
+fixture's drawn rectangles; the tests check it geometrically on every crop instead, which is
+exact, where the drawn pixels after JPEG and the resize would need a tolerance.
 
-**Next.** Item 4.03 (running in parallel), then session 5, item 5.01.
+**Next.** Session 5, item 5.01.
 
 Review: tier 2, risk files `tests/test_boxcrop.py`, `trailcam/data/boxcrop.py`,
 `trailcam/data/dataset.py`, `trailcam/data/loaders.py` (docstring only). Command for the user:

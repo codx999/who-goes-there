@@ -360,7 +360,9 @@ def test_the_eval_transform_has_no_code_path_that_reads_boxes() -> None:
     names |= {n.arg for n in ast.walk(tree) if isinstance(n, ast.arg)}
     assert "pipeline" in names and "image" in names
     assert not [n for n in names if "box" in n.lower() or "sampler" in n.lower()]
-    steps = [type(t) for t in EvalTransform().pipeline.transforms]
+    pipeline = EvalTransform().pipeline
+    assert isinstance(pipeline, T.Compose)
+    steps = [type(t) for t in pipeline.transforms]
     assert steps == [T.Resize, T.CenterCrop, T.ToTensor, T.Normalize]
 
 
