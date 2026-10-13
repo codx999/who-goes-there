@@ -581,3 +581,51 @@ Kaggle's Python as well as its torch when the wheel install is tested. No third 
 
 Review: tier 2, ran `/review-session 4.01` (c5b2a74..8ef7d6f) and the fix round
 `/review-session 8ef7d6f..HEAD 4.01` (code-reviewer Opus xhigh, risk-reviewer Fable high)
+
+## 2026-10-13: session 4, item 4.03, the synthetic fixture images (Opus 5.5)
+
+**Done.** `trailcam/data/synthetic.py`, the images part: `write_synthetic_fixture(out_dir, seed)`
+writes the 3.02 metadata (five annotation files and the sidecar) into `out_dir` and one JPEG per
+image of those five files into `out_dir/images/`, under the image's `file_name` at its `width` x
+`height` (96 x 72), read back from the written files and the sidecar, not from the writer's state.
+A JPEG is a dark per-location background (each camera sees one scene) blended with 25% noise,
+and a bright rectangle in the annotation's class colour, outlined in white, at each box; a night
+record (the sidecar's flag) is saved as a grayscale mode L JPEG, as 4.01's own writer did. Every
+image of the files gets one, filtered ones included (684 JPEGs, 312 grayscale, 606 with a box,
+610 rectangles, about 2.4 MB, under half a second). An image depends only on the seed and its
+id; the same seed gives the same bytes. `out_dir` must be new or empty, so a mistyped path cannot
+mix the fixture into real data. It returns a `Fixture` (the paths, the image root, the counts) for
+5.03's dry run. `python -m trailcam.data.synthetic <dir>` or `--root <dir>` (both, since the
+item names `--root` and its step a bare directory; giving neither or both is a usage error, as is
+a non-empty directory) prints counts only: no ids, file names or paths.
+
+New `tests/test_synthetic.py`, 13 tests: the fixture writes only into its directory (five files,
+the sidecar, `images/` holding exactly the files' `file_name`s), refuses a non-empty directory and
+accepts an empty one; every JPEG is a JPEG at its image's size, mode L exactly for night images,
+and the counts match; every box's one-pixel edge averages at least 220 in luminance (measured
+239 or more) and the ring just outside it at most 140 (measured 114 or less), an unboxed image
+has no pixel at 160 or above; a day box's centre is its class colour within 12; same seed same
+bytes, a different seed different images; the fixture loads through 3.02 (each record's night
+flag matches its JPEG's mode), splits through 3.03 to the hash pinned in `tests/test_split.py`
+(images leave the metadata unchanged) and every record of the five splits reads through 4.01's
+`CCT20Dataset` as a (3, 224, 224) float32 tensor with its label; the CLI in both forms, its two
+usage errors and `python -m` print counts only. Eleven mutations of the writer each fail a test:
+exclusive corners (one pixel off), width and height taken as corners, x and y swapped, no
+grayscale, grayscale saved as RGB, width and height swapped, the JPEGs flat in `out_dir`, no
+non-empty refusal, colour by location, the path printed, only the first box of an image drawn.
+
+`tests/test_dataset.py` now writes its images with `write_synthetic_fixture` instead of its own
+noise writer; no assertion changed, its 17 tests pass, and the 4.01 mutations whose detection
+depends on the images (a flip in eval, Python's `random` in the train path, a deterministic
+training transform) still fail it. R03's and R37's test cells name `tests/test_synthetic.py`.
+
+Steps: `uv run python -m trailcam.data.synthetic <scratch dir>` wrote the fixture and printed
+counts only; `uv run python scripts/guard_data.py --all` passed; `python -m trailcam.data.metadata`
+with `--root` and `--sidecar` on it loaded 661 kept images (302 night) and `python -m
+trailcam.data.split --root <dir> --seed 42` split it (hash `7a13478e…`, the pinned synthetic
+hash), both exit 0. `check.sh` green (245 passed), so `passes` is flipped.
+
+**Next.** Item 4.04, the arm B box-crop sampler (tier 2); its tests can draw on the fixture's
+rectangles to check a crop contains its box. Item 4.02 runs in a parallel session.
+
+Review: tier 2, not yet run; the user starts `/review-session 4.03`
