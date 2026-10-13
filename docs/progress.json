@@ -55,7 +55,7 @@
     {"id": "4.04", "session": 4, "owner": "claude", "due": "2026-10-13",
      "description": "trailcam/data/boxcrop.py: the arm B crop sampler from plan.md section 6: with probability 0.5 per boxed image, sample a crop that contains the box with the box filling 20% to 100% of the crop area and jittered position, else fall back to the control sampler; images without boxes always use the control sampler; an `arm` switch in the training transform",
      "steps": "uv run pytest tests/test_boxcrop.py passes: over 1,000 samples every box-guided crop contains the whole box and the box area fraction is within [0.2, 1.0]; images without boxes never call the box path; arm A and arm B transforms are identical when the box path is disabled; the eval transform has no code path that reads boxes",
-     "passes": false},
+     "passes": true},
 
     {"id": "5.01", "session": 5, "owner": "claude", "due": "2026-10-14",
      "description": "First `uv add torch torchvision timm` and the [[tool.mypy.overrides]] entries (ignore_missing_imports) for libraries without stubs. Then trailcam/model/small_cnn.py (TinyVGG style, three conv blocks and a linear head) and trailcam/model/backbone.py (torchvision resnet18 with ImageNet-1k weights, final layer replaced by a 12-way head, body and head as separate parameter groups; timm efficientnet_b0 as the named fallback); a build_model(name) factory that reads num_classes from the class map",

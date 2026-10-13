@@ -657,3 +657,97 @@ before c545b61. No third round.
 
 Review: tier 2, ran `/review-session 4.02` (c6c65f5..b11eff2) and the fix round
 `/review-session b11eff2..HEAD 4.02` (code-reviewer Opus xhigh, risk-reviewer Fable high)
+
+## 2026-10-13: session 4, item 4.04, the arm B crop sampler (Opus 5.5)
+
+**Done.** `trailcam/data/boxcrop.py`: `BoxCropSampler(p=0.5)`, the arm B crop sampler, a
+`CropSampler` like 4.01's control sampler. For an image with at least one box, a coin with
+probability `p` sends it to the box path (`box_crop`), else to arm A's `ControlCropSampler`
+(`self.control`); an image without boxes never reaches the box path. The box path converts each
+box from fractions of the image to pixels once (`to_pixels`: x and width times the width, y and
+height times the height; a box outside 0 to 1 is refused, so a box in pixels cannot pass), draws
+one usable box uniformly, keeps the crop in arm A's aspect-ratio range (3/4 to 4/3) whenever a
+crop in it can hold the box, draws the fill (the box's area over the crop's) uniformly over what
+that allows within 0.2 to 1.0, the aspect ratio log-uniform among the shapes that hold the box and
+fit the image, and the position uniformly among the placements that keep the whole box in the crop
+and the crop in the image. In whole pixels the crop runs from the box's first pixel or
+before to its last or after; the drawn shape is rounded down, never the box. Every draw comes
+from torch's generator; at `p=0` no coin is drawn.
+
+`trailcam/data/dataset.py`: `TrainTransform(arm=None, *, sampler=None)`. `arm`, "A" by default
+or "B", picks the sampler through `make_sampler` and nothing else; `sampler` replaces it for the
+tests' spies. Both at once, or an unknown arm, are refused. `make_sampler` imports `boxcrop` on
+use, so loading `dataset.py`, and with it the eval transform the demo and the Space use, never
+loads the box sampler, and the two modules do not import each other at load time. The docstrings
+of `dataset.py` and `loaders.py` say so (the training script passes `TrainTransform(arm)`).
+
+Decisions, written in the module docstring. I recommended keeping the first, second, third and
+fifth and changing the fourth; the user agreed in this session, and the fourth was changed before
+this commit:
+- Several boxes: one is drawn uniformly per crop, not their union. They are animals of one
+  species (two-species images are dropped), so the fill stays about one animal; the union of two
+  animals at opposite edges would be most of the frame. 425 of the 11,633 boxed train images
+  (seed 42) have more than one box.
+- The fill is uniform in the fill itself, the plan's "20% to 100%", not in the crop area, which
+  would put three quarters of the box-guided crops below a fill of 50%.
+- A box covering most of the image (810 train boxes over 20% of it, 615 over half) cannot fill
+  less than its share of the largest crop allowed, so its range starts there; its loosest crop is
+  the largest crop in arm A's range (497 x 373 of a 512 x 373 frame, which arm A never exceeds
+  either). A box covering the whole image gets the whole image.
+- Aspect ratio, changed from the first draft: crops stay in arm A's 3/4 to 4/3, so the resize to
+  224 x 224 never stretches the animal more than arm A does, and the fill's upper end drops for an
+  elongated box (a 2:1 box tops out at 67%). 6,676 of the 12,177 train boxes lie outside that
+  range, most wider than 4:3. The first draft let the crop follow the box's shape at high fills:
+  on the real train boxes 6,895 of 46,532 sampled box-path crops (15%) were stretched beyond arm
+  A's range and 1,118 beyond 2:1, a second difference between the arms. Now 25 are outside it
+  and 8 beyond 2:1: the range is left only when no crop in it holds the box at a fill of 0.2
+  inside the image (a box spanning nearly the whole width, or more elongated than about 6.7:1),
+  for the closest shape.
+- A box too small for any whole-pixel crop to reach a fill of 0.2 (under about two pixels a side)
+  is skipped; an image whose boxes are all skipped gets the control sampler. No train box is
+  under 8 px a side at 512 px, so this is a guard only.
+The real-data counts come from a scratch script outside the repo that printed counts only.
+
+`tests/test_boxcrop.py`, 31 tests. Over 1,000 samples for each of 13 cases (centre; top-left and
+bottom-right corners; a 2:1 box touching the right edge; the bottom edge; the whole image; 81% of
+it; a wide and a tall strip beyond the aspect range; a small box off the pixel grid; 2048 x 1494,
+512 x 373, 96 x 72 and a portrait size) every box-guided crop lies in the image, holds the whole
+box, and the box's area is 20% to 100% of the crop's (to 1e-12 relative, float rounding); where a
+crop in arm A's aspect-ratio range can hold the box, found by trying every whole-pixel crop size,
+every crop is within a pixel of that range. Over 300 random boxes of 1% to 100% of each side, 20
+crops each, the same holds, and a 2:1 box tops out at a fill of 2/3. The fill reaches 0.2 on the
+area, tops out above 0.95 and averages about 0.6 for a near-square box; the position is jittered;
+the aspect ratio spans 3/4 to 4/3 for a near-square box; the 81% box starts at a fill of 0.83 and
+its loosest crop is about 497 x 373. `to_pixels` is checked on a non-square image and at
+four times the size, and a box in pixels is refused. Two boxes at opposite corners: each crop
+holds exactly one, each about half the time. A sub-pixel box is never drawn next to a usable one
+and, alone, gives the control crop seed for seed. Half of 1,000 boxed calls take the box path; an
+image without boxes never calls it, at `p=1` too, and gets the control crop; through the dataset
+only the boxed train records reach it, with their boxes. With the box path off (`p=0`) arm B
+gives arm A's tensor for every train record and seed; arm B's own transform changes some boxed
+tensors and no unboxed one. `TrainTransform("A")` and `("B")` differ only in the sampler. The eval
+transform takes the image alone, names no box or sampler in its code, and its pipeline is exactly
+resize, centre crop, tensor and normalise; in a fresh interpreter, loading the dataset and loader
+modules and an eval pass leave `boxcrop` unloaded, and `TrainTransform("B")` loads it. Arm B draws
+from torch only and pickles; bad `p`, arms and boxes, and arm B outside train, are refused.
+Seventeen mutations each fail a test: in `boxcrop.py` the fill on the side, no pixel conversion,
+boxes scaled twice, width and height swapped, jitter ignoring the box, jitter not clamped to the
+image, the crop rounded up, the box path for unboxed images, a coin drawn at `p=0` and `p=1`,
+always the first box, the fill uniform in area, the aspect ratio ignored, arm A's shapes never
+kept, the largest crop taken as the whole image, the smallest as the box itself, the box rounded
+instead of floored; in `dataset.py` a top-level `boxcrop` import. The R24 test cell and the eval part of
+R23's name the file.
+
+`uv run pytest tests/test_boxcrop.py` 31 passed; `check.sh` green (292 passed), so `passes` is
+flipped.
+
+Note for 5.02 and 5.03: `TrainTransform(config.arm)` is the whole switch. The transform half of
+R25 is tested here (`test_the_arms_differ_only_in_the_crop_sampler`); the config half is 5.02's.
+Note for 8.03: arm B crops around one animal at a time, so attention-in-box should count the
+Grad-CAM mass inside any of the image's boxes.
+
+**Next.** Item 4.03 (running in parallel), then session 5, item 5.01.
+
+Review: tier 2, risk files `tests/test_boxcrop.py`, `trailcam/data/boxcrop.py`,
+`trailcam/data/dataset.py`, `trailcam/data/loaders.py` (docstring only). Command for the user:
+`/review-session 4.04`. Not started by this session.

@@ -50,7 +50,8 @@ def make_loaders(
 ) -> Mapping[str, Loader]:
     """One loader per split in `SPLIT_NAMES` order; shuffle on train only.
 
-    `train_transform` defaults to the control arm; item 4.04 passes the arm B transform.
+    `train_transform` defaults to the control arm; the training script passes
+    `TrainTransform(arm)` for the run's arm.
     """
     if not isinstance(split, Split):
         raise TypeError("make_loaders takes the Split from make_split, not a list of records")
