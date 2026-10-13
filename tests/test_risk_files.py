@@ -16,6 +16,7 @@ RISKY = [
     "trailcam/__init__.py",
     "trailcam/data/classes.py",
     "trailcam/data/split.py",
+    "trailcam/data/daynight.py",
     "trailcam/data/boxcrop.py",
     "trailcam/data/loaders.py",
     "trailcam/model/backbone.py",
