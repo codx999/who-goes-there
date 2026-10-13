@@ -950,6 +950,33 @@ Notes for 6.03 (user):
   The cache layout for 6.02: images under `images/`, annotations under `annotations/`, the
   sidecar beside them (`--sidecar <dataset>/day_night.json`).
 
+Review, started by the user: `/review-session 6.01`, tier 2, range 4f90760..4055abe (the item
+commit only), risk files `pyproject.toml`, `scripts/check.sh`, `scripts/kaggle_prepare_cct20.py`,
+`tests/test_control_plane.py`, `tests/test_daynight.py`, `tests/test_kaggle_prepare.py`,
+`tests/test_risk_files.py`, `trailcam/data/daynight.py`; code-reviewer on Opus at xhigh,
+risk-reviewer on Fable at high. Nothing found by either; every scenario held (R01, R03, R38,
+R42 to R45), and so did the requirements: the sidecar read by `load_night_flags` and
+`load_metadata`, the Pillow version printed and the two-process encoder check before the first
+write, the script's trailcam imports free of torch, the mypy lists equal. Known gaps passed: the
+real tarball and the `NIGHT_MAX_SPREAD` calibration (6.03), the pip install on Kaggle (5.04).
+Spec changed: none. The code-reviewer's `check.sh` run was green (336 passed).
+
+Noted, not findings: the parent process that writes the cache is not itself compared with the two
+check processes; the 4.03 decision asks for two processes, which is what runs (risk-reviewer). No
+test pins that the encoder check comes before the first write in `prepare`; it holds by reading
+the code (code-reviewer). A full disk during the cache write would put one image's cache path,
+which holds its id, in the traceback: one id, on a crash, in Kaggle output that is never committed
+(code-reviewer). An unreadable first copy of an image followed by a readable repeat gives a
+confusing message, but the run still fails (code-reviewer).
+
+Could not verify (code-reviewer): the encoder check started through the real
+`python scripts/kaggle_prepare_cct20.py` entry point (spawned processes re-import the script as
+`__mp_main__`); the tests import the script by module name. By the user's decision, no
+entry-point test: the user's 6.03 run on Kaggle covers it, and a failure there stops before any
+write, so it is loud and harmless. The LILA URLs were checked with `curl -sI` before the item
+commit (both 200); the reviewers make no network calls. No fix commit, so no fix round.
+
 **Next.** Session 5 items in order; 6.03 after 5.04 is merged.
 
-Review: tier 2 suggested, `/review-session 6.01` (not run; the user starts it)
+Review: tier 2, ran `/review-session 6.01` (4f90760..4055abe; code-reviewer Opus xhigh,
+risk-reviewer Fable high)
