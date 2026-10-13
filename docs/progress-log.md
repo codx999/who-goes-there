@@ -614,36 +614,46 @@ and, for the loader check, R16. `check.sh` green (260 passed).
 Decision for the user to confirm: `drop_last=True` on the train loader is not in plan section 5.
 With batch 64 it drops at most 63 images per epoch, a different set each epoch.
 
-**Next.** Item 4.03, the synthetic fixture images (tier 2).
-
 Review, started by the user: `/review-session 4.02`, tier 2, range c6c65f5..b11eff2, risk files
 `tests/test_loaders.py`, `trailcam/data/loaders.py`; code-reviewer on Opus at xhigh,
 risk-reviewer on Fable at high. Nothing above low; every scenario held (R01, R03, R12, R16 loader
 part, R22, R42 to R45). Known gap passed: the R16 run alarms (5.03). Spec changed: none.
-- code-reviewer, low, fixed: the overlap check caught a train id still present in another split,
-  but not an image moved out of a test split into train and relabelled `split="train"`; the
-  dataset check passes such a record and `split.hash` went stale unchecked. `make_loaders` now
-  refuses a split whose recomputed `split_hash(split.records)` differs from `split.hash`, with
-  the split sizes only. New `test_a_split_that_no_longer_matches_its_hash_is_refused` moves a
-  cis_test image into train; it failed on the old code (DID NOT RAISE). The overlap test now
-  recomputes the hash so it still reaches the overlap check.
+- code-reviewer, low, fixed in a76cb74: the overlap check caught a train id still present in
+  another split, but not an image moved out of a test split into train and relabelled
+  `split="train"`; the dataset check passes such a record and `split.hash` went stale unchecked.
+  `make_loaders` now refuses a split whose recomputed `split_hash(split.records)` differs from
+  `split.hash`, with the split sizes only. New
+  `test_a_split_that_no_longer_matches_its_hash_is_refused` moves a cis_test image into train; it
+  failed on the old code (DID NOT RAISE). The overlap test now recomputes the hash so it still
+  reaches the overlap check. R12 and R16 test cells name the hash check.
 - risk-reviewer, note folded into the same fix: the docstring said `generator` makes the
   augmentation reproducible; with `num_workers=0` the transform draws from torch's global
   generator, so `torch.manual_seed` is needed too. Docstring corrected.
-- code-reviewer, low, open: "num_workers and pin_memory from config" is handed to 5.02, but no
-  item description names them. Adding them to 5.02's scope needs the user's OK (an item edit).
-Open as well: `drop_last=True` on the train loader (not in plan section 5) awaits the user's
-confirmation. Both decisions were relayed from the coordinator session and are recorded here once
-the user confirms them in this session.
+- code-reviewer, low, resolved by the user's decision below: "num_workers and pin_memory from
+  config" was handed to 5.02, but no item description named them.
 
-Decisions, confirmed by the user in this session after the fix commit:
-- Finding 2: item 5.02's scope now includes `num_workers` and `pin_memory` in every config (4 and
-  true on Kaggle, 0 and false for the dry-run), with a step that checks them.
+Decisions, relayed from the coordinator session and confirmed by the user in this session
+(c545b61):
+- Item 5.02's scope now includes `num_workers` and `pin_memory` in every config (4 and true on
+  Kaggle, 0 and false for the dry-run), with a step that checks them.
 - `drop_last=True` on the train loader is the user's decision: a batch of one would fail batch
   norm in training mode, at most 63 images per epoch are skipped and a different set each epoch,
-  and every step has the same batch size. Val and the test loaders keep every image. R12 and R16 test cells name the hash check. `check.sh`
-green (261 passed). The fix touches `trailcam/data/loaders.py` and modifies a test line, so one
-fix round on it is due.
+  and every step has the same batch size. Val and the test loaders keep every image.
+`check.sh` green (261 passed). The fix touches `trailcam/data/loaders.py` and modifies a test
+line, so one fix round on it was due.
 
-Review: tier 2, ran `/review-session 4.02` (c6c65f5..b11eff2; code-reviewer Opus xhigh,
-risk-reviewer Fable high); fix round pending
+Fix round, started by the user: `/review-session b11eff2..HEAD 4.02`, tier 2, risk files
+`tests/test_loaders.py`, `trailcam/data/loaders.py`; code-reviewer on Opus at xhigh,
+risk-reviewer on Fable at high. Nothing found by either; every scenario held (R01, R03, R12, R16
+loader part, R22, R42 to R45). Spec changed: none. Noted, not findings (both reviewers): a
+`Split` rebuilt with a recomputed hash that moves a test image into train passes both checks;
+only `make_split` builds a `Split` today, and the pinned hash per seed (`tests/test_split.py`)
+and the ledger's split hash (5.03) cover it. If a later item adds a helper that subsets a split
+and recomputes the hash, `make_loaders` should also call `check_split` (code-reviewer). The
+code-reviewer asked whether the 5.02 edit was approved; the user approved it in this session
+before c545b61. No third round.
+
+**Next.** Item 4.03, the synthetic fixture images (tier 2).
+
+Review: tier 2, ran `/review-session 4.02` (c6c65f5..b11eff2) and the fix round
+`/review-session b11eff2..HEAD 4.02` (code-reviewer Opus xhigh, risk-reviewer Fable high)
