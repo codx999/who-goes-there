@@ -581,3 +581,37 @@ Kaggle's Python as well as its torch when the wheel install is tested. No third 
 
 Review: tier 2, ran `/review-session 4.01` (c5b2a74..8ef7d6f) and the fix round
 `/review-session 8ef7d6f..HEAD 4.01` (code-reviewer Opus xhigh, risk-reviewer Fable high)
+
+## 2026-10-13: session 4, item 4.02, the DataLoaders (Opus 5.5)
+
+**Done.** `trailcam/data/loaders.py`: `make_loaders(split, image_root, batch_size, *,
+num_workers, pin_memory, train_transform=None, generator=None)` returns a read-only mapping with
+one loader per split in `SPLIT_NAMES` order. It takes the `Split` from `make_split` (a mapping of
+records is refused with `TypeError`) and builds the train loader from `split.records["train"]`
+itself, with the training transform (control arm by default; 4.04 passes the arm B transform), a
+`RandomSampler` and `drop_last=True`, so batch norm never gets a batch of one; the reshuffle each
+epoch still draws every image. val, trans_val, cis_test and trans_test get the eval transform, a
+`SequentialSampler` and every image, the last short batch included. Before building anything it
+refuses a train image id that also sits in another split, with split names and counts only (R12,
+R16). `num_workers` and `pin_memory` are arguments, as the config file arrives in 5.02, which
+wires them; `persistent_workers` is on when there are workers. `generator` seeds the shuffle and
+the workers' base seed.
+
+`tests/test_loaders.py`, 28 tests on the synthetic metadata's split for seed 42 with noise JPEGs
+in a temporary directory: a batch is `(16, 3, 224, 224)` float32 with int64 labels for every
+loader; the samplers (`RandomSampler` for train, `SequentialSampler` for the rest); R12, the train
+loader holds `Split.records["train"]` record for record, equals the pool minus val, differs from
+the official train file and shares no id with another split (a mutation that builds it from the
+pool with the overlap check off fails the test); the eval loaders give labels in record order and
+the same tensors on two passes; a train epoch is a permutation; a seeded generator reproduces the
+first train batch; num_workers and pin_memory pass through; with two spawned workers (forced, so
+Linux CI runs spawn too) the val batches equal the single-process ones, and the train dataset
+survives a pickle round trip with the same augmentation for a seed; bad arguments and a tampered
+split are refused. The spawn test takes about 15 s (torch imported in each worker), so the train
+loader is not iterated with workers. `docs/review/invariants.md`: test cells filled for R12, R22
+and, for the loader check, R16. `check.sh` green (260 passed).
+
+Decision for the user to confirm: `drop_last=True` on the train loader is not in plan section 5.
+With batch 64 it drops at most 63 images per epoch, a different set each epoch.
+
+**Next.** Item 4.03, the synthetic fixture images (tier 2).
