@@ -980,3 +980,59 @@ commit (both 200); the reviewers make no network calls. No fix commit, so no fix
 
 Review: tier 2, ran `/review-session 6.01` (4f90760..4055abe; code-reviewer Opus xhigh,
 risk-reviewer Fable high)
+
+## 2026-10-13: session 5, item 5.01, the small CNN, ResNet-18 and the factory (Opus 5.5)
+
+**Done.** `uv add timm`: timm 1.0.30 locked (with huggingface-hub, safetensors, PyYAML), the
+same version Kaggle's image has (Colab's GPU pip freeze of 2026-10-02, googlecolab/backend-info,
+the base Kaggle builds on; read from the repository, not a running notebook). The lock still holds
+no nvidia, cuda or triton package and every non-macOS torch and torchvision entry is `+cpu`; a
+new `tests/test_dependencies.py` test pins that, since timm depends on torch too. timm ships
+`py.typed`, so it needs no mypy override (only torchvision has one, from 4.01); the pyproject
+comment says so. Runtime floor `timm>=1.0.3`, not the locked version (R38): in a scratch venv
+outside the repo on Python 3.12 with torch 2.3.0, torchvision 0.18.0, Pillow 10.1.0, timm 1.0.3
+(the first 1.0 release), NumPy 2.5.4 and huggingface-hub 2.2.0, `tests/test_models.py` and
+`tests/test_dataset.py` passed (38, deprecation warnings as errors). `VERIFIED_MINIMUMS` and the
+module docstring record it.
+
+`trailcam/model/small_cnn.py`: `SmallCNN`, the chapter 04 TinyVGG pattern, three blocks of (conv
+3x3, ReLU, conv 3x3, ReLU, max-pool 2) at a constant `hidden_units` (32 by default, chosen here:
+the plan does not pin it) and a flatten-linear head (`classifier`) sized from the image size;
+348,204 parameters. `trailcam/model/backbone.py`: `build_resnet18` (torchvision,
+`ResNet18_Weights.IMAGENET1K_V1` unless `pretrained=False`, `fc` replaced by a fresh 512-to-n
+linear layer) and the fallback `build_efficientnet_b0` (timm `efficientnet_b0.ra_in1k`,
+ImageNet-1k, fresh 1280-to-n classifier; timm is imported inside it only, so the ResNet-18 path
+never loads it). `trailcam/model/factory.py`: `build_model(name, *, pretrained=True)` for
+`small_cnn`, `resnet18`, `efficientnet_b0`; it reads `classes.NUM_CLASSES` at call time and takes
+no class count. `parameter_groups(model)` returns `(body, head)`, the head being the final linear
+layer (`classifier`, `fc` or timm's `get_classifier()`), every parameter once in
+`model.parameters()` order, for the two AdamW learning rates and the head-only first epoch (5.02,
+5.03).
+
+`tests/test_models.py`, 21 tests, no download (all built with `pretrained=False`; an autouse
+fixture refuses socket connections): all three names map (2, 3, 224, 224) to (2, 12); each head is
+one linear layer with `len(CLASSES)` outputs on the pooled features (25,088, 512, 1,280); with
+`NUM_CLASSES` patched to 5 every model gives 5 logits; the groups partition every parameter once
+and the ResNet-18 head group is `fc.weight` and `fc.bias`; spies show the default requests the
+ImageNet-1k weights of both backbones and `pretrained=False` none; both weight sets expect the
+dataset's ImageNet mean and std (R21); the small CNN's exact layer types, no batch norm or
+dropout, and its 112/56/28 sides. Six mutations (a literal 12, either backbone without weights,
+batch norm in a block, the head also in the body group, the wrong head module) each fail a test.
+The R05, R21, R30 and R38 test cells name the files.
+
+`/review-shapes` (shown in the session): the hand-traced tables for all three models, then
+checked with forward hooks: shapes and parameter counts match (ResNet-18 11,182,668, body
+11,176,512, head 6,156; EfficientNet-B0 4,022,920; small CNN 348,204). No mismatch flagged. The
+command now names the factory and its three names. `trailcam/` is already in
+`scripts/risk_files.sh` and `trailcam/model/backbone.py` in its test, so the regex is unchanged.
+
+Steps: `uv run pytest tests/test_models.py` 21 passed; `check.sh` green (358 passed); the
+`/review-shapes` table flags no mismatch. `passes` is flipped.
+
+Notes for later: 5.03 should call `parameter_groups` for the optimizer and freeze `body` for the
+head-only epoch; the Grad-CAM target is `model.layer4` on the unwrapped torchvision model. Main
+had not moved at commit time, so 5.04's `tests/test_dependencies.py` and `uv.lock` changes are
+not merged here: expect a conflict in both. Keep both sides and re-lock with `uv lock`; 5.04's
+`Requires-Dist` test then sees `timm>=1.0.3` from pyproject.toml.
+
+**Next.** Item 5.02, the configs.
