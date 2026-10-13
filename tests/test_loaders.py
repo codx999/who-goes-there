@@ -24,7 +24,7 @@ from trailcam.data.classes import NUM_CLASSES
 from trailcam.data.dataset import INPUT_SIZE, CCT20Dataset, EvalTransform, TrainTransform
 from trailcam.data.loaders import EVAL_SPLITS, Loader, make_loaders
 from trailcam.data.metadata import Metadata, Record, load_metadata
-from trailcam.data.split import POOLED_FILES, SPLIT_NAMES, Split, make_split
+from trailcam.data.split import POOLED_FILES, SPLIT_NAMES, Split, make_split, split_hash
 
 SEED = 42
 BATCH = 16
@@ -253,14 +253,36 @@ def test_bad_arguments_are_refused(
 def test_a_train_id_in_another_split_is_refused_with_counts_only(
     name: str, fixture: tuple[Split, Path, Metadata]
 ) -> None:
-    """R12, R16: a Split assembled by hand that puts a train image in another split is refused
-    before any loader exists; the message names the split and a count, never the id."""
+    """R12, R16: a Split assembled by hand that puts a train image in another split, with its
+    hash recomputed so the hash check passes, is refused before any loader exists; the message
+    names the split and a count, never the id."""
     split, root, _ = fixture
     leaked = replace(split.records["train"][0], split=name)
     records = dict(split.records)
     records[name] = records[name] + (leaked,)
-    tampered = replace(split, records=MappingProxyType(records))
+    tampered = replace(split, records=MappingProxyType(records), hash=split_hash(records))
     with pytest.raises(
         ValueError, match=rf"^train image ids also appear in other splits: {name}=1$"
     ):
         make_loaders(tampered, root, BATCH, num_workers=0, pin_memory=False)
+
+
+def test_a_split_that_no_longer_matches_its_hash_is_refused(
+    fixture: tuple[Split, Path, Metadata],
+) -> None:
+    """R12, R16: a filter after the split that moves a cis_test image into train, relabelled so
+    the dataset's `split == "train"` check passes and no id is in two splits, is refused because
+    the records no longer match `split.hash`. The message carries counts only."""
+    split, root, _ = fixture
+    moved = split.records["cis_test"][0]
+    records = dict(split.records)
+    records["cis_test"] = records["cis_test"][1:]
+    records["train"] = records["train"] + (replace(moved, split="train"),)
+    tampered = replace(split, records=MappingProxyType(records))
+    with pytest.raises(
+        ValueError, match=r"^the split's records no longer match its hash"
+    ) as caught:
+        make_loaders(tampered, root, BATCH, num_workers=0, pin_memory=False)
+    message = str(caught.value)
+    assert moved.image_id not in message and moved.file_name not in message
+    assert f"train={len(records['train'])}" in message
