@@ -634,7 +634,14 @@ part, R22, R42 to R45). Known gap passed: the R16 run alarms (5.03). Spec change
   item description names them. Adding them to 5.02's scope needs the user's OK (an item edit).
 Open as well: `drop_last=True` on the train loader (not in plan section 5) awaits the user's
 confirmation. Both decisions were relayed from the coordinator session and are recorded here once
-the user confirms them in this session. R12 and R16 test cells name the hash check. `check.sh`
+the user confirms them in this session.
+
+Decisions, confirmed by the user in this session after the fix commit:
+- Finding 2: item 5.02's scope now includes `num_workers` and `pin_memory` in every config (4 and
+  true on Kaggle, 0 and false for the dry-run), with a step that checks them.
+- `drop_last=True` on the train loader is the user's decision: a batch of one would fail batch
+  norm in training mode, at most 63 images per epoch are skipped and a different set each epoch,
+  and every step has the same batch size. Val and the test loaders keep every image. R12 and R16 test cells name the hash check. `check.sh`
 green (261 passed). The fix touches `trailcam/data/loaders.py` and modifies a test line, so one
 fix round on it is due.
 
