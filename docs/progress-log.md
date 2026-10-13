@@ -862,3 +862,47 @@ so no fix round.
 
 Review: tier 2, ran `/review-session 4.04` (3feec64..d257ca2; code-reviewer Opus xhigh,
 risk-reviewer Fable high)
+
+## 2026-10-13: session 5, item 5.04, packaging for the Kaggle pip install (Opus 5.5)
+
+Taken ahead of 5.01 to 5.03 by the user's decision in the coordinator session: the Kaggle image
+cache (6.03) needs 6.01 and this item merged.
+
+**Done.** `pyproject.toml` has a `[build-system]` table (`hatchling>=1.27`, the first with SPDX
+licence expressions) and `license = "MIT"`. The wheel target is `packages = ["trailcam"]`; the
+sdist target is `only-include = ["trailcam", "README.md", "LICENSE"]`, so tests, docs and anything
+untracked in a checkout (a data symlink, a scratch table) never enter either archive; hatchling
+adds the `.gitignore` and `pyproject.toml` to the sdist itself. The runtime dependencies are the
+4.01 floors, unchanged. `uv.lock` changes in one line: the project source is now `editable`
+instead of `virtual`, so `uv sync` installs `trailcam` into `.venv`.
+
+Kaggle's Python, checked as the 4.01 fix round asked: Kaggle's GPU image (Kaggle/docker-python,
+last base bump 2026-09-28) is built on Colab's runtime of 2026-09-17 and installs into
+`python3.13`; Colab's published package list from that date (googlecolab/backend-info) has
+Python 3.13, torch 2.11.0+cu128, torchvision 0.26.0 and Pillow 11.3.0. So `requires-python =
+">=3.12"` does not block the install and every runtime floor is met; recorded in the comment
+above the build table.
+
+Steps: `uv build` wrote `dist/trailcam-0.1.0.tar.gz` and `dist/trailcam-0.1.0-py3-none-any.whl`
+(ignored; `git status` shows neither). The wheel holds the nine `trailcam/` modules and its
+dist-info (METADATA, WHEEL, RECORD, `licenses/LICENSE`) only; METADATA lists `Requires-Python:
+>=3.12` and the three floors, with no index URL. In fresh `uv venv`s in the scratchpad (outside
+the repo), `uv pip install dist/*.whl` then `python -I -c 'import trailcam.data.classes'` succeeded
+on Python 3.12.9 and 3.13.9, importing from site-packages. Beyond the steps, a Kaggle-like check:
+a seeded 3.13 venv with torch 2.11.0, torchvision 0.26.0 and Pillow 11.3.0 preinstalled, then
+real `pip install <worktree>` (the source build `git+` takes): the import succeeded and pip kept
+torch 2.11.0, torchvision 0.26.0 and Pillow 11.3.0.
+
+New tests in `tests/test_dependencies.py` (R38's build half, which had none) run `uv build` into
+a temp directory once per module: the wheel holds exactly the `trailcam/**/*.py` files plus its
+dist-info; its `Requires-Dist` lines equal `[project].dependencies` and `Requires-Python` equals
+`requires-python`, with no `download.pytorch.org` and no direct `@` reference; the sdist holds the
+package, README, licence, `pyproject.toml` and `PKG-INFO` only. Mutation: `packages = ["trailcam",
+"tests"]` with the sdist `only-include` removed fails the wheel and sdist tests. `mypy --strict
+tests/test_dependencies.py` is clean. R38's test cell in `docs/review/invariants.md` names the
+build tests. `check.sh` green, so `passes` is flipped.
+
+Notes: CI runs Python 3.12 only; the 3.13 evidence is the import above, not the test suite. The
+`git+https` install itself is first possible after the user pushes this commit (6.02's notebook).
+
+**Next.** Session 5, item 5.01 (or whichever item the coordinator assigns).

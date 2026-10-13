@@ -72,7 +72,7 @@
     {"id": "5.04", "session": 5, "owner": "claude", "due": "2026-10-14",
      "description": "Packaging so Kaggle can `pip install git+https://github.com/codx999/who-goes-there`: a [build-system] table (hatchling) with packages = [\"trailcam\"] in pyproject.toml, runtime dependencies listed",
      "steps": "`uv build` writes a wheel under dist/ (ignored by git); in a fresh `uv venv` outside the repo, `uv pip install dist/*.whl` then `python -c 'import trailcam.data.classes'` succeeds; `bash scripts/check.sh` green",
-     "passes": false},
+     "passes": true},
 
     {"id": "6.01", "session": 6, "owner": "claude", "due": "2026-10-15",
      "description": "scripts/kaggle_prepare_cct20.py, written fresh in this session (an earlier draft was discarded): download the annotations and eccv_18_all_images_sm.tar.gz from LILA to /tmp, resize so the longer side is 512 px into /kaggle/working, compute the day/night flag per image from the pixels (three channels near-identical) and write it with the hour to a sidecar JSON next to the images, print counts and the tarball layout, fail if the count is not 57,864; the grayscale test factored into trailcam/data/daynight.py so it is unit-tested",
