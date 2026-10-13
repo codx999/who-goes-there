@@ -566,4 +566,18 @@ Noted, not a finding (code-reviewer): the dataset's refusal of the training tran
 test that the train loader is built from `Split.records["train"]` (R12). `check.sh` green (232
 passed). The fix commit touches `pyproject.toml`, so one fix round on it is due.
 
-**Next.** Item 4.02, the DataLoaders (tier 2).
+Fix round, started by the user: `/review-session 8ef7d6f..HEAD 4.01`, tier 2, risk files
+`pyproject.toml`, `tests/test_dependencies.py`, `uv.lock`; code-reviewer on Opus at xhigh,
+risk-reviewer on Fable at high. Nothing found by either; every scenario held (R01, R03, R20,
+R21, R23, R38, R42 to R45). Spec changed: none. The code-reviewer re-ran `tests/test_dataset.py`
+and `tests/test_dependencies.py` on torch 2.3.0, torchvision 0.18.0 and Pillow 10.1.0 from the
+uv cache (19 passed, no warnings), confirming the scratch-venv run above; the minimums were
+checked on macOS arm64 only. Noted for 5.04 and 6.02 (code-reviewer): `requires-python =
+">=3.12"` would block the pip install outright if Kaggle's image still runs Python 3.11, so check
+Kaggle's Python as well as its torch when the wheel install is tested. No third round.
+
+**Next.** Item 4.02, the DataLoaders (tier 2); its tests show the train loader is built from
+`Split.records["train"]` (R12).
+
+Review: tier 2, ran `/review-session 4.01` (c5b2a74..8ef7d6f) and the fix round
+`/review-session 8ef7d6f..HEAD 4.01` (code-reviewer Opus xhigh, risk-reviewer Fable high)
