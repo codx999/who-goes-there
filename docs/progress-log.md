@@ -625,7 +625,46 @@ with `--root` and `--sidecar` on it loaded 661 kept images (302 night) and `pyth
 trailcam.data.split --root <dir> --seed 42` split it (hash `7a13478e…`, the pinned synthetic
 hash), both exit 0. `check.sh` green (245 passed), so `passes` is flipped.
 
+Review, started by the user: `/review-session 4.03`, tier 2, range c6c65f5..0a46547, risk files
+`tests/test_dataset.py`, `tests/test_synthetic.py`, `trailcam/data/synthetic.py`; code-reviewer
+on Opus at xhigh, risk-reviewer on Fable at high. Nothing found by either; every scenario held
+(R01, R03, R37 for the fixture, R42 to R45). Known gap passed: R37's dry run (5.03). Spec changed:
+none. The code-reviewer's `check.sh` run was green (245 passed, none skipped).
+
+Could not verify (code-reviewer): the new image code on the declared minimum Pillow 10.1. Checked
+afterwards at the user's request, as in the 4.01 fix round: a scratch venv outside the repo,
+offline from the uv cache, torch 2.3.0, torchvision 0.18.0, Pillow 10.1.0, NumPy 2.5.4,
+deprecation warnings as errors. `tests/test_dataset.py` passes (17) and so do 12 of the 13 tests
+in `tests/test_synthetic.py`, but one fails in every run (ten runs):
+`test_a_rectangle_is_drawn_exactly_where_each_box_is` (an unboxed night image with a pixel at
+166, above the 160 the test allows) or `test_same_seed_same_bytes` (two writes in one process
+differ). The cause, isolated in scratch scripts, is Pillow 10.1's JPEG encoder on this Mac (macOS
+arm64): over 300 drawn images the pixels before saving hash the same in every process, but the
+saved mode L JPEGs differ between processes (2 of 6 runs), always in the last 8 x 8 block, by up
+to 95 grey levels; the same grey images saved as three-channel JPEGs differ too (2 of 6 runs),
+and 8 of 300 decode with unequal channels. On Pillow 12.3, the locked version, every hash is the
+same in every run. So the writer is correct and Pillow 10.1 cannot write it reproducibly; writing
+night frames as three-channel JPEGs would not avoid it. Only 10.1.0 and 12.3.0 are in the uv
+cache, so the first fixed version is not known offline. `check.sh` and CI use the lock and are
+unaffected; Kaggle never writes the fixture (the dry run is Mac only), and the Dataset there only
+decodes, which passes on 10.1.
+
+Not changed, pending the user's decision: the minimum `pillow>=10.1`. `tests/test_dependencies.py`
+states it is verified; that holds for the Dataset and its tests, not for the fixture's tests. The
+options are to keep it and document the limit, or to raise the floor to the first version that
+writes reproducibly, found with network (touches `pyproject.toml`, `uv.lock` and
+`tests/test_dependencies.py`, R38, and needs a fix round). For 6.01: the prepare script writes
+the 512 px cache with Kaggle's Pillow, so check that version and that re-encoding an image there
+is reproducible.
+
+Noted, not fixed (risk-reviewer), by the user's decision: `mypy tests/test_synthetic.py` reports 7
+errors (Pillow's union return types compared as ints at lines 135, 138 and 146; the loop variable
+`split` reused for a `Split` at lines 196 to 207). Tests are outside `check.sh`'s mypy scope and
+the code is correct at runtime; fixing them would touch a reviewed high-stakes file and need
+another round. No fix commit, so no fix round.
+
 **Next.** Item 4.04, the arm B box-crop sampler (tier 2); its tests can draw on the fixture's
 rectangles to check a crop contains its box. Item 4.02 runs in a parallel session.
 
-Review: tier 2, not yet run; the user starts `/review-session 4.03`
+Review: tier 2, ran `/review-session 4.03` (c6c65f5..0a46547; code-reviewer Opus xhigh,
+risk-reviewer Fable high)
