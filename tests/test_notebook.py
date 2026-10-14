@@ -1,4 +1,4 @@
-"""notebooks/kaggle_train.ipynb, read as JSON and its code cells as Python (item 6.02).
+"""notebooks/kaggle_train.ipynb, read as JSON and its code cells as Python (items 6.02 and 6.06).
 
 The notebook runs only on Kaggle, so it is never executed here: these tests check its shape. Every
 code cell parses as plain Python (no magics) and defines nothing, so the logic stays in `trailcam`
@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from trailcam.train import train
+from trailcam.train import device, train
 from trailcam.train.config import load_configs
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -180,16 +180,53 @@ def test_no_credentials() -> None:
         assert needle not in lowered
 
 
-def test_the_plan_s_single_p100_is_named_and_two_gpus_warn() -> None:
-    """plan.md section 5: the single P100, not GPU T4 x2 (review 6.02). Two GPUs warn, never
-    refuse; no GPU refuses, naming the P100."""
-    assert "GPU P100" in MARKDOWN and "T4 x2" in MARKDOWN
-    (cell,) = [source for source in CODE if "torch.cuda.is_available()" in source]
-    no_gpu = cell.split("if not torch.cuda.is_available():", 1)[1].split("\nprint", 1)[0]
-    assert "raise RuntimeError" in no_gpu and "GPU P100" in no_gpu
-    two = cell.split("if torch.cuda.device_count() > 1:", 1)[1]
-    assert "WARNING" in two and "twice as fast" in two and "one GPU" in two
-    assert "raise" not in two
+def test_the_plan_s_t4_x2_is_named_and_one_gpu_is_pinned() -> None:
+    """plan.md section 5 (item 6.06): GPU T4 x2, training on the first T4. The notebook names no
+    P100 as the accelerator and no longer warns on two GPUs; `CUDA_VISIBLE_DEVICES` is set once,
+    to `VISIBLE_DEVICES`, in a cell before any cell that imports torch or `trailcam`."""
+    assert "Accelerator GPU T4 x2" in MARKDOWN and "training uses the first one" in MARKDOWN
+    assert "30 hours a week" in MARKDOWN
+    assert "GPU P100" not in ALL_CODE and "Accelerator GPU P100" not in MARKDOWN
+    assert "device_count" not in ALL_CODE and "WARNING" not in ALL_CODE
+    pins = [
+        (i, node)
+        for i, tree in enumerate(TREES)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Assign)
+        and ast.unparse(node.targets[0]) == "os.environ['CUDA_VISIBLE_DEVICES']"
+    ]
+    assert ALL_CODE.count("CUDA_VISIBLE_DEVICES") == 1
+    ((pin_cell, pin),) = pins
+    assert ast.literal_eval(pin.value) == device.VISIBLE_DEVICES
+    first_torch = min(i for i, tree in enumerate(TREES) if _imported(tree) & {"torch", "trailcam"})
+    assert pin_cell < first_torch
+
+
+def test_the_gpu_and_cpus_are_checked_before_the_cache_and_training() -> None:
+    """Item 6.06: `check_gpu` (an architecture torch was not built for fails here, not at the
+    first CUDA call of training) and the CPU count with `workers_warning` for the chosen config,
+    after the stale-import guard and before the cache is loaded or `train.main` runs."""
+    cells_calling = {
+        name: [i for i, tree in enumerate(TREES) for _ in _calls_in(tree, name)]
+        for name in ("check_gpu", "workers_warning", "load_metadata", "train.main")
+    }
+    assert all(len(found) == 1 for found in cells_calling.values()), cells_calling
+    first = next(i for i, tree in enumerate(TREES) if "trailcam" in _imported(tree))
+    gpu = cells_calling["check_gpu"][0]
+    assert first <= gpu == cells_calling["workers_warning"][0]
+    assert gpu < cells_calling["load_metadata"][0] < cells_calling["train.main"][0]
+    cell = CODE[gpu]
+    assert "print(check_gpu())" in cell
+    assert 'load_config(CONFIG_NAME, CLONE / "config.yaml").num_workers' in cell
+    assert "os.cpu_count()" in cell and "workers_warning(num_workers, os.cpu_count())" in cell
+
+
+def _calls_in(tree: ast.Module, attribute: str) -> list[ast.Call]:
+    return [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and ast.unparse(node.func) == attribute
+    ]
 
 
 def test_trailcam_is_imported_once_per_kernel() -> None:

@@ -1471,3 +1471,71 @@ was written. Same pattern as review 5.03; its agent file's limits rest on the pr
 
 Review: tier 2, ran `/review-session 6.02` (dc05dad..f30e0c1; code-reviewer Opus xhigh,
 risk-reviewer Fable high), fix round `/review-session f30e0c1..9c2260d 6.02` (same reviewers)
+
+## 2026-10-14: session 6, item 6.06, GPU T4 x2 and the architecture check (Opus 5.5)
+
+New item, approved by the user in the coordinator session on 2026-10-14 and added to
+`docs/progress.json` as 6.06 (session 6, owner claude, due 2026-10-15). Evidence, run by the user
+on Kaggle in a GPU T4 x2 session on 2026-10-14: torch 2.11.0+cu128 (CUDA build 12.8), two Tesla
+T4 at capability (7, 5), driver 580.178.04, `torch.cuda.get_arch_list()` = sm_75, sm_80, sm_86,
+sm_90, sm_100, sm_120. No sm_60, so a P100 session cannot run Kaggle's torch: this closes the
+open question of review 6.02 (the P100 would have failed at the first CUDA call of training).
+
+**Done.** Plan section 5 (spec changed: plan §5): the accelerator is GPU T4 x2, training on one
+T4, the same device for every run and arm; why (no sm_60 in Kaggle's torch 2.11, checked
+2026-10-14); quota 30 GPU hours a week; the GPU budget line says one T4; `num_workers` stays 4.
+Added at the coordinator's request, within this item's scope: after the user's short check
+session the quota page showed 29h 49m of 30h available; the rate at which GPU T4 x2 draws on the
+quota is unverified and is measured on the first real run (6.04, the quota page before and after
+and the version's run time); the quota rules (GPU sessions only for training and scoring runs,
+the cache build and everything else on CPU, Save & Run All so no GPU time is idle, interactive
+GPU sessions stopped right after use). The GPU budget paragraph (under 10 h) is unchanged.
+
+`trailcam/train/device.py` (new): `sm_arch`, `arch_supported` (exact match of the device's
+`sm_XY` in the arch list), `check_gpu` (refuses no GPU, other than one visible device, or an
+architecture not in torch's build, each naming GPU T4 x2 or the Factory reset; returns a line
+naming the device, `CUDA_VISIBLE_DEVICES`, the torch and CUDA build and its arch list) and
+`workers_warning` (a warning naming `num_workers` and the CPU count when the first exceeds the
+second; `None` when the count is unknown). The exact match refuses devices CUDA could still serve
+from a same-major cubin (an sm_89 on sm_86 code) or PTX; noted in the module docstring, not
+relevant to the T4.
+
+`notebooks/kaggle_train.ipynb` (outputs cleared): How-to-run step 4 says Accelerator GPU T4 x2,
+why not the P100, that training uses the first T4 and the 30-hour quota; the 6.02 multi-GPU
+warning and the P100 no-GPU message are gone. Cell order: the parameter cell (section 1) sets
+`CUDA_VISIBLE_DEVICES=0` and no longer imports torch, so torch is first imported by the
+`trailcam` import after the stale-import guard of review 6.02, which stays the first statement of
+that cell. The GPU check moved after the install (it needs `trailcam`): section 3 is now three
+cells, the guard and module match, then the GPU and CPU cell (`print(check_gpu())`, the chosen
+config's `num_workers` from the clone's `config.yaml`, `os.cpu_count()`, `workers_warning` to
+stderr), then the cache check, so a P100 or a missing GPU fails after the clone and pip install
+(tens of seconds) but before the cache is read or training starts. Cell ids renumbered
+`cell-00` to `cell-14`.
+
+Tests: `tests/test_device.py` (new, 18 tests): `sm_arch`; `arch_supported` against Kaggle's list
+(sm_75, sm_80, sm_120 in; sm_60 and sm_89 out) and against a given list (sm_60 in an older list,
+sm_75 out of it, an empty list, a `compute_75` entry only); `check_gpu` on a patched `torch.cuda`
+accepts one T4, refuses a P100 naming sm_60 and the arch list, no GPU, and 0 or 2 visible
+devices; `workers_warning` at, below and above the CPU count and with an unknown count.
+`tests/test_notebook.py`: the 6.02 P100 test is replaced by two, the T4 x2 markdown and the one
+`CUDA_VISIBLE_DEVICES` assignment (equal to `VISIBLE_DEVICES`) in a cell before any cell that
+imports torch or `trailcam`; and `check_gpu` and `workers_warning` called once, in one cell, not
+before the first `trailcam` import and before `load_metadata` and `train.main`. Both fail on the
+6.02 notebook. Mutations checked: `arch_supported` always true fails four device tests; the pin
+moved after the `trailcam` imports fails the pin test.
+
+Steps: `check.sh` green (525 passed); the tests above cover the architecture check, sm_60
+refused against Kaggle's list; `uvx --from nbconvert jupyter nbconvert --clear-output --inplace
+notebooks/kaggle_train.ipynb` leaves the notebook unchanged (`cmp`); `uv run python
+scripts/guard_data.py --all` exits 0 with the changes staged. No invariants row touched (none
+cites the accelerator); `config.yaml` unchanged.
+
+For the user (6.03 to 6.05): 6.03 on a CPU session; for 6.04, note the quota page before and
+after the run and the version's run time; choose GPU T4 x2; the GPU and CPU cell prints the
+device and the CPU count, and warns if 4 workers outnumber the CPUs (a change to `num_workers`
+changes the config hash, your decision after the first run). Still open from review 6.02:
+whether Run > Factory reset empties `/kaggle/working`.
+
+**Next.** Session 6 is the user's (6.03, 6.04, 6.05), or item 7.01 if not yet merged.
+
+Review: tier 2, `/review-session 6.06` (to be started by the user)

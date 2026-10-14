@@ -170,17 +170,29 @@ before any training run, and checks the head size against the class map.
 | Dry run | `/dryrun` runs `train.py --max-epochs=1 --batch-size=2 --dry-run=True`; `--dry-run` writes the synthetic fixture (`trailcam/data/synthetic.py`, also used by the tests) into a temporary directory itself, since the guard blocks fixture images in git, runs one epoch on a tiny batch, prints its ledger row without appending it, and stops |
 | Ledger | Every training run (not the dry run) appends one row to `docs/ledger.md` (created with its header row in session 5, same column order as the row `train.py` prints): run id, model, arm, config, config hash, split seed, run seed, split hash, epochs run, best epoch, scheduler, val accuracy, val macro-F1, trans_val accuracy, trans_val macro-F1, checkpoint hash. The config hash is a SHA-256 of the resolved config without `arm` and `run_seed`, so the arm A and arm B rows of one seed share it (user's decision, review 5.02). The row is what gets reviewed; Kaggle runs are started by the user, who pastes the row |
 
-GPU budget (Kaggle, 30 hours a week, T4 or P100): small CNN about 0.5 h; each ResNet-18 run about
+GPU budget (Kaggle, 30 GPU hours a week, one T4): small CNN about 0.5 h; each ResNet-18 run about
 1 h over roughly 13,600 cached training images; two arms times up to three seeds is 6 h; the
 evaluation passes about 1 h. Total under 10 h.
 
 Platform (decided 2026-10-11, after comparing Kaggle, Colab free, Colab Pro, Lightning AI Studio and
 per-hour clouds): Kaggle stays. It is the only free option with a published quota, the cache
 already lives there as a dataset, and a faster GPU would not change the result at 224 px with
-ResNet-18. Accelerator: the single P100, not the 2x T4 option, which burns quota at twice the rate
-and the script uses one GPU. Runs are launched with "Save & Run All" so they finish in the
-background. Fallback if queues or quota fail in the final week: Colab Pro for one month
-(about $10, roughly 50 T4 hours), with the cache copied to Drive.
+ResNet-18. Accelerator (changed 2026-10-14, item 6.06): GPU T4 x2, training on one T4, the same
+device for every run and every arm. The notebook sets `CUDA_VISIBLE_DEVICES=0` before torch is
+imported and refuses a session whose GPU is not in torch's build. The single P100 chosen earlier
+cannot run: Kaggle's preinstalled torch 2.11 is a CUDA 12.8 build for sm_75, sm_80, sm_86,
+sm_90, sm_100 and sm_120, with no sm_60 (Pascal) kernels, checked by the user in a GPU T4 x2
+session on 2026-10-14. The quota is 30 GPU hours a week; after that short check session Kaggle's
+quota page showed 29h 49m of 30h available. How fast GPU T4 x2 draws on the quota is not known
+yet: it is measured on the first real run (6.04), from the quota page before and after and the
+version's run time. Quota rules: a GPU session only for training and scoring runs, with the
+cache build (6.03) and anything else on CPU sessions; runs launched with "Save & Run All", so
+they finish in the background and no GPU time is spent idle; an interactive GPU session stopped
+right after use. Kaggle's dialog says GPU T4 x2 reduces the CPUs available, so the notebook
+prints the CPU count next to the config's `num_workers` and warns if the workers outnumber the
+CPUs (`num_workers` stays at 4: it is in the config hash, and a change is the user's decision
+after the first run). Fallback if queues or quota fail in the final week: Colab Pro for one
+month (about $10, roughly 50 T4 hours), with the cache copied to Drive.
 
 ## 6. Research question and experiment
 
