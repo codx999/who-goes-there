@@ -81,7 +81,7 @@
     {"id": "6.02", "session": 6, "owner": "claude", "due": "2026-10-15",
      "description": "notebooks/kaggle_train.ipynb with outputs cleared: attach the cache dataset, install trailcam from the public repo with pip (the notebook exception in CLAUDE.md; needs 5.04), run train.py with a chosen config and arm, print the ledger row",
      "steps": "`uv run python scripts/guard_data.py --all` passes with the notebook staged (no outputs, no images); `uvx --from nbconvert jupyter nbconvert --clear-output --inplace notebooks/kaggle_train.ipynb` leaves it unchanged; every code cell calls trailcam functions rather than redefining them",
-     "passes": false},
+     "passes": true},
     {"id": "6.03", "session": 6, "owner": "user", "due": "2026-10-15",
      "description": "Run scripts/kaggle_prepare_cct20.py on Kaggle once and save the 512 px cache with its sidecar as a private Kaggle dataset",
      "steps": "manual: the Kaggle dataset exists; the printed image count is 57,864 and the per-split counts match docs/data-card.md; the tarball folder layout is recorded in docs/plan.md open question 3; the day/night share is recorded in the data card",
