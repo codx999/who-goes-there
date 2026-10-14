@@ -1160,10 +1160,10 @@ too). PyYAML is a runtime dependency (`>=6.0.1`, the first release with Python 3
 `tests/test_config.py` passed on 6.0.1 with Python 3.12.9 in a scratch venv; timm, item 5.01,
 depends on PyYAML anyway) and `types-pyyaml` a dev one for mypy.
 
-**Decision for the user.** The small CNN trains body and head at 1e-3, not 1e-4 / 1e-3: plan.md
+**Small CNN rate.** The small CNN trains body and head at 1e-3, not 1e-4 / 1e-3: plan.md
 section 9 gives the lower body rate to protect pretrained weights, and the small CNN has none.
-R31's text names 1e-4 / 1e-3 without saying which model; reverting is one line in `config.yaml`
-and one in `tests/test_config.py`.
+Kept by the user's decision (via the coordinator, after the review): no pretrained weights to
+protect. Plan section 5 now says so (see the review below).
 
 **Verify.** `uv run pytest tests/test_config.py`: 57 passed. All configs load; the dry run has
 max_epochs 1, batch 2, 0 workers, pin_memory false and fixture true; every config has both seeds;
@@ -1178,12 +1178,45 @@ tests; R31's "where" column adds `config.yaml`; R38's names the config tests for
 
 Notes: `config.yaml` sits at the repository root, outside the wheel; `CONFIG_PATH` finds it from a
 checkout or an editable install, so the Kaggle notebook (6.02) must pass the file's path (for
-example from a clone at the same commit). When 5.01 merges, `MODEL_NAMES` in
-`trailcam/train/config.py` should import from `trailcam/model/factory.py` instead of copying it;
-5.01 also edits `pyproject.toml`, `uv.lock` and `tests/test_dependencies.py`, so the second merge
-keeps both sides (re-run `uv lock`). How the head-only epoch and the warmup epoch interact is
-5.03's.
+example from a clone at the same commit). `MODEL_NAMES` in `trailcam/train/config.py` stays
+a copy of `trailcam/model/factory.py`'s for now (user's decision): item 5.03 switches it to an
+import and adds a test that the lists match. How the head-only epoch and the warmup epoch
+interact is 5.03's.
 
-**Next.** Session 5, item 5.03 (after 5.01 merges).
+Review, started by the user: `/review-session 5.02`, tier 2, range 4319bd3..6dc606f (the item
+commit), risk files `config.yaml`, `pyproject.toml`, `tests/test_config.py`,
+`tests/test_dependencies.py`, `trailcam/train/__init__.py`, `trailcam/train/config.py`,
+`uv.lock`; code-reviewer on Opus at xhigh, risk-reviewer on Fable at high. Known gaps passed:
+R14, R16, R17 (train.py, 5.03), R25's ledger half (7.01), R31's loop half (5.03). Every other
+scenario held (R01, R03, R05, R25 and R31 config halves, R38, R42 to R45). The code-reviewer's
+`check.sh` run was green (396 passed); the risk-reviewer ran the config, dependency, risk-files
+and control-plane tests (90 passed). Two low findings, no code change, by the user's decisions:
 
-Review: tier 2, `/review-session 5.02` (not started; the user starts it)
+- Both reviewers, low: the small CNN's body rate 1e-3 was not in plan.md, which gives 1e-4 / 1e-3
+  for every model. The user kept 1e-3; plan.md section 5 (Optimizer row) now says the small CNN
+  trains from scratch, so its body and head both use 1e-3, and the 1e-4 body rate applies to the
+  pretrained backbones. R31's rule text says the same. Spec changed: plan §5.
+- Risk-reviewer, low: `config.yaml` is outside the wheel, so Kaggle loads it by a second channel
+  and the ledger's config name alone cannot show that both arms ran the committed values. Handoff,
+  approved by the user as a scope addition: 5.03's `train.py` records in the ledger row a sha256
+  of the resolved config with `arm` and `run_seed` removed; 7.01's ledger checker requires arm A
+  and arm B rows with the same run seed to share it; 6.02's notebook loads `config.yaml` from a
+  clone at the same commit as the installed package.
+
+Notes for 5.03 from the code-reviewer, not findings: `train.py` must pass `config.arm` to
+`TrainTransform` (`make_loaders` defaults to arm A); the head-only epoch counts inside
+`max_epochs` (10 in all), though the docstring of `test_the_full_configs_carry_the_recipe` reads
+as 11; command-line overrides other than `run_seed` would bypass R25. Risk-reviewer: a YAML merge
+key (`<<`) would bypass the repeated-key check; the file uses none. No fix commit touches a
+high-stakes file, so no fix round.
+
+After the review, main with 5.01 (018a6bf) was merged into this branch (a9557d4): the
+`pyproject.toml`, `tests/test_dependencies.py` and `docs/review/invariants.md` conflicts keep
+both sides (PyYAML and timm floors; R30 and R38 from 5.01 with R31 and the PyYAML note from
+5.02), `uv.lock` was regenerated with `uv lock` from main's copy, and the log keeps 5.01's entry
+first. 5.01's `MODEL_NAMES` equals the copy in `config.py`.
+
+**Next.** Session 5, item 5.03.
+
+Review: tier 2, ran `/review-session 5.02` (4319bd3..6dc606f; code-reviewer Opus xhigh,
+risk-reviewer Fable high)

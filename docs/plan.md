@@ -158,7 +158,7 @@ before any training run, and checks the head size against the class map.
 | Setting | Decision |
 | --- | --- |
 | Loss | Cross-entropy, unweighted, the same in both experiment arms |
-| Optimizer | AdamW; backbone at 1e-4, head at 1e-3 (two parameter groups); weight decay 1e-2 |
+| Optimizer | AdamW; backbone at 1e-4, head at 1e-3 (two parameter groups); weight decay 1e-2. The small CNN trains from scratch, so its body and head both use 1e-3; the 1e-4 body rate applies to the pretrained backbones (user's decision, review 5.02) |
 | Schedule | Cosine annealing with a one-epoch linear warmup, **and** early stopping on val macro-F1 with patience 3; the best checkpoint is restored |
 | Epochs | Up to 15 for the small CNN, up to 10 for the backbone (one head-only epoch first); the ledger records epochs run and the best epoch |
 | Batch and input | 64 images at 224 x 224; mixed precision on the GPU |
