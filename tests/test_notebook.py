@@ -178,3 +178,41 @@ def test_no_credentials() -> None:
     lowered = ALL_CODE.lower()
     for needle in ("token", "kaggle.json", "secret", "password", "api_key"):
         assert needle not in lowered
+
+
+def test_the_plan_s_single_p100_is_named_and_two_gpus_warn() -> None:
+    """plan.md section 5: the single P100, not GPU T4 x2 (review 6.02). Two GPUs warn, never
+    refuse; no GPU refuses, naming the P100."""
+    assert "GPU P100" in MARKDOWN and "T4 x2" in MARKDOWN
+    (cell,) = [source for source in CODE if "torch.cuda.is_available()" in source]
+    no_gpu = cell.split("if not torch.cuda.is_available():", 1)[1].split("\nprint", 1)[0]
+    assert "raise RuntimeError" in no_gpu and "GPU P100" in no_gpu
+    two = cell.split("if torch.cuda.device_count() > 1:", 1)[1]
+    assert "WARNING" in two and "twice as fast" in two and "one GPU" in two
+    assert "raise" not in two
+
+
+def test_trailcam_is_imported_once_per_kernel() -> None:
+    """Review 6.02: Python keeps modules it has imported, so the first cell that imports
+    `trailcam` refuses a kernel that already holds it, and the clone cell offers a fresh session
+    only, never deleting the clone and running again in the same kernel."""
+    first = next(i for i, tree in enumerate(TREES) if "trailcam" in _imported(tree))
+    assert not any("trailcam" in _imported(tree) for tree in TREES[:first])
+    guard_stmt = TREES[first].body[0]
+    assert isinstance(guard_stmt, ast.If)
+    assert ast.unparse(guard_stmt.test) == "'trailcam' in sys.modules"
+    assert isinstance(guard_stmt.body[0], ast.Raise)
+    assert "Factory reset" in ast.unparse(guard_stmt.body[0])
+    (clone_cell,) = [source for source in CODE if "git" in source and "clone" in source]
+    assert "Factory reset" in clone_cell and "delete" not in clone_cell.lower()
+
+
+def _imported(tree: ast.Module) -> set[str]:
+    """Top-level package names a cell imports."""
+    names = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            names |= {alias.name.split(".")[0] for alias in node.names}
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            names.add(node.module.split(".")[0])
+    return names
