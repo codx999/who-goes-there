@@ -2,11 +2,14 @@
 sized from the class map, R21 one normalisation for every model, R30 the two models).
 
 No test downloads weights: every model is built with `pretrained=False`, the default's ImageNet
-weights are checked by spying on the builders, and an autouse fixture refuses any network
-connection so a forgotten `pretrained=False` fails instead of downloading.
+weights are checked by spying on the builders, and a module-wide fixture refuses any network
+connection so a forgotten `pretrained=False` fails instead of downloading. It is module-scoped and
+the shared `models` fixture depends on it, so it is already active while those models are built
+(review 5.01: a per-test guard was set up after them).
 """
 
 import socket
+from collections.abc import Iterator
 from typing import Any
 
 import pytest
@@ -23,17 +26,26 @@ from trailcam.model.factory import head_module
 from trailcam.model.small_cnn import SmallCNN
 
 
-@pytest.fixture(autouse=True)
-def no_network(monkeypatch: pytest.MonkeyPatch) -> None:
-    def refuse(*args: object, **kwargs: object) -> None:
-        raise AssertionError("a model test tried to open a network connection")
+def _refuse_connection(*args: object, **kwargs: object) -> None:
+    raise AssertionError("a model test tried to open a network connection")
 
-    monkeypatch.setattr(socket.socket, "connect", refuse)
+
+@pytest.fixture(scope="module", autouse=True)
+def no_network() -> Iterator[None]:
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(socket.socket, "connect", _refuse_connection)
+        yield
 
 
 @pytest.fixture(scope="module")
-def models() -> dict[str, nn.Module]:
+def models(no_network: None) -> dict[str, nn.Module]:
+    assert socket.socket.connect is _refuse_connection  # the guard is up before any build
     return {name: build_model(name, pretrained=False).eval() for name in MODEL_NAMES}
+
+
+def test_the_network_guard_refuses_the_connection_a_download_opens() -> None:
+    with pytest.raises(AssertionError, match="network connection"):
+        socket.create_connection(("192.0.2.1", 443), timeout=1)  # TEST-NET-1, never routed
 
 
 def test_model_names() -> None:
