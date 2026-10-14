@@ -257,9 +257,12 @@ methods. Mixed outcomes are reported as mixed. A negative result is a result.
   figures under `docs/figures/`, which has a 40-file, 20 MB guard budget).
 - **Experiment outcomes** from section 6: attention-in-box distributions and the animal-removed
   table, arm A vs arm B.
-- **Grad-CAM** (the `grad-cam` package, `layer4` of ResNet-18) overlays on correct and wrong cases
-  among the `assets/` photos, which are trans-test samples and the only dataset images allowed in
-  the repo (the data rule keeps raw dataset images out of `docs/figures/`).
+- **Grad-CAM** (`layer4` of ResNet-18) overlays on correct and wrong cases among the `assets/`
+  photos, which are trans-test samples and the only dataset images allowed in the repo (the data
+  rule keeps raw dataset images out of `docs/figures/`). Grad-CAM is hand-written in
+  `trailcam/evaluate/gradcam.py`, with no `grad-cam` package (which would bring OpenCV and
+  scikit-learn into the runtime); the overlays (8.02) draw with that same function, so one
+  implementation is both scored (attention-in-box) and shown (user's decision, review 8.03).
 - **Slices of the same test predictions**, no extra training: day vs infrared night, per camera
   group and per class; common vs rare species; accuracy per unseen camera as a bar chart (bars
   only in `docs/figures/`: the worst camera is known only after the final scoring, too late to

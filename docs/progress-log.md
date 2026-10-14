@@ -1714,3 +1714,91 @@ Review: tier 2, ran `/review-session 8.01` (17ca508..0270f80; code-reviewer Opus
 risk-reviewer Fable high), nothing found, no fix round. Scenarios R01, R03, R05, R32, R33, R42 to
 R45 held; known gaps passed: R32 reporting on trans test (9.01), R33 the demo and Space calling
 the timer (10.01, 11.01). Neither reviewer could run the CUDA and MPS synchronise branches.
+
+## 2026-10-14: session 8, item 8.03, attention-in-box and the animal-removed test (Opus 5.5)
+
+Taken ahead of its 10-18 date by the user's decision in the coordinator session, alongside 8.01.
+Main (0270f80, 8.01) was fast-forwarded into this branch before the commit; this branch had no
+commit of its own, so `git merge --ff-only main` (the sync tool merges `origin/main`, which does
+not have 8.01 yet). My `docs/review/invariants.md` edit was set aside as a patch and reapplied
+cleanly (8.01 changed R32 and R33, this item R03, R23, R26 and R38).
+
+**Done.** `trailcam/evaluate/attention.py` and `trailcam/evaluate/gradcam.py`, with
+`tests/test_attention.py` (35 tests) and `tests/test_gradcam.py` (7). Rules, stated in the
+module docstring:
+
+- Grad-CAM: a small hook-based implementation (Selvaraju et al. 2017) for the top-1 class, on
+  `layer4` of ResNet-18, the third conv block of the small CNN and `bn2` of EfficientNet-B0;
+  ReLU, then bilinear upsampling to 224 x 224, not normalised in `gradcam.py`. Not the
+  `grad-cam` package, which would add OpenCV and scikit-learn to the runtime dependencies.
+  Checked once in a throwaway env (`uv run --with grad-cam`, 1.5.7, not added to the project):
+  after the package's min-max scaling the maps are identical for ResNet-18 and within 0.007 for
+  the small CNN (correlation 1.0 on four random images each).
+- Attention-in-box: the map is divided by its total over the whole 224 x 224 input; the score is
+  the share inside the box. The box is mapped into the eval transform's frame (shorter side 256,
+  centre crop 224) from the loaded image's size, and the geometry is tested against
+  `EvalTransform` itself on seven image sizes. A box cut by the crop is clipped to it. Several
+  boxes count as their union: each pixel takes the share of its area the boxes cover, the largest
+  share where they overlap. Excluded and counted in the table: images without a box, and images
+  whose boxes all fall outside the centre crop (2 of 72 on the fixture's val). A map that is zero
+  everywhere has no score and is counted; the image stays in the animal-removed test.
+- Animal-removed: each box, rounded outwards to whole pixels of the loaded image, is filled with
+  the per-channel mean of the whole decoded RGB image (box included), on 0 to 255 values, before
+  resize and normalisation; the blanked image goes through the same `EvalTransform`.
+- Reporting: one row per split (val and cis_test are cis cameras, trans_val and trans_test
+  trans; splits are never pooled) and per subset (all, correct, wrong on the unblanked
+  prediction). Attention: images, mean, median, and the mean box share of the frame, which is
+  what an even map would score, so the score can be read against it (an addition to the item's
+  wording). Animal-removed: accuracy and mean top-1 confidence before and after blanking, and the
+  share of predictions kept. Output: `attention.md` and `attention_in_box.png` (one panel per
+  split, correct vs wrong as shares of their own images) under `--out`; counts and scores only.
+- Test-set isolation: the command line takes `--split val` and/or `trans_val` only (argparse
+  refuses anything else with exit 2) and drops the `Split` before the pass. 9.01 calls
+  `attention_pass`, `summarise` and `write_report` directly for cis_test and trans_test.
+  `attention_pass` refuses records whose `split` differs from the split it is given.
+- Real runs: `python -m trailcam.evaluate.attention --config-name <name> --checkpoint <run>.pt
+  --data-root <cache> --split val --split trans_val --out <dir>`. The checkpoint must hold the
+  config's model and the class map; the table header gives the checkpoint sha256, the split seed
+  and the split hash to match against the ledger row. `--dry-run=True` uses the fixture and random
+  weights.
+
+Dependency: `matplotlib>=3.8.4` for the histogram, which 8.02 can reuse. 3.8.4 is the oldest
+version `tests/test_attention.py` passes on with NumPy 2 (3.8.3 and older declare `numpy<2`; 3.9.0
+also passes). It brings contourpy, cycler, fonttools, kiwisolver, pyparsing, python-dateutil and
+six, none of them CUDA; locked 3.11.2. `tests/test_dependencies.py` adds the minimum. Kaggle
+preinstalls matplotlib, but I could not check its version. The notebook's before-and-after
+version check covers torch, torchvision, Pillow, timm and PyYAML, not matplotlib; if Kaggle's copy
+were older than 3.8.4, pip would upgrade it (no CUDA involved).
+
+Steps: `uv run pytest tests/test_attention.py` 35 passed. A map inside the box scores 1.0 and one
+outside scores 0.0. An even map scores the box's share of the frame, and half the mass inside
+scores 0.5. Blanking changes only the box's pixels and fills them with the image mean. The fixture
+command line writes the table and the PNG under `--out` and nothing under `docs/figures/`. Each of
+these mutations fails a test: normalising after cropping to the box, zero fill, a zero image mean,
+`trans_test` added to the CLI splits, no crop offset, a direct 224 resize, overlapping boxes
+counted twice, the blank region rounded inwards, correct and wrong swapped, Grad-CAM without its
+ReLU, on the lowest class, min-max scaled, or leaving its hook. `check.sh` green (631 passed). In
+`docs/review/invariants.md` the test cells of R26 and R23 (the rows naming 8.03) are filled, and
+R03 and R38 now mention the new tests. `config.yaml` and `plan.md` are unchanged.
+
+For 8.02: `gradcam.py` exists with the map only. An overlay that draws `gradcam()` shows what
+attention-in-box scores. Plan section 7 names the `grad-cam` package for the overlays, which would
+be a second implementation; 8.02 decides. The `assets/`-only rule (R04, R35) applies to the overlay
+writer, not to this map function.
+
+**Next.** 8.02 (figures, Grad-CAM overlays, the evaluate entry point), then 8.04.
+
+Review: tier 2, `/review-session 8.03`
+
+Review 8.03 fix (the user's decision, via the coordinator): both reviewers found that Grad-CAM is
+hand-written while plan section 7, CLAUDE.md's stack line and item 8.02's description name the
+`grad-cam` package (low). Kept the hand-written version. Plan section 7 now says Grad-CAM is
+hand-written in `trailcam/evaluate/gradcam.py`, with no `grad-cam` package, and that the overlays
+draw with the same function. R26 now says the measures run on val and trans_val before the final
+scoring, which matches R17 and the command line, and that the overlays use the scored function.
+Handed on:
+
+- 8.02 must draw its overlays with `trailcam.evaluate.gradcam.gradcam` (its description, which
+  names grad-cam, stays as written because items are not edited).
+- 9.01 must call `attention_pass` outside `torch.inference_mode()`: Grad-CAM needs autograd and
+  raises inside it.

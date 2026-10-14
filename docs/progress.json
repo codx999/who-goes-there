@@ -123,7 +123,7 @@
     {"id": "8.03", "session": 8, "owner": "claude", "due": "2026-10-18",
      "description": "trailcam/evaluate/attention.py: attention-in-box (fraction of normalised Grad-CAM mass inside the ground-truth box, per boxed image) and the animal-removed test (box region blanked to the image mean, then predicted again; accuracy and mean top-1 confidence), both reported per camera group and for correct vs wrong predictions, with a histogram figure; boxes are read from metadata only, never passed to the model",
      "steps": "uv run pytest tests/test_attention.py passes: a heat map entirely inside the box scores 1.0 and entirely outside 0.0; blanking changes the pixels only inside the box; running on the fixture writes a table and a histogram PNG under --out",
-     "passes": false},
+     "passes": true},
     {"id": "8.04", "session": 8, "owner": "claude", "due": "2026-10-18",
      "description": "trailcam/evaluate/slices.py: the same predictions cut by day/night and by common vs rare species (accuracy and macro-F1 per slice and camera group), and a 2-D projection of backbone features of the test images (PCA, no new dependency) coloured once by species and once by camera, arm A and arm B side by side",
      "steps": "uv run pytest tests/test_slices.py passes on the fixture: slice tables sum to the overall counts; the projection writes two PNGs under --out",
