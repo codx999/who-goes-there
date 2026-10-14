@@ -1092,9 +1092,46 @@ Steps: `uv run pytest tests/test_models.py` 21 passed; `check.sh` green (358 pas
 `/review-shapes` table flags no mismatch. `passes` is flipped.
 
 Notes for later: 5.03 should call `parameter_groups` for the optimizer and freeze `body` for the
-head-only epoch; the Grad-CAM target is `model.layer4` on the unwrapped torchvision model. Main
-had not moved at commit time, so 5.04's `tests/test_dependencies.py` and `uv.lock` changes are
-not merged here: expect a conflict in both. Keep both sides and re-lock with `uv lock`; 5.04's
-`Requires-Dist` test then sees `timm>=1.0.3` from pyproject.toml.
+head-only epoch; the Grad-CAM target is `model.layer4` on the unwrapped torchvision model.
 
-**Next.** Item 5.02, the configs.
+Main merge (91e4667): 5.04 reached main after the item commit, so main (4319bd3) was merged in
+with `sync_with_base_branch` before the review fix. `pyproject.toml`, `tests/test_dependencies.py`,
+`docs/review/invariants.md` and this log conflicted; each keeps both sides (5.04's licence line,
+build tests and R38 build cell beside 5.01's timm floor, lock test and R38 timm clauses; the 5.04
+entry above this one). `uv.lock` merged cleanly and `uv lock` rewrote it byte for byte. 5.04's
+`Requires-Dist` test sees `timm>=1.0.3`; `check.sh` green (361 passed).
+
+Review, started by the user: `/review-session 5.01`, tier 2, range 5bdd41e..e63fe7d (the item
+commit only), risk files `.claude/commands/review-shapes.md`, `pyproject.toml`,
+`tests/test_dependencies.py`, `tests/test_models.py`, `trailcam/model/__init__.py`,
+`trailcam/model/backbone.py`, `trailcam/model/factory.py`, `trailcam/model/small_cnn.py`,
+`uv.lock`; code-reviewer on Opus at xhigh, risk-reviewer on Fable at high. Every scenario held
+(R01, R03, R05, R21, R23, R30, R38, R42 to R45). Known gaps passed: the Space label list (R05,
+11.01), the demo and the Space (R21, 10.01, 11.01), the demo and the animal-removed test (R23),
+the build table and the notebook (R38, 5.04, 6.02). Spec changed: none. The risk-reviewer found
+nothing. One finding, verified and fixed in e70e057:
+- code-reviewer, low: the no-network fixture in `tests/test_models.py` was per test, so pytest
+  set it up after the module-scoped `models` fixture, and the docstring's promise that a
+  forgotten `pretrained=False` fails did not hold for it. Reproduced before the fix: with the flag
+  dropped there, the ResNet-18 weights (45 MB) downloaded into an empty scratch `TORCH_HOME`
+  (deleted afterwards). The guard is now module-scoped and autouse, `models` depends on it and
+  asserts it is up, and a new test shows it refuses `socket.create_connection`. With the old
+  guard the fixture assertion errors the ten tests on `models`; with the flag dropped those ten
+  fail on the guard and nothing downloads. `check.sh` green (362 passed).
+Could not verify (both): the timm 1.0.3 floor and the `/review-shapes` table, both done in this
+session (scratch venv, 38 passed; hand trace checked by forward hooks); a real weight download.
+
+Fix round, started by the user: `/review-session 91e4667..HEAD 5.01`, tier 2, the fix commit
+only (the merge before it brought 5.04, already reviewed), risk file `tests/test_models.py`;
+code-reviewer on Opus at xhigh, risk-reviewer on Fable at high. Nothing found by either; every
+scenario held (R01, R03, R05, R21, R30, R38, R42 to R45). Both checked that the patch catches
+torchvision's `urlopen` and timm's `httpx2` paths and is undone at module teardown; the
+code-reviewer's `check.sh` run was green (362 passed). Noted, not findings: with the ResNet-18
+weights already in the local torch cache, a forgotten flag loads them without a connection, so
+the guard does not fire but nothing downloads and the spy tests still pin the default (both); a
+DNS lookup still happens before the refused connect (code-reviewer). No third round.
+
+**Next.** Item 5.02, the configs; it syncs with main after this branch is merged.
+
+Review: tier 2, ran `/review-session 5.01` (5bdd41e..e63fe7d) and the fix round
+`/review-session 91e4667..HEAD 5.01` (code-reviewer Opus xhigh, risk-reviewer Fable high)
