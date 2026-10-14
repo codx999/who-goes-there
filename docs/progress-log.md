@@ -1472,6 +1472,89 @@ was written. Same pattern as review 5.03; its agent file's limits rest on the pr
 Review: tier 2, ran `/review-session 6.02` (dc05dad..f30e0c1; code-reviewer Opus xhigh,
 risk-reviewer Fable high), fix round `/review-session f30e0c1..9c2260d 6.02` (same reviewers)
 
+## 2026-10-14: session 7, item 7.01, the ledger checker (Opus 5.5)
+
+Taken ahead of its session by the user's decision in the coordinator session, alongside 6.02.
+
+**Done.** `trailcam/train/ledger.py`: `python -m trailcam.train.ledger --check <ledger>` prints
+every problem to stderr and exits 1, or prints the val summary and exits 0. It imports
+`LEDGER_COLUMNS`, `LEDGER_PATH` and `ledger_header` from `train.py` and keeps no copy (review
+5.03). Checks, after both review rounds:
+
+- Table: the header once, followed by its separator; every later line a row of 16 cells (a short
+  row is "a column is missing"), since `append_row` writes at the end.
+- Cells: none empty; config hash, split hash and checkpoint sha256 64 lower-case hex digits (what
+  `hexdigest` writes); seeds and epoch counts canonical whole numbers, 1 <= best epoch <= epochs
+  run; model in `MODEL_NAMES`, arm in `ARMS`; scheduler `<SCHEDULERS name> warmup <n>`; the four
+  scores `d.dddd` in [0, 1]; the run id `<config>-seed<run seed>-<valid UTC stamp>` of its own
+  row; config `dryrun` refused (R37).
+- Across rows: one row per run id (R40); the rows of one config share model and arm; one split
+  seed has one split hash and back (R14); the rows of one model and run seed, arm A and B alike,
+  share split hash and config hash (R25; the config hash leaves out `arm` and `run_seed`, review
+  5.02); every row of one model shares the config hash, whatever its split seed, run seed and arm
+  (review 7.01); the rows of one config hash agree on model, split seed and scheduler (review
+  7.01). By the user's decision, any logged run of a model with a changed recipe or split seed
+  fails the check; the docstring and `docs/ledger.md` say so.
+- Summary (R17, R03): one line per model, arm, split seed and run seed, sorted by those keys only,
+  with val accuracy and macro-F1 and trans_val beside them as reported; a model and arm with more
+  than one row gets an "all" line of means. Nothing is ranked and no "best" is shown.
+
+Not checked, for the user to decide if wanted: the R16 score alarms (the run already exits 3 on
+them; failing an alarmed row needs a rule for acknowledging it). Left to 9.01 by the user: two
+runs of one config and seed both pass, and the summary averages them (its rows column shows it);
+which checkpoint stands for that arm and seed is the scoring script's question.
+
+Steps: `uv run pytest tests/test_ledger.py` 53 passed. `--check docs/ledger.md` exits 0
+(`ledger: 0 rows, every check passed`); a copy with one 15-cell row exits 1 (`line 23: 15 cells,
+expected 16`); a copy with an arm A and arm B pair of run seed 0 whose config hashes differ exits
+1; the same pair with one config hash exits 0 with the summary. The real dry-run row of the 5.03
+entry, appended to a copy, fails on `config 'dryrun'` alone, so every other cell matches what
+`train.py` writes. Each cross-row check fails its own test when removed. `docs/review/invariants.md`:
+test cells of R25 and R40 filled, `tests/test_ledger.py` added to R14 and R17. `docs/ledger.md`
+gains the checker paragraph. `check.sh` green (546 passed before the merge of main, 559 after).
+
+Review, started by the user: `/review-session 7.01` (dc05dad..247bad8), tier 2, risk files
+`tests/test_ledger.py`, `trailcam/train/ledger.py`; code-reviewer on Opus at xhigh, risk-reviewer
+on Fable at high. Scenarios R01, R03, R05, R14, R16, R17, R25, R31, R40, R42 to R45 held; known
+gaps passed: R14's data card (3.04), the notebook halves of R16 and R17 (6.02), R17's and R40's
+final scoring (9.01), the R16 score alarms in the checker. Three low findings, all fixed in
+f203f8b by the user's decisions (via the coordinator):
+
+- Code-reviewer, low: the config hash was compared only within one model and run seed, so a seed
+  pair trained to another recipe passed and the "all" line averaged two recipes. Fix: the rows of
+  one model share the config hash across run seeds and arms; test with both seed-1 rows on
+  another hash, and `test_ab_pairs_are_matched_by_run_seed` now asserts what its docstring says.
+- Risk-reviewer, low: rows sharing a config hash could disagree on the cells it stands for (an
+  arm B row reading `cosine warmup 2`). Fix: one config hash, one model, split seed and scheduler;
+  test with that arm B row.
+- Both reviewers (risk as a finding, code as a note), low: no test for two models under one
+  config, though R40's cell claimed it. Fix: the test is parametrised over arm and model.
+
+Fix round, started by the user: `/review-session 247bad8..f203f8b 7.01`, same reviewers, models,
+scenarios and gaps (plus the duplicate-runs note). Risk-reviewer: nothing. Code-reviewer, one
+low, fixed in 9bd3045 by the user's decision (option a), no further round: the cross-seed check
+grouped by model and split seed, so a seed pair on another split seed formed its own group and
+passed. Plan section 5 fixes one split seed, so the check now groups by model alone; a test puts
+seed 1's pair on split seed 7 and fails on the old grouping. Notes, not findings: mypy on
+`tests/test_ledger.py` reports three errors (tests are outside mypy's scope, unchanged since
+247bad8).
+
+R45 notes, to revisit after the deadline: in the fix round both reviewers wrote into the session
+scratchpad, outside the repository (the code-reviewer a probe test it ran to confirm its finding,
+the risk-reviewer a `git show` of the parent commit for a mypy comparison); nothing in the
+repository was written. Earlier (reviews 5.03 and 6.02) the code-reviewer ran a read-only
+`uv run python -c` outside its Bash allow-list. Its agent file's limits rest on the prompt.
+
+Merged main at 15ce874 (6.02) into this branch: conflicts in this log (both entries kept, in item
+order) and in `docs/review/invariants.md` (R17's test cell keeps both `tests/test_notebook.py`
+and `tests/test_ledger.py`; every other row as its side left it).
+
+**Next.** Item 7.02 (user): run arm B seed 0, paste the row into `docs/ledger.md` and run
+`uv run python -m trailcam.train.ledger --check docs/ledger.md`.
+
+Review: tier 2, ran `/review-session 7.01` (dc05dad..247bad8; code-reviewer Opus xhigh,
+risk-reviewer Fable high), fix round `/review-session 247bad8..f203f8b 7.01` (same reviewers).
+
 ## 2026-10-14: session 6, item 6.06, GPU T4 x2 and the architecture check (Opus 5.5)
 
 New item, approved by the user in the coordinator session on 2026-10-14 and added to
