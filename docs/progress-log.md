@@ -1789,3 +1789,16 @@ writer, not to this map function.
 **Next.** 8.02 (figures, Grad-CAM overlays, the evaluate entry point), then 8.04.
 
 Review: tier 2, `/review-session 8.03`
+
+Review 8.03 fix (the user's decision, via the coordinator): both reviewers found that Grad-CAM is
+hand-written while plan section 7, CLAUDE.md's stack line and item 8.02's description name the
+`grad-cam` package (low). Kept the hand-written version. Plan section 7 now says Grad-CAM is
+hand-written in `trailcam/evaluate/gradcam.py`, with no `grad-cam` package, and that the overlays
+draw with the same function. R26 now says the measures run on val and trans_val before the final
+scoring, which matches R17 and the command line, and that the overlays use the scored function.
+Handed on:
+
+- 8.02 must draw its overlays with `trailcam.evaluate.gradcam.gradcam` (its description, which
+  names grad-cam, stays as written because items are not edited).
+- 9.01 must call `attention_pass` outside `torch.inference_mode()`: Grad-CAM needs autograd and
+  raises inside it.
