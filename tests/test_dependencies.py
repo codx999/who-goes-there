@@ -3,8 +3,10 @@
 The Kaggle notebook installs `trailcam` with pip, which ignores `[tool.uv.sources]`. A minimum
 above Kaggle's preinstalled torch would make pip replace it with PyPI's default CUDA build, so the
 minimums are the oldest versions `tests/test_dataset.py` was run on (2026-10-12: torch 2.3.0,
-torchvision 0.18.0, Pillow 10.1.0, Python 3.12, NumPy 2.5), not the locked ones. Raising one
-needs a reason, such as an API the code starts to use.
+torchvision 0.18.0, Pillow 10.1.0, Python 3.12, NumPy 2.5), not the locked ones. PyYAML's minimum
+is the oldest version `tests/test_config.py` was run on (2026-10-13: PyYAML 6.0.1, the first with
+Python 3.12 wheels; Kaggle preinstalls PyYAML). Raising one needs a reason, such as an API the
+code starts to use.
 
 The build tests run `uv build` the way the item does: the sdist first, then the wheel from it.
 pip installs the wheel's files and its `Requires-Dist` lines, so those are what is checked.
@@ -21,7 +23,12 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 
-VERIFIED_MINIMUMS = {"pillow": ">=10.1", "torch": ">=2.3", "torchvision": ">=0.18"}
+VERIFIED_MINIMUMS = {
+    "pillow": ">=10.1",
+    "pyyaml": ">=6.0.1",
+    "torch": ">=2.3",
+    "torchvision": ">=0.18",
+}
 
 
 def _locked_versions() -> dict[str, set[str]]:

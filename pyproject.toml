@@ -4,10 +4,12 @@ version = "0.1.0"
 description = "Who Goes There: camera-trap species classifier on Caltech Camera Traps (CCT20)"
 requires-python = ">=3.12"
 license = "MIT"
-# Minimums are the oldest versions tests/test_dataset.py passed on (Python 3.12, NumPy 2), not the
-# locked ones: pip on Kaggle then keeps the preinstalled CUDA torch instead of replacing it.
+# Minimums are the oldest versions tests/test_dataset.py (and tests/test_config.py for PyYAML)
+# passed on (Python 3.12, NumPy 2), not the locked ones: pip on Kaggle then keeps the preinstalled
+# CUDA torch instead of replacing it.
 dependencies = [
     "pillow>=10.1",
+    "pyyaml>=6.0.1",
     "torch>=2.3",
     "torchvision>=0.18",
 ]
@@ -31,6 +33,7 @@ dev = [
     "mypy>=2.4.0",
     "pytest>=9.1.1",
     "ruff>=0.17.0",
+    "types-pyyaml>=6.0.12.20260906",
 ]
 
 # Every platform but macOS (so CI's Linux) takes torch and torchvision from the CPU-only PyTorch

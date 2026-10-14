@@ -1042,3 +1042,55 @@ resolved with 6.01's entry first.
 
 Review: tier 2, ran `/review-session 5.04` (4f90760..38742e2; code-reviewer Opus xhigh,
 risk-reviewer Fable high)
+
+## 2026-10-13: session 5, item 5.02, the training configs (Opus 5.5)
+
+**Done.** The root `config.yaml` holds a `common` block (the recipe every config shares) and four
+configs under `configs`, each `common` updated with its own block: `dryrun`, `small_cnn`,
+`resnet18_arm_a`, `resnet18_arm_b`. `trailcam/train/config.py` loads them into a frozen `Config`
+dataclass of 18 fields (model, arm, pretrained, split_seed, run_seed, max_epochs,
+head_only_epochs, batch_size, lr_body, lr_head, weight_decay, scheduler, warmup_epochs, patience,
+mixed_precision, num_workers, pin_memory, fixture). A config's name is its key, not a field, so
+arm A and arm B differ in `arm` alone (R25); the ledger's config column takes the name. Nothing
+is defaulted in code: a missing, unknown or repeated key (plain YAML keeps the last of two, so a
+second `arm:` would silently switch arms), a value of the wrong type (bool for int, a string such
+as `1e-4`, which YAML 1.1 reads as text), an unknown model, arm or scheduler, or an out-of-range
+value raises `ConfigError` naming the config and the field. The arm values are `ARMS` of
+`trailcam/data/dataset.py`; the model names are a copy of 5.01's `MODEL_NAMES` (not merged yet).
+
+Values: split seed 42 (the pinned split tests and the data card), run seed 0, AdamW weight decay
+1e-2, cosine after a one-epoch warmup, patience 3, mixed precision on, batch 64, 4 workers with
+pinned memory. ResNet-18 arms: ImageNet weights, body 1e-4, head 1e-3, up to 10 epochs with one
+head-only epoch. Dry run: ResNet-18 arm B with random weights (offline), one epoch, batch 2,
+`fixture: true`, 0 workers, no pinned memory, no head-only epoch (so its one epoch trains the body
+too). PyYAML is a runtime dependency (`>=6.0.1`, the first release with Python 3.12 wheels;
+`tests/test_config.py` passed on 6.0.1 with Python 3.12.9 in a scratch venv; timm, item 5.01,
+depends on PyYAML anyway) and `types-pyyaml` a dev one for mypy.
+
+**Decision for the user.** The small CNN trains body and head at 1e-3, not 1e-4 / 1e-3: plan.md
+section 9 gives the lower body rate to protect pretrained weights, and the small CNN has none.
+R31's text names 1e-4 / 1e-3 without saying which model; reverting is one line in `config.yaml`
+and one in `tests/test_config.py`.
+
+**Verify.** `uv run pytest tests/test_config.py`: 57 passed. All configs load; the dry run has
+max_epochs 1, batch 2, 0 workers, pin_memory false and fixture true; every config has both seeds;
+the full configs have 4 workers and pinned memory; arm A and arm B differ in exactly `["arm"]`;
+the full configs carry the recipe values of R31; every arm builds a `TrainTransform`; each
+refusal above on an otherwise valid copy of the file. Mutations: arm B's head rate at 2e-3 fails
+the arm test and the recipe test; the dry run with 4 workers fails the dry-run test; the plain
+`SafeLoader` fails the repeated-key test. `scripts/risk_files.sh` already matched `config.yaml`
+(4.02 fix round) and `tests/test_risk_files.py` passes. R25's and R31's test cells name the new
+tests; R31's "where" column adds `config.yaml`; R38's names the config tests for the PyYAML floor.
+`check.sh` green (396 passed), so `passes` is flipped.
+
+Notes: `config.yaml` sits at the repository root, outside the wheel; `CONFIG_PATH` finds it from a
+checkout or an editable install, so the Kaggle notebook (6.02) must pass the file's path (for
+example from a clone at the same commit). When 5.01 merges, `MODEL_NAMES` in
+`trailcam/train/config.py` should import from `trailcam/model/factory.py` instead of copying it;
+5.01 also edits `pyproject.toml`, `uv.lock` and `tests/test_dependencies.py`, so the second merge
+keeps both sides (re-run `uv lock`). How the head-only epoch and the warmup epoch interact is
+5.03's.
+
+**Next.** Session 5, item 5.03 (after 5.01 merges).
+
+Review: tier 2, `/review-session 5.02` (not started; the user starts it)
