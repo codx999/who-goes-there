@@ -1358,3 +1358,52 @@ row), or item 7.01 (its checker reads `LEDGER_COLUMNS`, 16 columns).
 
 Review: tier 2, ran `/review-session 5.03` (bda1990..0eb3368; code-reviewer Opus xhigh,
 risk-reviewer Fable high), fix round `/review-session 0eb3368..e6caf63 5.03` (same reviewers)
+
+## 2026-10-13: session 7, item 7.01, the ledger checker (Opus 5.5)
+
+Taken ahead of its session by the user's decision in the coordinator session, alongside 6.02.
+
+**Done.** `trailcam/train/ledger.py`: `python -m trailcam.train.ledger --check <ledger>` prints
+every problem to stderr and exits 1, or prints the val summary and exits 0. It imports
+`LEDGER_COLUMNS`, `LEDGER_PATH` and `ledger_header` from `train.py` and keeps no copy (review
+5.03). Checks:
+
+- Table: the header once, followed by its separator; every later line a row of 16 cells (a short
+  row is "a column is missing"), since `append_row` writes at the end.
+- Cells: none empty; config hash, split hash and checkpoint sha256 64 lower-case hex digits (what
+  `hexdigest` writes); seeds and epoch counts canonical whole numbers, 1 <= best epoch <= epochs
+  run; model in `MODEL_NAMES`, arm in `ARMS`; scheduler `<SCHEDULERS name> warmup <n>`; the four
+  scores `d.dddd` in [0, 1]; the run id `<config>-seed<run seed>-<valid UTC stamp>` of its own
+  row; config `dryrun` refused (R37).
+- Across rows: one row per run id (R40); the rows of one config share model and arm; one split
+  seed has one split hash and back (R14); the rows of one model and run seed, arm A and B alike,
+  share split hash and config hash (R25; the config hash leaves out `arm` and `run_seed`, review
+  5.02).
+- Summary (R17, R03): one line per model, arm, split seed and run seed, sorted by those keys only,
+  with val accuracy and macro-F1 and trans_val beside them as reported; a model and arm with more
+  than one row gets an "all" line of means. Nothing is ranked and no "best" is shown.
+
+Decisions (mine, within the item):
+
+- The A/B check groups by model and run seed, so it also holds two rows of one arm and seed (a
+  rerun) to one split and config hash; a rerun with a changed config fails.
+- Problems name the line, the column and the bad cell only; a failing check prints no summary.
+- Not checked: that a row's config hash equals `config_hash` of the named config in today's
+  `config.yaml` (a later, approved config change would fail old rows), and the R16 score alarms
+  (the run already exits 3 on them; making the checker fail an alarmed row needs a rule for
+  acknowledging it). Both are for the user to decide if wanted.
+
+Steps: `uv run pytest tests/test_ledger.py` 49 passed. `--check docs/ledger.md` exits 0
+(`ledger: 0 rows, every check passed`); a copy with one 15-cell row exits 1 (`line 23: 15 cells,
+expected 16`), a copy with an arm A and arm B pair of run seed 0 whose config hashes differ exits
+1 (`the rows of resnet18 run seed 0 (arm A and arm B alike) disagree on config hash (lines 23,
+24)`), and the same pair with one config hash exits 0 with the summary. Removing the A/B check
+fails five tests; removing the `dryrun` check fails one. The real dry-run row of the 5.03 entry, appended to
+a copy, fails on `config 'dryrun'` alone, so every other cell matches what `train.py` writes. `docs/review/invariants.md`: test cells
+of R25 and R40 filled, and `tests/test_ledger.py` added to R14 and R17. `docs/ledger.md` gains
+the checker command and drops "item 7.01 checks it". `check.sh` green (542 passed).
+
+**Next.** Session 6 continues with 6.02 (in parallel); 7.02 (user) pastes the arm B seed 0 row
+and runs `uv run python -m trailcam.train.ledger --check docs/ledger.md`.
+
+Review: tier 2, `/review-session 7.01` (not started; the user starts it).

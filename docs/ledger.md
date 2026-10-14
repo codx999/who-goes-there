@@ -7,7 +7,7 @@ started by the user, who pastes the printed row here; the row is the unit of rev
 - run id: `<config>-seed<run seed>-<UTC start, YYYYMMDDTHHMMSSZ>`, one row per run id.
 - config: the config's name in `config.yaml`. config hash: SHA-256 of the resolved config without
   `arm` and `run_seed` (`config_hash` in `trailcam/train/config.py`), so the arm A and arm B rows
-  of one seed share it (the user's decision on review 5.02; item 7.01 checks it).
+  of one seed share it (the user's decision on review 5.02).
 - split hash: `Split.hash` of `make_split` for the split seed (R14).
 - epochs run includes the head-only epoch; best epoch is the epoch of the highest val macro-F1,
   whose weights are the checkpoint (R31).
@@ -15,6 +15,12 @@ started by the user, who pastes the printed row here; the row is the unit of rev
   trans_val accuracy and macro-F1 (over the classes present; the user's decision on review 5.03)
   are scored once on the restored checkpoint, reported and never selected on (R17).
 - checkpoint sha256: of the saved `.pt` file, which never goes into git.
+
+Check it after pasting a row: `uv run python -m trailcam.train.ledger --check docs/ledger.md`
+(`trailcam/train/ledger.py`, item 7.01) exits 1 with every problem, or 0 with the val scores per
+model, arm and seed. It refuses a missing or empty cell, a repeated run id, a malformed hash, seed,
+score or run id, a `dryrun` row, one split seed with two split hashes (R14), and arm A and arm B
+rows of one model and run seed that differ in split hash or config hash (R25).
 
 Data: Caltech Camera Traps (CCT20), Beery et al. 2018, CDLA-Permissive 1.0.
 
