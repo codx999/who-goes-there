@@ -1220,3 +1220,82 @@ first. 5.01's `MODEL_NAMES` equals the copy in `config.py`.
 
 Review: tier 2, ran `/review-session 5.02` (4319bd3..6dc606f; code-reviewer Opus xhigh,
 risk-reviewer Fable high)
+
+## 2026-10-13: session 5, item 5.03, the training loop, its command line and the ledger (Opus 5.5)
+
+**Done.** `trailcam/train/train.py`: `python -m trailcam.train.train --config-name <name>
+--data-root <cache> --out-dir <dir>` trains one config on the 512 px cache of 6.01
+(`annotations/`, `images/`, `day_night.json`), prints its ledger row and appends it to
+`docs/ledger.md`; `--dry-run=True` takes the `dryrun` config, writes the synthetic fixture into a
+temporary directory itself, prints its row and never appends. `docs/ledger.md` holds the header
+and a short column guide, no rows. `trailcam/evaluate/metrics.py` (new) holds `accuracy` and
+`macro_f1` (over the classes present in the labels) with hand-computed tests in
+`tests/test_metrics.py`, so 8.01 extends the module instead of duplicating it (8.01 had not
+landed on main).
+
+Decisions:
+
+- **Epochs.** The head-only epoch counts inside `max_epochs` (ten in all for ResNet-18), and the
+  one-epoch warmup coincides with it: the head warms up while the body is frozen, and the body
+  joins in epoch 2 at the top of the cosine. Stated in the module docstring and logged at the
+  start of every run. The test docstring at `tests/test_config.py` no longer reads as 11 epochs.
+- **Head-only.** The body's parameters are frozen and its batch-norm layers kept in eval mode, so
+  the body leaves the head-only epoch exactly as it entered it.
+- **Schedule.** Per optimizer step (`LambdaLR`): linear warmup to 1 over the warmup epochs, then
+  cosine towards 0 at `max_epochs`. Early stopping truncates the cosine.
+- **Selection.** Best val macro-F1, a tie is no improvement; patience epochs in a row without a
+  higher score stop the run; the best epoch's weights are restored, saved and hashed. trans_val
+  is scored once, after the restore (accuracy and macro-F1 printed, accuracy in the row), so it
+  cannot steer anything. The cis_test and trans_test loaders are dropped as soon as
+  `make_loaders` returns.
+- **Arm.** `train_run` passes `TrainTransform(config.arm)` to `make_loaders`; a test spies on
+  `make_loaders` and checks arm A gets the control sampler and arm B the box sampler.
+- **Config hash** (user's decision on review 5.02). `config_hash` in `config.py`: SHA-256 of the
+  resolved config's sorted-key JSON without `arm` and `run_seed` (`HASH_EXCLUDED`). Column 5 of
+  the ledger, right after the config name; plan.md section 5, R40's rule text and
+  `.claude/rules/training.md` list it there.
+- **Model names.** `config.py` imports `MODEL_NAMES` from `trailcam/model/factory.py`; a test
+  checks it is the same object.
+- **Overrides (R25).** `--run-seed` for any config; `--max-epochs` and `--batch-size` with
+  `--dry-run=True` only; no other option exists (a test pins the option set). `with_overrides`
+  in `config.py` checks the result as a loaded config is. A full config with `--dry-run=True`,
+  the dry-run config without it, a dry run with `--data-root` or `--out-dir`, and a real run
+  without them are refused. Booleans: `True` / `False` (any case), nothing else; no option
+  abbreviations. `--config` takes the `config.yaml` path for Kaggle (5.02 handoff).
+- **Leakage alarms (R16).** Before training, `check_loaders` stops a run whose train image ids
+  reappear in val or trans_val or that is handed a test loader (it re-checks the loaders the loop
+  reads; `make_loaders` checks too). After training, trans_val accuracy within 0.02 of val
+  accuracy (or above it) and val accuracy above 0.95 (beyond Beery et al.'s 91.9% cis on
+  ground-truth crops) are alarms: a real run prints and appends its row first, so nothing is
+  lost, then exits 3; a dry run prints them and exits 0 (its random weights on synthetic images
+  fire the trans_val alarm).
+- **Seeds (R27).** The run seed seeds `random`, NumPy, torch (every device) and the train
+  shuffle generator before the model is built; both seeds are logged. NumPy is imported directly
+  but not declared: torchvision requires it.
+- **Device.** CUDA when present, otherwise CPU (the Mac's dry run); mixed precision (float16
+  autocast and a gradient scaler) on CUDA only.
+- **Checkpoint.** `<out-dir>/<run id>.pt` holds the model name, the class list and the best
+  state dict; the row carries its file SHA-256. The run id is
+  `<config>-seed<run seed>-<UTC start>`.
+
+`/dryrun` (`.claude/commands/dryrun.md`) and `/review-shapes` match the module path and flags as
+written; neither changed. `.claude/rules/training.md` changed by one line (the config hash in the
+column list): a control-plane edit.
+
+**Verify.** With no fixture anywhere in the checkout, `uv run python -m trailcam.train.train
+--max-epochs=1 --batch-size=2 --dry-run=True` exits 0 in about 25 s on the Mac, prints the split
+(seed 42, hash 7a13478e...), `logits shape (2, 12)`, train loss 2.6539, val loss 2.4667, val
+accuracy 0.1667, val macro-F1 0.1037, trans_val accuracy 0.1944, the row and the expected dry-run
+alarm; two runs give the same losses and scores. `uv run pytest tests/test_train.py`: 38 passed
+(early stopping stops after patience epochs without improvement and restores the best epoch's
+weights; the end-to-end dry run with the small CNN reads train and val until training ends,
+trans_val after, never a test split, leaves no temporary file and does not touch the ledger).
+`tests/test_metrics.py` 9 passed, `tests/test_config.py` 76 passed. Mutations, each caught: a
+tie counted as an improvement, the last epoch restored, `TrainTransform()` without the arm, batch
+norm left training in the head-only epoch, trans_val scored before training, a loose boolean
+parser, `--max-epochs` on a full run, a dry run that appends. `docs/ledger.md` holds the header
+and no rows. Test cells filled: R14, R16, R17, R25, R27, R30, R31, R32, R37, R40. `check.sh` green
+(485 passed), so `passes` is flipped.
+
+**Next.** Session 6, item 6.02 (the Kaggle notebook: pass `--config` from a clone at the
+installed commit, `--data-root`, `--out-dir` and `--ledger`, and print the row), or item 7.01.

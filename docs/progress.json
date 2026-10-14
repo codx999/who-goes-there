@@ -68,7 +68,7 @@
     {"id": "5.03", "session": 5, "owner": "claude", "due": "2026-10-14",
      "description": "trailcam/train/train.py: training loop with seeding, AdamW, scheduler, early stopping, best-checkpoint restore, val accuracy and macro-F1 per epoch, trans_val reported only, a CLI that accepts explicit boolean values exactly as /dryrun passes them (`--max-epochs=1 --batch-size=2 --dry-run=True`), --dry-run writing the synthetic fixture from trailcam/data/synthetic.py into a temporary directory itself, and one ledger row written as a markdown table line (run id, model, arm, config, split seed, run seed, split hash, epochs run, best epoch, scheduler, val scores, trans_val accuracy, checkpoint sha256). Creates docs/ledger.md with the header row in that column order; dry runs print their row and never append",
      "steps": "/dryrun completes from a clean checkout with no fixture prepared and prints the losses, the logits shape (2, 12) and the ledger row; uv run pytest tests/test_train.py passes: early stopping stops after patience epochs without improvement and the best checkpoint is the one restored; docs/ledger.md exists with the header row and no data rows",
-     "passes": false},
+     "passes": true},
     {"id": "5.04", "session": 5, "owner": "claude", "due": "2026-10-14",
      "description": "Packaging so Kaggle can `pip install git+https://github.com/codx999/who-goes-there`: a [build-system] table (hatchling) with packages = [\"trailcam\"] in pyproject.toml, runtime dependencies listed",
      "steps": "`uv build` writes a wheel under dist/ (ignored by git); in a fresh `uv venv` outside the repo, `uv pip install dist/*.whl` then `python -c 'import trailcam.data.classes'` succeeds; `bash scripts/check.sh` green",

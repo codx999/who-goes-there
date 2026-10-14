@@ -4,12 +4,16 @@
 each the `common` block updated with its own. Nothing is defaulted in code: a config that misses
 a field, names an unknown one, repeats a key, or gives a value of the wrong type or range is
 refused with a `ConfigError` naming the config and the field. The arm values are `ARMS` of
-`trailcam/data/dataset.py`, the switch of `TrainTransform`; the model names are those of
-`build_model` (item 5.01).
+`trailcam/data/dataset.py`, the switch of `TrainTransform`; the model names are `MODEL_NAMES` of
+`trailcam/model/factory.py`, the names `build_model` accepts.
 
 A config's name is its key, not a field, so the configs of arm A and arm B differ in `arm` alone
 (R25); the ledger records the name in its config column. `DRY_RUN` is the config `/dryrun` uses:
 one epoch, batch 2, the synthetic fixture (`fixture: true`) and no DataLoader workers.
+`with_overrides` applies the few command-line changes `train.py` allows and checks the result as a
+loaded config is checked. `config_hash` is the ledger's config hash: a SHA-256 of the resolved
+config without `arm` and `run_seed` (`HASH_EXCLUDED`), so the arm A and arm B rows of one seed,
+and the seeds of one arm, share it, and a run whose values differ from the committed file does not.
 
 The file sits at the repository root, outside the package. `CONFIG_PATH` finds it from a checkout
 or an editable install; a run from an installed wheel passes its path.
@@ -17,8 +21,10 @@ or an editable install; a run from an installed wheel passes its path.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Hashable, Mapping
-from dataclasses import dataclass, fields
+from dataclasses import asdict, dataclass, fields, replace
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Final
@@ -26,12 +32,10 @@ from typing import Any, Final
 import yaml
 
 from trailcam.data.dataset import ARMS
+from trailcam.model.factory import MODEL_NAMES
 
 CONFIG_PATH: Final = Path(__file__).resolve().parents[2] / "config.yaml"
 DRY_RUN: Final = "dryrun"
-
-# The names `build_model` accepts (trailcam/model/factory.py, item 5.01).
-MODEL_NAMES: Final = ("small_cnn", "resnet18", "efficientnet_b0")
 SCHEDULERS: Final = ("cosine",)  # cosine annealing after a linear warmup (plan.md section 5)
 
 
@@ -64,6 +68,7 @@ class Config:
 
 
 FIELDS: Final = tuple(f.name for f in fields(Config))
+HASH_EXCLUDED: Final = ("arm", "run_seed")  # the fields arm A and B, or two seeds, may differ in
 _TYPES: Final = {f.name: f.type for f in fields(Config)}
 
 
@@ -177,3 +182,21 @@ def load_config(name: str, path: Path = CONFIG_PATH) -> Config:
     if name not in configs:
         raise ConfigError(f"no config {name!r} in {path.name}; expected one of {list(configs)}")
     return configs[name]
+
+
+def with_overrides(name: str, config: Config, changes: Mapping[str, object]) -> Config:
+    """`config` with `changes` applied, each value and the result checked as a loaded config is."""
+    unknown = sorted(set(changes) - set(FIELDS))
+    if unknown:
+        raise ConfigError(f"{name}: unknown fields {unknown}")
+    checked = {key: _value(name, key, value) for key, value in changes.items()}
+    result = replace(config, **checked)  # type: ignore[arg-type]
+    _check(name, result)
+    return result
+
+
+def config_hash(config: Config) -> str:
+    """SHA-256 (hex) of the config's fields but `HASH_EXCLUDED`, as sorted-key JSON."""
+    values = {key: value for key, value in asdict(config).items() if key not in HASH_EXCLUDED}
+    text = json.dumps(values, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()

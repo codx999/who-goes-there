@@ -5,22 +5,27 @@ The first tests read the committed config.yaml; the rest feed `parse_configs` sm
 from it, so each refusal is checked against a file that is otherwise valid.
 """
 
-from dataclasses import asdict, fields
+from dataclasses import asdict, fields, replace
 
 import pytest
 import yaml
 
 from trailcam.data.dataset import ARMS, TrainTransform
+from trailcam.model import factory
+from trailcam.train import config as config_module
 from trailcam.train.config import (
     CONFIG_PATH,
     DRY_RUN,
     FIELDS,
+    HASH_EXCLUDED,
     MODEL_NAMES,
     Config,
     ConfigError,
+    config_hash,
     load_config,
     load_configs,
     parse_configs,
+    with_overrides,
 )
 
 FULL = ("small_cnn", "resnet18_arm_a", "resnet18_arm_b")
@@ -68,8 +73,9 @@ def test_arm_a_and_arm_b_differ_in_arm_alone(configs: dict[str, Config]) -> None
 
 def test_the_full_configs_carry_the_recipe(configs: dict[str, Config]) -> None:
     """R31: AdamW 1e-4 body / 1e-3 head, weight decay 1e-2, cosine with a one-epoch warmup,
-    patience 3, batch 64, mixed precision; up to 10 backbone epochs after one head-only epoch,
-    up to 15 for the small CNN, which has no pretrained body and trains it at the head's rate."""
+    patience 3, batch 64, mixed precision; up to 10 backbone epochs in all, the first of them
+    head-only (it counts inside max_epochs, item 5.03), up to 15 for the small CNN, which has no
+    pretrained body and trains it at the head's rate."""
     for name in FULL:
         c = configs[name]
         assert (c.weight_decay, c.scheduler, c.warmup_epochs, c.patience) == (
@@ -103,6 +109,53 @@ def test_every_arm_is_a_training_transform_arm(configs: dict[str, Config]) -> No
         assert config.arm in ARMS
         assert TrainTransform(config.arm).arm == config.arm
         assert config.model in MODEL_NAMES
+
+
+def test_the_model_names_are_the_factorys() -> None:
+    """The names are imported from trailcam/model/factory.py, not copied (review 5.02)."""
+    assert config_module.MODEL_NAMES is factory.MODEL_NAMES
+
+
+# --- the config hash of the ledger (review 5.02, user's decision) and the overrides ---
+
+
+def test_arm_a_and_arm_b_share_the_config_hash(configs: dict[str, Config]) -> None:
+    """R25: the hash leaves out `arm` and `run_seed` alone, so the two arms of one seed, and the
+    seeds of one arm, share it; item 7.01's ledger checker compares it."""
+    a, b = configs["resnet18_arm_a"], configs["resnet18_arm_b"]
+    assert HASH_EXCLUDED == ("arm", "run_seed")
+    assert config_hash(a) == config_hash(b) == config_hash(replace(b, run_seed=2))
+    assert len(config_hash(a)) == 64 and int(config_hash(a), 16) >= 0
+    assert config_hash(a) != config_hash(configs["small_cnn"])
+
+
+@pytest.mark.parametrize("field", [f for f in FIELDS if f not in ("arm", "run_seed")])
+def test_every_other_field_changes_the_config_hash(configs: dict[str, Config], field: str) -> None:
+    c = configs["resnet18_arm_b"]
+    value = getattr(c, field)
+    if isinstance(value, bool):
+        other: object = not value
+    elif isinstance(value, int):
+        other = value + 1
+    elif isinstance(value, float):
+        other = value * 2
+    else:
+        other = value + "x"
+    assert config_hash(replace(c, **{field: other})) != config_hash(c)
+
+
+def test_with_overrides_applies_and_checks(configs: dict[str, Config]) -> None:
+    dry = configs[DRY_RUN]
+    assert with_overrides(DRY_RUN, dry, {"max_epochs": 3, "run_seed": 1}) == replace(
+        dry, max_epochs=3, run_seed=1
+    )
+    assert with_overrides(DRY_RUN, dry, {}) == dry
+    for changes in ({"max_epochs": 0}, {"batch_size": True}, {"lr_head": "1e-3"}, {"nope": 1}):
+        with pytest.raises(ConfigError):
+            with_overrides(DRY_RUN, dry, changes)
+    arm = configs["resnet18_arm_a"]
+    with pytest.raises(ConfigError, match="head_only_epochs"):
+        with_overrides("resnet18_arm_a", arm, {"max_epochs": 1})
 
 
 # --- refusals, each on a copy of the committed file with one change ---
