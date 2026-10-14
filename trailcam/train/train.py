@@ -29,20 +29,29 @@ torch (every device) before the model is built, and the train loader's shuffle g
 Leakage alarms (R16): an image id of the train loader in another split stops the run before any
 training (`make_loaders` checks it too; this re-checks the loaders the loop reads). After
 training, trans_val accuracy within `TRANS_GAP_ALARM` of val accuracy (or above it), or val
-accuracy above `VAL_ACCURACY_ALARM`, is reported as an alarm: a real run still prints and appends
-its row, so nothing is lost, then exits with `ALARM_EXIT`, so the notebook cell fails and the
-user looks before the work moves on. A dry run (random weights on synthetic images) prints them
-and exits 0.
+accuracy above `VAL_ACCURACY_ALARM`, is reported as an alarm: a real run prints its row and the
+alarms, then appends the row, so nothing is lost, and exits with `ALARM_EXIT`, so the notebook
+cell fails and the user looks before the work moves on. A dry run (random weights on synthetic
+images) prints them and exits 0.
+
+Before a real run trains, `preflight` checks that `--out-dir` can be written and that `--ledger`
+exists with the header of `LEDGER_COLUMNS` (review 5.03), so a bad path fails in seconds instead
+of after the GPU hour.
 
 Command-line overrides (R25): `--run-seed` for any config; `--max-epochs` and `--batch-size` with
 `--dry-run=True` only. No other field can be changed from the command line, so the arm A and arm
-B runs of one seed differ in `arm` alone. On Kaggle `--config` points at `config.yaml` in a clone
-at the commit of the installed package; the wheel does not ship it. Booleans are written out:
-`--dry-run=True` or `--dry-run=False`.
+B runs of one seed differ in `arm` alone. Booleans are written out: `--dry-run=True` or
+`--dry-run=False`.
+
+On Kaggle the package comes from a wheel, which ships neither `config.yaml` nor `docs/`, so the
+defaults `CONFIG_PATH` and `LEDGER_PATH` (both relative to a checkout) do not exist there. Pass
+both from a clone at the commit of the installed package: `--config <clone>/config.yaml` and
+`--ledger <clone>/docs/ledger.md`, with `--out-dir` under `/kaggle/working`.
 
 The ledger row (R40) has the columns of `LEDGER_COLUMNS` in that order: the plan's fields with the
 config hash (`trailcam/train/config.py`) after the config name, by the user's decision of review
-5.02. `docs/ledger.md` holds the header; `append_row` refuses a ledger whose header differs.
+5.02, and trans_val macro-F1 after trans_val accuracy, by the user's decision of review 5.03.
+`docs/ledger.md` holds the header; `append_row` refuses a ledger whose header differs.
 """
 
 from __future__ import annotations
@@ -98,6 +107,7 @@ LEDGER_COLUMNS: Final = (
     "val accuracy",
     "val macro-F1",
     "trans_val accuracy",
+    "trans_val macro-F1",
     "checkpoint sha256",
 )
 USED_SPLITS: Final = ("train", "val", "trans_val")  # cis_test and trans_test are never read here
@@ -421,6 +431,7 @@ def ledger_values(run: RunResult) -> dict[str, str]:
         "val accuracy": f"{best.val.accuracy:.4f}",
         "val macro-F1": f"{best.val.macro_f1:.4f}",
         "trans_val accuracy": f"{run.trans_val.accuracy:.4f}",
+        "trans_val macro-F1": f"{run.trans_val.macro_f1:.4f}",
         "checkpoint sha256": run.checkpoint_sha256,
     }
 
@@ -435,17 +446,32 @@ def ledger_row(values: Mapping[str, str]) -> str:
     return "| " + " | ".join(cells) + " |"
 
 
-def append_row(ledger: Path, row: str) -> None:
-    """Append `row` to the table that ends `ledger`; refuses a missing ledger or another header."""
+def check_ledger(ledger: Path) -> str:
+    """The text of `ledger`; refuses a missing ledger, another header, or one that does not end
+    with its table."""
     if not ledger.is_file():
-        raise FileNotFoundError(f"no ledger at {ledger}; pass --ledger")
+        raise FileNotFoundError(f"no ledger at {ledger}; pass --ledger <clone>/docs/ledger.md")
     text = ledger.read_text(encoding="utf-8")
     lines = text.splitlines()
     if lines.count(ledger_header().splitlines()[0]) != 1 or ledger_header() not in text:
         raise ValueError(f"{ledger} does not hold the header of LEDGER_COLUMNS exactly once")
-    if not lines or not lines[-1].startswith("|"):
+    if not lines[-1].startswith("|"):
         raise ValueError(f"{ledger} does not end with its table")
+    return text
+
+
+def append_row(ledger: Path, row: str) -> None:
+    """Append `row` to the table that ends `ledger` (checked by `check_ledger`)."""
+    text = check_ledger(ledger)
     ledger.write_text(text + ("" if text.endswith("\n") else "\n") + row + "\n", encoding="utf-8")
+
+
+def preflight(out_dir: Path, ledger: Path) -> None:
+    """Before a real run trains: `out_dir` can be written and `ledger` takes a row."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(dir=out_dir, prefix=".write-check-"):
+        pass
+    check_ledger(ledger)
 
 
 def parse_bool(text: str) -> bool:
@@ -514,6 +540,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     name, config = resolve(args, parser)
+    if not config.fixture:
+        try:
+            preflight(args.out_dir, args.ledger)
+        except (OSError, ValueError) as error:
+            parser.error(f"before training: {error}")
     if config.fixture:
         with tempfile.TemporaryDirectory(prefix="trailcam-dryrun-") as tmp:
             root = Path(tmp) / "fixture"
@@ -532,13 +563,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("ledger row:")
     print(ledger_header())
     print(row)
+    sys.stdout.flush()
+    for alarm in run.alarms:  # before the append, so a failing append cannot hide them
+        prefix = "alarm (dry run, reported only)" if config.fixture else "LEAKAGE ALARM"
+        print(f"{prefix}: {alarm}", file=sys.stderr)
+    sys.stderr.flush()
     if not config.fixture:
         append_row(args.ledger, row)
         print(f"appended to {args.ledger}")
-    sys.stdout.flush()
-    for alarm in run.alarms:
-        prefix = "alarm (dry run, reported only)" if config.fixture else "LEAKAGE ALARM"
-        print(f"{prefix}: {alarm}", file=sys.stderr)
     return ALARM_EXIT if run.alarms and not config.fixture else 0
 
 

@@ -14,6 +14,7 @@ import tempfile
 from collections.abc import Iterator
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
@@ -31,7 +32,14 @@ from trailcam.data.metadata import load_metadata
 from trailcam.data.split import make_split
 from trailcam.model.factory import build_model, head_module, parameter_groups
 from trailcam.train import train
-from trailcam.train.config import CONFIG_PATH, DRY_RUN, Config, load_config, load_configs
+from trailcam.train.config import (
+    CONFIG_PATH,
+    DRY_RUN,
+    Config,
+    config_hash,
+    load_config,
+    load_configs,
+)
 from trailcam.train.train import (
     LEDGER_COLUMNS,
     LEDGER_PATH,
@@ -385,6 +393,8 @@ def test_the_ledger_file_holds_the_header_and_no_rows() -> None:
 
 
 def test_the_header_follows_the_plan_with_the_config_hash_after_the_config() -> None:
+    """The plan's columns (section 5) with the config hash after the config (review 5.02) and
+    trans_val macro-F1 after trans_val accuracy (review 5.03)."""
     plan = [
         "run id",
         "model",
@@ -399,6 +409,7 @@ def test_the_header_follows_the_plan_with_the_config_hash_after_the_config() -> 
         "val accuracy",
         "val macro-F1",
         "trans_val accuracy",
+        "trans_val macro-F1",
         "checkpoint sha256",
     ]
     assert [c for c in LEDGER_COLUMNS if c != "config hash"] == plan
@@ -436,6 +447,134 @@ def test_append_row_refuses_a_missing_ledger_or_another_header(tmp_path: Path) -
     other.write_text(ledger_header().replace("| arm | config |", "| config | arm |") + "\n")
     with pytest.raises(ValueError):
         append_row(other, ledger_row(values()))
+
+
+# A real run fails before training on a bad out dir or ledger, and its alarms always show
+# (review 5.03).
+
+
+def test_preflight_accepts_a_writable_out_dir_and_the_ledger(tmp_path: Path) -> None:
+    ledger = tmp_path / "ledger.md"
+    ledger.write_text(LEDGER_PATH.read_text())
+    train.preflight(tmp_path / "new" / "out", ledger)
+    assert list((tmp_path / "new" / "out").iterdir()) == []
+
+
+def test_preflight_refuses_a_bad_ledger(tmp_path: Path) -> None:
+    with pytest.raises(FileNotFoundError, match="--ledger"):
+        train.preflight(tmp_path / "out", tmp_path / "missing.md")
+    other = tmp_path / "other.md"
+    other.write_text(ledger_header().replace("| arm | config |", "| config | arm |") + "\n")
+    with pytest.raises(ValueError):
+        train.preflight(tmp_path / "out", other)
+    trailing = tmp_path / "trailing.md"
+    trailing.write_text(LEDGER_PATH.read_text() + "\nA paragraph after the table.\n")
+    with pytest.raises(ValueError, match="end with its table"):
+        train.preflight(tmp_path / "out", trailing)
+
+
+def test_preflight_refuses_an_out_dir_it_cannot_write(tmp_path: Path) -> None:
+    ledger = tmp_path / "ledger.md"
+    ledger.write_text(LEDGER_PATH.read_text())
+    locked = tmp_path / "locked"
+    locked.mkdir()
+    locked.chmod(0o500)
+    try:
+        with pytest.raises(OSError):
+            train.preflight(locked, ledger)
+        with pytest.raises(OSError):
+            train.preflight(locked / "sub", ledger)
+    finally:
+        locked.chmod(0o700)
+
+
+def _no_training(*args: Any, **kwargs: Any) -> None:
+    raise AssertionError("the run started before its paths were checked")
+
+
+@pytest.mark.parametrize("bad", ["ledger", "out_dir"])
+def test_a_real_run_with_a_bad_path_stops_before_training(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], bad: str
+) -> None:
+    monkeypatch.setattr(train, "load_metadata", _no_training)
+    monkeypatch.setattr(train, "train_run", _no_training)
+    ledger = tmp_path / "ledger.md"
+    ledger.write_text(LEDGER_PATH.read_text())
+    out_dir = tmp_path / "out"
+    if bad == "ledger":
+        ledger = tmp_path / "missing.md"
+    else:
+        out_dir.write_text("a file, not a directory")
+    argv = ["--config-name=resnet18_arm_a", f"--data-root={tmp_path}"]
+    with pytest.raises(SystemExit) as exit_info:
+        train.main([*argv, f"--out-dir={out_dir}", f"--ledger={ledger}"])
+    assert exit_info.value.code == 2
+    assert "before training" in capsys.readouterr().err
+
+
+def fake_run() -> train.RunResult:
+    """A finished arm A run with distinct scores in every cell and a trans_val alarm."""
+    return train.RunResult(
+        run_id="resnet18_arm_a-seed0-20261013T000000Z",
+        config_name="resnet18_arm_a",
+        config=load_config("resnet18_arm_a"),
+        split=SimpleNamespace(hash="0" * 64),  # type: ignore[arg-type]
+        fit=train.FitResult(
+            epochs=(train.Epoch(1, True, 1.0, Scores(1.0, 0.8, 0.7)),),
+            best_epoch=1,
+            logits_shape=(64, NUM_CLASSES),
+        ),
+        trans_val=Scores(1.0, 0.79, 0.6),
+        checkpoint_sha256="1" * 64,
+        alarms=score_alarms(0.8, 0.79),
+    )
+
+
+def test_the_row_carries_the_best_epochs_val_scores_and_both_trans_val_scores() -> None:
+    got = train.ledger_values(fake_run())
+    assert list(got) == list(LEDGER_COLUMNS)
+    assert (got["val accuracy"], got["val macro-F1"]) == ("0.8000", "0.7000")
+    assert (got["trans_val accuracy"], got["trans_val macro-F1"]) == ("0.7900", "0.6000")
+    assert (got["epochs run"], got["best epoch"], got["scheduler"]) == ("1", "1", "cosine warmup 1")
+    assert got["config hash"] == config_hash(load_config("resnet18_arm_b"))
+
+
+def test_the_alarms_print_before_the_ledger_append(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A real run whose append fails after training still shows its row and its alarms."""
+    run = fake_run()
+    monkeypatch.setattr(train, "load_metadata", lambda *a, **k: None)
+    monkeypatch.setattr(train, "train_run", lambda *a, **k: run)
+
+    def failing_append(ledger: Path, row: str) -> None:
+        raise OSError("the ledger went away")
+
+    monkeypatch.setattr(train, "append_row", failing_append)
+    ledger = tmp_path / "ledger.md"
+    ledger.write_text(LEDGER_PATH.read_text())
+    argv = ["--config-name=resnet18_arm_a", f"--data-root={tmp_path}"]
+    with pytest.raises(OSError):
+        train.main([*argv, f"--out-dir={tmp_path / 'out'}", f"--ledger={ledger}"])
+    captured = capsys.readouterr()
+    assert run.run_id in captured.out
+    assert "LEAKAGE ALARM: trans_val accuracy 0.7900" in captured.err
+
+
+def test_a_real_run_with_an_alarm_appends_then_exits_3(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    run = SimpleNamespace(alarms=score_alarms(0.8, 0.79))
+    monkeypatch.setattr(train, "load_metadata", lambda *a, **k: None)
+    monkeypatch.setattr(train, "train_run", lambda *a, **k: run)
+    monkeypatch.setattr(train, "ledger_values", lambda r: values())
+    ledger = tmp_path / "ledger.md"
+    ledger.write_text(LEDGER_PATH.read_text())
+    argv = ["--config-name=resnet18_arm_a", f"--data-root={tmp_path}"]
+    code = train.main([*argv, f"--out-dir={tmp_path / 'out'}", f"--ledger={ledger}"])
+    assert code == train.ALARM_EXIT
+    assert ledger.read_text().splitlines()[-1] == ledger_row(values())
+    assert "LEAKAGE ALARM" in capsys.readouterr().err
 
 
 # The dry run end to end (R37, R17).
@@ -486,6 +625,7 @@ def test_the_dry_run_trains_on_its_own_fixture_and_never_appends(
         "1",
     )
     assert len(got["checkpoint sha256"]) == len(got["split hash"]) == 64
+    assert 0 <= float(got["trans_val macro-F1"]) <= 1
     assert ledger.read_text() == LEDGER_PATH.read_text()
     assert list(temp.iterdir()) == []
     assert {"train", "val", "trans_val"} == set(reads)
