@@ -4,12 +4,13 @@ version = "0.1.0"
 description = "Who Goes There: camera-trap species classifier on Caltech Camera Traps (CCT20)"
 requires-python = ">=3.12"
 license = "MIT"
-# Minimums are the oldest versions tests/test_dataset.py (and tests/test_config.py for PyYAML)
-# passed on (Python 3.12, NumPy 2), not the locked ones: pip on Kaggle then keeps the preinstalled
-# CUDA torch instead of replacing it.
+# Minimums are the oldest versions tests/test_dataset.py and tests/test_models.py (and
+# tests/test_config.py for PyYAML) passed on (Python 3.12, NumPy 2), not the locked ones: pip on
+# Kaggle then keeps the preinstalled CUDA torch (and timm) instead of replacing them.
 dependencies = [
     "pillow>=10.1",
     "pyyaml>=6.0.1",
+    "timm>=1.0.3",
     "torch>=2.3",
     "torchvision>=0.18",
 ]
@@ -57,7 +58,8 @@ python_version = "3.12"
 strict = true
 files = ["trailcam", "scripts/guard_data.py", "scripts/kaggle_prepare_cct20.py"]
 
-# torchvision ships no type information (no py.typed); its names are typed Any.
+# torchvision ships no type information (no py.typed); its names are typed Any. torch, timm and
+# Pillow ship py.typed and need no override.
 [[tool.mypy.overrides]]
 module = ["torchvision", "torchvision.*"]
 ignore_missing_imports = true

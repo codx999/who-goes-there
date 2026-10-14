@@ -3,10 +3,11 @@
 The Kaggle notebook installs `trailcam` with pip, which ignores `[tool.uv.sources]`. A minimum
 above Kaggle's preinstalled torch would make pip replace it with PyPI's default CUDA build, so the
 minimums are the oldest versions `tests/test_dataset.py` was run on (2026-10-12: torch 2.3.0,
-torchvision 0.18.0, Pillow 10.1.0, Python 3.12, NumPy 2.5), not the locked ones. PyYAML's minimum
-is the oldest version `tests/test_config.py` was run on (2026-10-13: PyYAML 6.0.1, the first with
-Python 3.12 wheels; Kaggle preinstalls PyYAML). Raising one needs a reason, such as an API the
-code starts to use.
+torchvision 0.18.0, Pillow 10.1.0, Python 3.12, NumPy 2.5), not the locked ones. timm's minimum is
+the oldest version `tests/test_models.py` was run on with those (2026-10-13: timm 1.0.3, the first
+1.0 release; Kaggle's image has 1.0.30). PyYAML's minimum is the oldest version
+`tests/test_config.py` was run on (2026-10-13: PyYAML 6.0.1, the first with Python 3.12 wheels;
+Kaggle preinstalls PyYAML). Raising one needs a reason, such as an API the code starts to use.
 
 The build tests run `uv build` the way the item does: the sdist first, then the wheel from it.
 pip installs the wheel's files and its `Requires-Dist` lines, so those are what is checked.
@@ -26,6 +27,7 @@ ROOT = Path(__file__).resolve().parents[1]
 VERIFIED_MINIMUMS = {
     "pillow": ">=10.1",
     "pyyaml": ">=6.0.1",
+    "timm": ">=1.0.3",
     "torch": ">=2.3",
     "torchvision": ">=0.18",
 }
@@ -62,6 +64,22 @@ def test_minimums_sit_below_the_locked_versions() -> None:
         floor = tuple(int(part) for part in specifiers[name].removeprefix(">=").split("."))
         for version in locked[name]:
             assert floor < tuple(int(part) for part in version.split(".")), name
+
+
+def test_the_lock_holds_no_cuda_build() -> None:
+    """timm depends on torch and torchvision too (item 5.01); off macOS both still come from the
+    CPU-only index, PyPI's builds are macOS wheels only, and no CUDA runtime package is locked."""
+    lock = tomllib.loads((ROOT / "uv.lock").read_text())
+    names = {package["name"] for package in lock["package"]}
+    assert not {n for n in names if n.startswith(("nvidia-", "triton", "cuda-"))}
+    for package in lock["package"]:
+        if package["name"] not in ("torch", "torchvision"):
+            continue
+        wheels = [wheel["url"].rsplit("/", 1)[-1] for wheel in package["wheels"]]
+        if package["source"]["registry"] == "https://download.pytorch.org/whl/cpu":
+            assert package["version"].endswith("+cpu"), package["name"]
+        else:
+            assert all("macosx" in wheel for wheel in wheels), package["name"]
 
 
 @pytest.fixture(scope="module")

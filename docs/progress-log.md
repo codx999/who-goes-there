@@ -1043,6 +1043,99 @@ resolved with 6.01's entry first.
 Review: tier 2, ran `/review-session 5.04` (4f90760..38742e2; code-reviewer Opus xhigh,
 risk-reviewer Fable high)
 
+## 2026-10-13: session 5, item 5.01, the small CNN, ResNet-18 and the factory (Opus 5.5)
+
+**Done.** `uv add timm`: timm 1.0.30 locked (with huggingface-hub, safetensors, PyYAML), the
+same version Kaggle's image has (Colab's GPU pip freeze of 2026-10-02, googlecolab/backend-info,
+the base Kaggle builds on; read from the repository, not a running notebook). The lock still holds
+no nvidia, cuda or triton package and every non-macOS torch and torchvision entry is `+cpu`; a
+new `tests/test_dependencies.py` test pins that, since timm depends on torch too. timm ships
+`py.typed`, so it needs no mypy override (only torchvision has one, from 4.01); the pyproject
+comment says so. Runtime floor `timm>=1.0.3`, not the locked version (R38): in a scratch venv
+outside the repo on Python 3.12 with torch 2.3.0, torchvision 0.18.0, Pillow 10.1.0, timm 1.0.3
+(the first 1.0 release), NumPy 2.5.4 and huggingface-hub 2.2.0, `tests/test_models.py` and
+`tests/test_dataset.py` passed (38, deprecation warnings as errors). `VERIFIED_MINIMUMS` and the
+module docstring record it.
+
+`trailcam/model/small_cnn.py`: `SmallCNN`, the chapter 04 TinyVGG pattern, three blocks of (conv
+3x3, ReLU, conv 3x3, ReLU, max-pool 2) at a constant `hidden_units` (32 by default, chosen here:
+the plan does not pin it) and a flatten-linear head (`classifier`) sized from the image size;
+348,204 parameters. `trailcam/model/backbone.py`: `build_resnet18` (torchvision,
+`ResNet18_Weights.IMAGENET1K_V1` unless `pretrained=False`, `fc` replaced by a fresh 512-to-n
+linear layer) and the fallback `build_efficientnet_b0` (timm `efficientnet_b0.ra_in1k`,
+ImageNet-1k, fresh 1280-to-n classifier; timm is imported inside it only, so the ResNet-18 path
+never loads it). `trailcam/model/factory.py`: `build_model(name, *, pretrained=True)` for
+`small_cnn`, `resnet18`, `efficientnet_b0`; it reads `classes.NUM_CLASSES` at call time and takes
+no class count. `parameter_groups(model)` returns `(body, head)`, the head being the final linear
+layer (`classifier`, `fc` or timm's `get_classifier()`), every parameter once in
+`model.parameters()` order, for the two AdamW learning rates and the head-only first epoch (5.02,
+5.03).
+
+`tests/test_models.py`, 21 tests, no download (all built with `pretrained=False`; an autouse
+fixture refuses socket connections): all three names map (2, 3, 224, 224) to (2, 12); each head is
+one linear layer with `len(CLASSES)` outputs on the pooled features (25,088, 512, 1,280); with
+`NUM_CLASSES` patched to 5 every model gives 5 logits; the groups partition every parameter once
+and the ResNet-18 head group is `fc.weight` and `fc.bias`; spies show the default requests the
+ImageNet-1k weights of both backbones and `pretrained=False` none; both weight sets expect the
+dataset's ImageNet mean and std (R21); the small CNN's exact layer types, no batch norm or
+dropout, and its 112/56/28 sides. Six mutations (a literal 12, either backbone without weights,
+batch norm in a block, the head also in the body group, the wrong head module) each fail a test.
+The R05, R21, R30 and R38 test cells name the files.
+
+`/review-shapes` (shown in the session): the hand-traced tables for all three models, then
+checked with forward hooks: shapes and parameter counts match (ResNet-18 11,182,668, body
+11,176,512, head 6,156; EfficientNet-B0 4,022,920; small CNN 348,204). No mismatch flagged. The
+command now names the factory and its three names. `trailcam/` is already in
+`scripts/risk_files.sh` and `trailcam/model/backbone.py` in its test, so the regex is unchanged.
+
+Steps: `uv run pytest tests/test_models.py` 21 passed; `check.sh` green (358 passed); the
+`/review-shapes` table flags no mismatch. `passes` is flipped.
+
+Notes for later: 5.03 should call `parameter_groups` for the optimizer and freeze `body` for the
+head-only epoch; the Grad-CAM target is `model.layer4` on the unwrapped torchvision model.
+
+Main merge (91e4667): 5.04 reached main after the item commit, so main (4319bd3) was merged in
+with `sync_with_base_branch` before the review fix. `pyproject.toml`, `tests/test_dependencies.py`,
+`docs/review/invariants.md` and this log conflicted; each keeps both sides (5.04's licence line,
+build tests and R38 build cell beside 5.01's timm floor, lock test and R38 timm clauses; the 5.04
+entry above this one). `uv.lock` merged cleanly and `uv lock` rewrote it byte for byte. 5.04's
+`Requires-Dist` test sees `timm>=1.0.3`; `check.sh` green (361 passed).
+
+Review, started by the user: `/review-session 5.01`, tier 2, range 5bdd41e..e63fe7d (the item
+commit only), risk files `.claude/commands/review-shapes.md`, `pyproject.toml`,
+`tests/test_dependencies.py`, `tests/test_models.py`, `trailcam/model/__init__.py`,
+`trailcam/model/backbone.py`, `trailcam/model/factory.py`, `trailcam/model/small_cnn.py`,
+`uv.lock`; code-reviewer on Opus at xhigh, risk-reviewer on Fable at high. Every scenario held
+(R01, R03, R05, R21, R23, R30, R38, R42 to R45). Known gaps passed: the Space label list (R05,
+11.01), the demo and the Space (R21, 10.01, 11.01), the demo and the animal-removed test (R23),
+the build table and the notebook (R38, 5.04, 6.02). Spec changed: none. The risk-reviewer found
+nothing. One finding, verified and fixed in e70e057:
+- code-reviewer, low: the no-network fixture in `tests/test_models.py` was per test, so pytest
+  set it up after the module-scoped `models` fixture, and the docstring's promise that a
+  forgotten `pretrained=False` fails did not hold for it. Reproduced before the fix: with the flag
+  dropped there, the ResNet-18 weights (45 MB) downloaded into an empty scratch `TORCH_HOME`
+  (deleted afterwards). The guard is now module-scoped and autouse, `models` depends on it and
+  asserts it is up, and a new test shows it refuses `socket.create_connection`. With the old
+  guard the fixture assertion errors the ten tests on `models`; with the flag dropped those ten
+  fail on the guard and nothing downloads. `check.sh` green (362 passed).
+Could not verify (both): the timm 1.0.3 floor and the `/review-shapes` table, both done in this
+session (scratch venv, 38 passed; hand trace checked by forward hooks); a real weight download.
+
+Fix round, started by the user: `/review-session 91e4667..HEAD 5.01`, tier 2, the fix commit
+only (the merge before it brought 5.04, already reviewed), risk file `tests/test_models.py`;
+code-reviewer on Opus at xhigh, risk-reviewer on Fable at high. Nothing found by either; every
+scenario held (R01, R03, R05, R21, R30, R38, R42 to R45). Both checked that the patch catches
+torchvision's `urlopen` and timm's `httpx2` paths and is undone at module teardown; the
+code-reviewer's `check.sh` run was green (362 passed). Noted, not findings: with the ResNet-18
+weights already in the local torch cache, a forgotten flag loads them without a connection, so
+the guard does not fire but nothing downloads and the spy tests still pin the default (both); a
+DNS lookup still happens before the refused connect (code-reviewer). No third round.
+
+**Next.** Item 5.02, the configs; it syncs with main after this branch is merged.
+
+Review: tier 2, ran `/review-session 5.01` (5bdd41e..e63fe7d) and the fix round
+`/review-session 91e4667..HEAD 5.01` (code-reviewer Opus xhigh, risk-reviewer Fable high)
+
 ## 2026-10-13: session 5, item 5.02, the training configs (Opus 5.5)
 
 **Done.** The root `config.yaml` holds a `common` block (the recipe every config shares) and four

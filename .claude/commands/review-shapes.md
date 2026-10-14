@@ -5,8 +5,10 @@ Act as a careful deep learning reviewer.
 
 Before any training script runs:
 1. Read both model definitions, `trailcam/model/small_cnn.py` and `trailcam/model/backbone.py`
-   (plan.md section 4), and the eval transform in `trailcam/data/dataset.py`. If a model file
-   does not exist yet, say so and review the one that does; if neither exists, stop.
+   (plan.md section 4), the factory `build_model` in `trailcam/model/factory.py` (names
+   `small_cnn`, `resnet18` and the fallback `efficientnet_b0`) and the eval transform in
+   `trailcam/data/dataset.py`. If a model file does not exist yet, say so and review the one that
+   does; if neither exists, stop.
 2. Trace the tensor shapes from the input image batch (N, 3, H, W) through every layer to the
    logits (N, num_classes), including the pretrained backbone's pooled feature size.
 3. Print a markdown table per model: Layer name | Input shape | Output shape | Parameters.
