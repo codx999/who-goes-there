@@ -7,7 +7,11 @@ torchvision 0.18.0, Pillow 10.1.0, Python 3.12, NumPy 2.5), not the locked ones.
 the oldest version `tests/test_models.py` was run on with those (2026-10-13: timm 1.0.3, the first
 1.0 release; Kaggle's image has 1.0.30). PyYAML's minimum is the oldest version
 `tests/test_config.py` was run on (2026-10-13: PyYAML 6.0.1, the first with Python 3.12 wheels;
-Kaggle preinstalls PyYAML). Raising one needs a reason, such as an API the code starts to use.
+Kaggle preinstalls PyYAML). matplotlib's minimum (item 8.03, the attention histogram) is the
+oldest version `tests/test_attention.py` was run on with NumPy 2 (2026-10-14: matplotlib 3.8.4;
+3.8.3 and older declare `numpy<2`); Kaggle preinstalls matplotlib. It brings contourpy, cycler,
+fonttools, kiwisolver, pyparsing and python-dateutil, none of them CUDA. Raising one needs a
+reason, such as an API the code starts to use.
 
 The build tests run `uv build` the way the item does: the sdist first, then the wheel from it.
 pip installs the wheel's files and its `Requires-Dist` lines, so those are what is checked.
@@ -25,6 +29,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 VERIFIED_MINIMUMS = {
+    "matplotlib": ">=3.8.4",
     "pillow": ">=10.1",
     "pyyaml": ">=6.0.1",
     "timm": ">=1.0.3",
