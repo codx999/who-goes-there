@@ -46,13 +46,23 @@ def test_check_sh_runs_every_check() -> None:
     for command in (
         "uv sync --locked --quiet",
         "uv run pytest --tb=short -q",
-        "uv run mypy trailcam/ scripts/guard_data.py",
+        "uv run mypy trailcam/ scripts/guard_data.py scripts/kaggle_prepare_cct20.py",
         "uv run ruff check .",
         "uv run ruff format --check .",
         "uv run python scripts/guard_data.py --all",
         "uv run python scripts/guard_data.py --history",
     ):
         assert command in lines, command
+
+
+def test_check_sh_type_checks_the_mypy_files_list() -> None:
+    """check.sh names its mypy paths explicitly; they are the [tool.mypy] files of pyproject.toml
+    (plan.md section 10, "Setup maintenance"), so a script added to one is in the other."""
+    lines = (ROOT / "scripts" / "check.sh").read_text().splitlines()
+    (mypy,) = [line for line in lines if line.startswith("uv run mypy ")]
+    files = tomllib.loads((ROOT / "pyproject.toml").read_text())["tool"]["mypy"]["files"]
+    assert {p.rstrip("/") for p in mypy.split()[3:]} == set(files)
+    assert "scripts/kaggle_prepare_cct20.py" in files
 
 
 def test_check_sh_fails_when_hooks_folder_is_missing(tmp_path: Path) -> None:

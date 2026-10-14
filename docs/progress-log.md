@@ -863,6 +863,124 @@ so no fix round.
 Review: tier 2, ran `/review-session 4.04` (3feec64..d257ca2; code-reviewer Opus xhigh,
 risk-reviewer Fable high)
 
+## 2026-10-13: session 6, item 6.01, the Kaggle prepare script (Opus 5.5)
+
+Taken ahead of session 5 by the user's decision in the coordinator session (2026-10-13), so the
+cache (6.03) can be built while session 5 is written.
+
+**Done.** `trailcam/data/daynight.py`: `channel_spread(image)`, the mean over pixels of the
+largest channel minus the smallest (0 to 255; 0 for a grey-mode image such as L), and
+`is_night(image)`, a spread of at most `NIGHT_MAX_SPREAD = 2.0`. Measured in a scratch script: a
+grey image saved as an RGB JPEG (quality 75, 90 or 95, before and after the 512 px resize)
+decodes with a spread of exactly 0, since its chroma planes are flat; a washed-out colour scene
+(HSV saturation 0.03, blended half with grey) scores 3.0. The threshold sits between the two and
+is not yet checked on real images: see the note for 6.03.
+
+`scripts/kaggle_prepare_cct20.py`, written fresh. It downloads the two archives from LILA's GCP
+mirror (`.../public-datasets-lila/caltechcameratraps/eccv_18_annotations.tar.gz` and
+`eccv_18_all_images_sm.tar.gz`) into `/tmp/cct20`. A complete file is reused and a partial one is
+resumed with a range request (restarted if the server ignores the range); free space is checked
+first. It prints the Python, platform, Pillow and libjpeg-turbo versions, then runs the encoder
+check from the 4.03 handoff: 15 synthetic JPEGs (five camera-trap sizes, two not multiples of 8,
+in RGB, L and grey-as-RGB) plus the first 16 annotated JPEGs of the tarball. These are resized and
+encoded twice in each of two fresh spawned processes. All four SHA-256 hashes per image must
+match and the two processes must be distinct, or it stops before writing anything and says to
+upgrade Pillow. It then streams the tarball once (`r|gz`, never extracted to disk). Each JPEG an
+annotation names (matched on the base name, which must equal the annotation's `file_name`, flat
+and `.jpg`) is decoded and resized so the longer side is 512 px (Lanczos; never enlarged; L stays
+L, other modes become RGB). It is saved as JPEG quality 90 under `--out/images/<file_name>` and
+flagged from its resized pixels. The five annotation files are copied to `--out/annotations/`.
+Only when every count checks is `--out/day_night.json` written, last, via a temporary name, then
+read back: all 57,864 image ids (dropped classes and empties too) to `{"night", "hour",
+"spread"}`, the hour from `date_captured` through `metadata.capture_hour`. It exits 1 when the
+annotations or the tarball do not hold exactly 57,864 images, or an annotated image is missing,
+repeated or unreadable, or a JPEG in the tarball is not annotated. It refuses to start without
+`/kaggle` unless `--off-kaggle` is passed. Default output is `/kaggle/working/cct20_512`, which
+must be new or empty. Printed, counts only (R03): the tarball layout (member types, file
+extensions, depth histogram, the number of top-level entries and of folders holding JPEGs; no
+names), images annotated and written per split, the night share per split and per capture hour,
+the spread histogram (bins at 0.5, 1, 2, 4, 8, 16, 32) with the count within a factor of two of
+the threshold, source modes, longer-side ranges and cache bytes. trailcam imports:
+`daynight` and `metadata` (which imports `classes`).
+
+Tests: `tests/test_daynight.py` (15): grayscale JPEGs, mode L and grey saved as RGB at three
+qualities, are night; colour ones, including the washed-out scene, are day; the spread formula;
+grey modes score 0; RGBA and P are measured in colour; every JPEG of the 4.03 fixture is flagged
+exactly as its sidecar says. `tests/test_kaggle_prepare.py` (15): the fixture is packed as two
+LILA-shaped tar.gz files and run through `prepare`. The sidecar's night flag and hour equal the
+fixture's for every image, the copied annotations load with the sidecar through `load_metadata`,
+images keep 96 x 72, and the output shows depth 1, one JPEG folder, a 0-differ encoder check
+and no id, file name or folder name. A missing, repeated, extra or corrupt JPEG fails with its
+count and leaves no sidecar; the 57,864 default is enforced before any write. Also covered: the
+512 px resize, the mismatch counter, the encoder check on the locked Pillow and its refusal, the
+off-Kaggle guard, the URLs, and `download` against a local HTTP server (fetch, reuse, a
+restarted partial file, a short file refused). Seven mutations each fail a test: the night flag
+inverted, the repeat check removed, no resize, the tarball count check removed, the encoder
+refusal removed, the image write removed, the hour replaced by 0. A run on the fixture (scratch script) printed 684
+images, 312 night, 0 encoder mismatches.
+
+Setup maintenance: the script is in `[tool.mypy] files` and in `check.sh`'s mypy call; the
+`check.sh` line in `tests/test_control_plane.py` is updated, and a new test there requires
+`check.sh`'s mypy paths to equal the pyproject list. `scripts/risk_files.sh` already covers
+`^scripts/` and `^trailcam/`; `trailcam/data/daynight.py` is added to the risky list in
+`tests/test_risk_files.py`, which already listed the script. R03's test cell names
+`tests/test_kaggle_prepare.py`.
+
+Steps: `uv run pytest tests/test_daynight.py` 15 passed; `check.sh` green (336 passed, after
+fast-forwarding to main with 4.04); `curl -sI` on both URLs answers `HTTP/2 200` (annotations
+2,997,071 bytes, images 6,492,615,601). `passes` is flipped.
+
+Kaggle's Python: the Kaggle/docker-python `Dockerfile.tmpl` on main (last changed 2026-09-28,
+Colab base image `20260917`) installs into `/usr/local/lib/python3.13`, so `requires-python
+>=3.12` does not block the install. This is read from the repository, not from a running
+notebook. The script prints the version anyway.
+
+Notes for 6.03 (user):
+- Needs 5.04 merged first: the script imports `trailcam`, installed by pip from the public repo.
+  Run it as its own process, `!python kaggle_prepare_cct20.py` (from a clone, or the file fetched
+  from the repo), not `%run`: the encoder check's spawned processes re-import the file. Internet
+  on; about 6.5 GB in `/tmp` and 2 to 3 GB in `/kaggle/working`.
+- If the encoder check reports a difference, `pip install -U pillow` in the notebook and rerun.
+  Raise the pyproject minimum only to a version that passes the same check (4.03 decision).
+- Check the spread histogram: night frames should sit in the lowest bins, day frames from about
+  8 up, with few within [1, 4]. If many are near the threshold, or the night share per hour is
+  not near 1 at night and near 0 at midday, the threshold needs revisiting before the flag is
+  used. Each image's spread is in the sidecar, so a new threshold needs no re-run.
+- Record the layout lines in plan.md open question 3 and the day/night share in the data card.
+  The cache layout for 6.02: images under `images/`, annotations under `annotations/`, the
+  sidecar beside them (`--sidecar <dataset>/day_night.json`).
+
+Review, started by the user: `/review-session 6.01`, tier 2, range 4f90760..4055abe (the item
+commit only), risk files `pyproject.toml`, `scripts/check.sh`, `scripts/kaggle_prepare_cct20.py`,
+`tests/test_control_plane.py`, `tests/test_daynight.py`, `tests/test_kaggle_prepare.py`,
+`tests/test_risk_files.py`, `trailcam/data/daynight.py`; code-reviewer on Opus at xhigh,
+risk-reviewer on Fable at high. Nothing found by either; every scenario held (R01, R03, R38,
+R42 to R45), and so did the requirements: the sidecar read by `load_night_flags` and
+`load_metadata`, the Pillow version printed and the two-process encoder check before the first
+write, the script's trailcam imports free of torch, the mypy lists equal. Known gaps passed: the
+real tarball and the `NIGHT_MAX_SPREAD` calibration (6.03), the pip install on Kaggle (5.04).
+Spec changed: none. The code-reviewer's `check.sh` run was green (336 passed).
+
+Noted, not findings: the parent process that writes the cache is not itself compared with the two
+check processes; the 4.03 decision asks for two processes, which is what runs (risk-reviewer). No
+test pins that the encoder check comes before the first write in `prepare`; it holds by reading
+the code (code-reviewer). A full disk during the cache write would put one image's cache path,
+which holds its id, in the traceback: one id, on a crash, in Kaggle output that is never committed
+(code-reviewer). An unreadable first copy of an image followed by a readable repeat gives a
+confusing message, but the run still fails (code-reviewer).
+
+Could not verify (code-reviewer): the encoder check started through the real
+`python scripts/kaggle_prepare_cct20.py` entry point (spawned processes re-import the script as
+`__mp_main__`); the tests import the script by module name. By the user's decision, no
+entry-point test: the user's 6.03 run on Kaggle covers it, and a failure there stops before any
+write, so it is loud and harmless. The LILA URLs were checked with `curl -sI` before the item
+commit (both 200); the reviewers make no network calls. No fix commit, so no fix round.
+
+**Next.** Session 5 items in order; 6.03 after 5.04 is merged.
+
+Review: tier 2, ran `/review-session 6.01` (4f90760..4055abe; code-reviewer Opus xhigh,
+risk-reviewer Fable high)
+
 ## 2026-10-13: session 5, item 5.04, packaging for the Kaggle pip install (Opus 5.5)
 
 Taken ahead of 5.01 to 5.03 by the user's decision in the coordinator session: the Kaggle image
