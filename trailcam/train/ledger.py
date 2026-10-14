@@ -19,10 +19,13 @@ of the table, since `append_row` adds rows at the end of the file. Each row is c
   scheduler `<name> warmup <epochs>`, and the four scores four-decimal fractions in [0, 1].
 
 Across rows: the rows of one config share model and arm; one split seed has one split hash and
-one split hash one split seed (R14); and the rows of one model and run seed, arm A and arm B
-alike, share the split hash and the config hash (R25). The config hash leaves out `arm` and
-`run_seed` (`config_hash` in `trailcam/train/config.py`, the user's decision on review 5.02), so a
-pair that differs in anything but the arm fails here.
+one split hash one split seed (R14); the rows of one model and run seed, arm A and arm B alike,
+share the split hash and the config hash (R25); the rows of one model and split seed share the
+config hash across run seeds and arms, so every seed pairing compares one recipe (plan.md section
+6); and the rows of one config hash agree on the cells it stands for: model, split seed and
+scheduler (review 7.01). The config hash leaves out `arm` and `run_seed` (`config_hash` in
+`trailcam/train/config.py`, the user's decision on review 5.02), so a pair, or a seed, that
+differs in anything but the arm and the run seed fails here.
 
 The summary (R17) lists val accuracy and val macro-F1 per model, arm, split seed and run seed,
 sorted by those keys and never by a score; a group of rows shows their means, and a model and arm
@@ -57,6 +60,7 @@ SCORE_COLUMNS: Final = (
     "trans_val macro-F1",
 )
 SHARED_BY_SEED: Final = ("split hash", "config hash")  # arm A and B of one model and run seed
+SHARED_BY_CONFIG_HASH: Final = ("model", "split seed", "scheduler")  # cells the hash stands for
 
 _HEX64: Final = re.compile(r"[0-9a-f]{64}")
 _WHOLE: Final = re.compile(r"0|[1-9][0-9]*")
@@ -214,6 +218,18 @@ def check_rows(rows: Sequence[Row]) -> tuple[list[Row], list[str]]:
         lambda r: (r["model"], r["run seed"]),
         SHARED_BY_SEED,
         lambda k: f"the rows of {k[0]} run seed {k[1]} (arm A and arm B alike)",
+    )
+    problems += _disagreements(
+        good,
+        lambda r: (r["model"], r["split seed"]),
+        ("config hash",),
+        lambda k: f"the rows of {k[0]} split seed {k[1]} (every run seed and arm)",
+    )
+    problems += _disagreements(
+        good,
+        lambda r: (r["config hash"],),
+        SHARED_BY_CONFIG_HASH,
+        lambda k: f"the rows of config hash {k[0]}",
     )
     return good, problems
 

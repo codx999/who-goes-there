@@ -142,14 +142,42 @@ def test_a_mismatched_ab_pair_fails(
 
 
 def test_ab_pairs_are_matched_by_run_seed(tmp_path: Path) -> None:
-    """Seed 1's pair may carry other hashes than seed 0's only where the run seed may change
-    them: the config hash leaves out the run seed, so it is still shared; the checkpoint is not."""
+    """Seed 1's pair carries its own checkpoints but seed 0's config hash, which leaves out the
+    run seed; an arm B seed 1 row with another config hash breaks its pair and the recipe."""
     path = write(tmp_path, arm_a(0), arm_b(0), arm_a(1), arm_b(1))
     assert problems_of(path) == []
     path = write(tmp_path, arm_a(0), arm_b(0), arm_a(1), arm_b(1, config_hash=sha("other")))
     assert problems_of(path) == [
         "the rows of resnet18 run seed 1 (arm A and arm B alike) disagree on config hash "
-        "(lines 9, 10)"
+        "(lines 9, 10)",
+        "the rows of resnet18 split seed 42 (every run seed and arm) disagree on config hash "
+        "(lines 7, 8, 9, 10)",
+    ]
+
+
+def test_the_seeds_of_one_model_share_the_config_hash(tmp_path: Path) -> None:
+    """Seed 1's pair agrees within itself but was trained to another recipe than seed 0's: the
+    seed pairings of plan.md section 6 would compare two recipes (review 7.01)."""
+    other = sha("other")
+    path = write(
+        tmp_path,
+        arm_a(0),
+        arm_b(0),
+        arm_a(1, config_hash=other),
+        arm_b(1, config_hash=other),
+    )
+    assert problems_of(path) == [
+        "the rows of resnet18 split seed 42 (every run seed and arm) disagree on config hash "
+        "(lines 7, 8, 9, 10)"
+    ]
+
+
+def test_the_rows_of_one_config_hash_agree_on_the_cells_it_stands_for(tmp_path: Path) -> None:
+    """An arm B row whose scheduler differs from its arm A partner's under one config hash: the
+    hash says one recipe, the cells say two (review 7.01)."""
+    path = write(tmp_path, arm_a(), arm_b(scheduler="cosine warmup 2"))
+    assert problems_of(path) == [
+        f"the rows of config hash {sha('config')} disagree on scheduler (lines 7, 8)"
     ]
 
 
@@ -239,14 +267,23 @@ def test_the_best_epoch_lies_within_the_epochs_run(tmp_path: Path, epochs: str, 
     assert problems == [f"line 7: best epoch {best} is not within the {epochs} epochs run"]
 
 
-def test_the_rows_of_one_config_share_model_and_arm(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("changes", "column"),
+    [
+        ({"arm": "B"}, "arm"),
+        ({"model": "small_cnn", "config_hash": sha("small")}, "model"),
+    ],
+)
+def test_the_rows_of_one_config_share_model_and_arm(
+    tmp_path: Path, changes: dict[str, str], column: str
+) -> None:
     other = values(
         run_id="resnet18_arm_a-seed0-20261016T101500Z",
-        arm="B",
         checkpoint_sha256=sha("checkpoint other"),
+        **changes,
     )
     assert problems_of(write(tmp_path, arm_a(), other)) == [
-        "the rows of config 'resnet18_arm_a' disagree on arm (lines 7, 8)"
+        f"the rows of config 'resnet18_arm_a' disagree on {column} (lines 7, 8)"
     ]
 
 
