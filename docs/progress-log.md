@@ -1662,3 +1662,41 @@ Merged main at 46e4330 (7.01) into this branch: one conflict, in this log (both 
 
 Review: tier 2, ran `/review-session 6.06` (15ce874..604aa5f; code-reviewer Opus xhigh,
 risk-reviewer Fable high), nothing found, no fix round
+
+## 2026-10-14: session 8, item 8.01, the per-class report, the confusion matrix and the timer (Opus 5.5)
+
+Taken ahead of its 10-18 date by the user's decision in the coordinator session, alongside 8.03.
+
+**Done.** `trailcam/evaluate/metrics.py` extended; `accuracy` and `macro_f1` keep their signatures
+and behaviour (5.03's tests unchanged and passing):
+
+- `confusion_matrix(predictions, labels)`: a 12 x 12 list of counts in the class order of
+  `trailcam/data/classes.py`, rows true, columns predicted; an absent class has a zero row, and
+  predictions of an absent class show in its column.
+- `per_class_scores(predictions, labels)`: `{class index: ClassScores(precision, recall, f1,
+  support, predicted)}` for the classes present in the labels only, ascending, with the module's
+  conventions (a present class never predicted has precision 0; F1 = 2TP / (2TP + FP + FN)).
+  `macro_f1` is now the mean of these F1 values, so the identity holds by construction and is
+  tested on 200 random cases.
+- `time_one_prediction(model, image) -> float` (R33): takes the eval transform's output, (3, H, W)
+  or (1, 3, H, W), moves it to the model's device, makes one untimed warm-up call, then reads
+  `time.perf_counter()` around a second forward pass in eval mode under `torch.no_grad()`, with a
+  device synchronise before each reading on CUDA or MPS; the model's train mode is restored. The
+  choice, stated in the module docstring: decoding, the eval transform and the move to the device
+  are outside the timed region, so the seconds the demo shows are the model's forward pass only.
+
+Note for 10.01: the timer returns seconds only, as the item asks, so a demo that also needs the
+logits runs the model a third time (warm-up, timed, its own predict). If that matters on the
+Space's CPU, 10.01 can propose returning the logits beside the seconds.
+
+Steps: `uv run pytest tests/test_metrics.py` 20 passed: hand-computed per-class scores and
+confusion matrix on the 12-class toy case and on a split with four present classes and
+predictions of absent ones; rows true and columns predicted; the bad-input cases refused by the
+two new functions too; the timer returns a positive float for one synthetic-fixture JPEG through
+the small CNN (eval transform, `build_model("small_cnn")`); with a fake clock, the order is
+forward, clock, forward, clock and the difference is returned; no grad and eval mode in both
+calls; a CPU input reaches a `meta`-device model on `meta`; a batch of two is refused.
+`docs/review/invariants.md`: test cells of R32 and R33 filled (reporting on trans test stays
+9.01's, the demo and Space calls 10.01's and 11.01's). `check.sh` green (589 passed).
+
+**Next.** 8.02 (figures, Grad-CAM, the evaluate entry point), with 8.03 in parallel.

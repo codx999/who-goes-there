@@ -115,7 +115,7 @@
     {"id": "8.01", "session": 8, "owner": "claude", "due": "2026-10-18",
      "description": "trailcam/evaluate/metrics.py: accuracy, macro-F1 (over classes present when a split lacks some), per-class precision, recall and F1, confusion matrix from predictions and labels (no scikit-learn needed), and time_one_prediction() using time.perf_counter() after one warm-up call, returning seconds",
      "steps": "uv run pytest tests/test_metrics.py passes against hand-computed values on a 12-class toy case including a split with absent classes; the timer returns a positive float for one fixture image through the small CNN",
-     "passes": false},
+     "passes": true},
     {"id": "8.02", "session": 8, "owner": "claude", "due": "2026-10-18",
      "description": "trailcam/evaluate/figures.py (confusion matrix, per-class bars, per-camera accuracy bars as PNG into a given --out directory; docs/figures/ for real runs) and trailcam/evaluate/gradcam.py (grad-cam on resnet18 layer4, overlay to PNG, input images from assets/ only); an evaluate.py entry point that runs a split and writes the metrics table as markdown",
      "steps": "`uv run python -m trailcam.evaluate.evaluate --config dryrun --split val --out <tmp dir>` on the fixture writes a metrics table and three PNGs under <tmp dir> and nothing under docs/figures/; uv run pytest tests/test_figures.py passes",
