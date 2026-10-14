@@ -472,6 +472,8 @@ def preflight(out_dir: Path, ledger: Path) -> None:
     with tempfile.NamedTemporaryFile(dir=out_dir, prefix=".write-check-"):
         pass
     check_ledger(ledger)
+    with ledger.open("a", encoding="utf-8"):  # appends nothing; refuses a read-only ledger
+        pass
 
 
 def parse_bool(text: str) -> bool:

@@ -471,6 +471,15 @@ def test_preflight_refuses_a_bad_ledger(tmp_path: Path) -> None:
     trailing.write_text(LEDGER_PATH.read_text() + "\nA paragraph after the table.\n")
     with pytest.raises(ValueError, match="end with its table"):
         train.preflight(tmp_path / "out", trailing)
+    read_only = tmp_path / "read_only.md"
+    read_only.write_text(LEDGER_PATH.read_text())
+    read_only.chmod(0o444)
+    try:
+        with pytest.raises(PermissionError):
+            train.preflight(tmp_path / "out", read_only)
+    finally:
+        read_only.chmod(0o644)
+    assert read_only.read_text() == LEDGER_PATH.read_text()
 
 
 def test_preflight_refuses_an_out_dir_it_cannot_write(tmp_path: Path) -> None:
