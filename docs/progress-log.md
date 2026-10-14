@@ -1297,5 +1297,64 @@ parser, `--max-epochs` on a full run, a dry run that appends. `docs/ledger.md` h
 and no rows. Test cells filled: R14, R16, R17, R25, R27, R30, R31, R32, R37, R40. `check.sh` green
 (485 passed), so `passes` is flipped.
 
-**Next.** Session 6, item 6.02 (the Kaggle notebook: pass `--config` from a clone at the
-installed commit, `--data-root`, `--out-dir` and `--ledger`, and print the row), or item 7.01.
+Review, started by the user: `/review-session 5.03`, tier 2, range bda1990..0eb3368 (the item
+commit), risk files `.claude/rules/training.md`, `tests/test_config.py`, `tests/test_metrics.py`,
+`tests/test_train.py`, `trailcam/evaluate/__init__.py`, `trailcam/evaluate/metrics.py`,
+`trailcam/train/config.py`, `trailcam/train/train.py`; code-reviewer on Opus at xhigh,
+risk-reviewer on Fable at high. Known gaps passed: R14's data card (3.04); the notebook halves of
+R16, R17, R27 and R37 (6.02 on); R17's final scoring (9.01); R25's and R40's ledger checker
+(7.01); R32's per-class report and R33's timer (8.01). Every other scenario held (R01, R03, R05,
+R14, R16, R17, R25, R27, R30, R31, R32, R33, R37, R40, R42 to R45). Two low findings, fixed in
+e6caf63 by the user's decisions (via the coordinator):
+
+- Code-reviewer, low: a real run checked `--out-dir` and `--ledger` only after training. On a
+  wheel install the default ledger path lies under site-packages, so a run without `--ledger`
+  would train, print its row and die in the append before printing its leakage alarms; an
+  unwritable out dir would fail after `fit` with no row at all. Fix: `preflight` (out dir created
+  and written to, ledger present with the header of `LEDGER_COLUMNS` and ending with its table)
+  runs before the metadata is loaded, and a failure is a `parser.error` (exit 2, "before
+  training: ..."); the row and the alarms print before the append; the docstring says to pass
+  `--config` and `--ledger` from a clone on Kaggle, with `--out-dir` under `/kaggle/working`.
+  Tests for each refusal, for a real run stopping before training, for the alarms showing when
+  the append fails, and for an alarmed run appending then exiting 3.
+- Risk-reviewer, low: plan.md section 5 read "up to 10 for the backbone (one head-only epoch
+  first)", which reads as 1 + 10. No config change: the Epochs row now says the head-only epoch
+  counts inside the 10, so the body trains at most 9 epochs, the same for both arms.
+- Scope addition approved by the user: a trans_val macro-F1 column (over the classes present,
+  R17, R32) after trans_val accuracy, since the ledger had no rows yet. `LEDGER_COLUMNS` (16
+  columns), the `docs/ledger.md` header and guide, plan section 5, R40's rule text and
+  `.claude/rules/training.md` list it; a test checks the row carries both trans_val scores.
+
+Spec changed: plan §5 (the Epochs and Ledger rows) and `.claude/rules/training.md` (the column
+list; a control-plane edit, one line each round). `check.sh` green (493 passed) and `/dryrun`
+passed after e6caf63.
+
+Fix round, started by the user: `/review-session 0eb3368..e6caf63 5.03`, tier 2, risk files
+`.claude/rules/training.md`, `tests/test_train.py`, `trailcam/train/train.py`; same reviewers,
+models and gaps. Every scenario held; the five column lists agree. Risk-reviewer: nothing.
+Code-reviewer, one low, fixed in 8cb7db0 by the user's decision, no further round: `preflight`
+read the ledger but did not check it could be written, so a read-only ledger (a copy under
+`/kaggle/input`) still failed only at the append after training. `preflight` now opens it for
+append and closes it, writing nothing; `test_preflight_refuses_a_bad_ledger` gains a read-only
+case, which fails with the check removed. Notes, not findings: the 5.03 and 6.04 descriptions in
+`docs/progress.json` list the older columns (items are never edited); a config name holding `|`
+would only be refused after training (names are the fixed keys of `config.yaml`); mypy on
+`tests/` reports one pre-existing export error (tests are outside mypy's scope).
+
+R45 note, to revisit after the deadline: in the fix round the code-reviewer ran one read-only
+`uv run python -c` on `docs/progress.json`, outside its Bash allow-list (nothing was written).
+Its agent file's limits rest on the prompt.
+
+After 8cb7db0: `check.sh` green (493 passed); `/dryrun` exits 0 and prints `logits shape
+(2, 12)`, train loss 2.6539, val loss 2.4667 and the row (the expected dry-run alarm follows it):
+
+```
+| dryrun-seed0-20261014T025936Z | resnet18 | B | dryrun | bb400372536aa3088a5b3d855249f4db64dbde96d7d15ac97702b47a6c75a2f4 | 42 | 0 | 7a13478e3a541b4ddbc4493d4b802450a9422aa24f0e454ff7b676ee9f99df0c | 1 | 1 | cosine warmup 1 | 0.1667 | 0.1037 | 0.1944 | 0.1220 | 579650cc47d1edf5124c4bff94e4acd80d8c3e9356de898ae045dc2561c4dc11 |
+```
+
+**Next.** Session 6, item 6.02 (the Kaggle notebook: pass `--config` and `--ledger` from a clone
+at the installed commit, `--data-root` and `--out-dir` under `/kaggle/working`, and print the
+row), or item 7.01 (its checker reads `LEDGER_COLUMNS`, 16 columns).
+
+Review: tier 2, ran `/review-session 5.03` (bda1990..0eb3368; code-reviewer Opus xhigh,
+risk-reviewer Fable high), fix round `/review-session 0eb3368..e6caf63 5.03` (same reviewers)
