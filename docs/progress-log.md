@@ -1023,4 +1023,22 @@ build tests. `check.sh` green, so `passes` is flipped.
 Notes: CI runs Python 3.12 only; the 3.13 evidence is the import above, not the test suite. The
 `git+https` install itself is first possible after the user pushes this commit (6.02's notebook).
 
+Review, started by the user (go relayed by the coordinator session): `/review-session 5.04`,
+tier 2, range 4f90760..38742e2 (the item commit), risk files `pyproject.toml`,
+`tests/test_dependencies.py`, `uv.lock`; code-reviewer on Opus at xhigh, risk-reviewer on Fable
+at high. Nothing found by either; every scenario held (R01, R03, R38, R42 to R45). Known gaps
+passed: R38's notebook line (6.02), `space/requirements.txt` (11.01), timm (5.01), the live
+`git+https` install (after the push). Spec changed: none. The code-reviewer's `check.sh` run was
+green (308 passed); the risk-reviewer ran the dependency, control-plane, risk-files and guard
+tests (102 passed). Noted, not a finding (code-reviewer): R38's test cell no longer says the
+fresh-venv install has no automated test; the build tests check the wheel's files and
+`Requires-Dist`, not an install and import, which this session checked by hand (Python 3.12,
+3.13 and the Kaggle-like venv above). The reviewers could not check the Kaggle image versions
+(no network) or run the fresh-venv install (their rules). No fix commit, so no fix round.
+After the review, main with 6.01 (5bdd41e) was merged into this branch; the log conflict was
+resolved with 6.01's entry first.
+
 **Next.** Session 5, item 5.01 (or whichever item the coordinator assigns).
+
+Review: tier 2, ran `/review-session 5.04` (4f90760..38742e2; code-reviewer Opus xhigh,
+risk-reviewer Fable high)
