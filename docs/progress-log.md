@@ -1700,3 +1700,17 @@ calls; a CPU input reaches a `meta`-device model on `meta`; a batch of two is re
 9.01's, the demo and Space calls 10.01's and 11.01's). `check.sh` green (589 passed).
 
 **Next.** 8.02 (figures, Grad-CAM, the evaluate entry point), with 8.03 in parallel.
+
+Notes, recorded and not fixed (the user's decision, via the coordinator, no code change):
+
+- Mode restore: `time_one_prediction` restores with `model.train(was_training)`, one mode for
+  every submodule, so a model passed in with mixed modes (the head-only epoch's frozen batch norm)
+  would come back with that batch norm in train mode. No current or planned caller times a model
+  mid-training; the demo and the Space pass eval-mode models.
+- Demo cost, handed to 10.01: every call runs two forward passes and returns the seconds only, so
+  a demo request costs its own prediction plus those two.
+
+Review: tier 2, ran `/review-session 8.01` (17ca508..0270f80; code-reviewer Opus xhigh,
+risk-reviewer Fable high), nothing found, no fix round. Scenarios R01, R03, R05, R32, R33, R42 to
+R45 held; known gaps passed: R32 reporting on trans test (9.01), R33 the demo and Space calling
+the timer (10.01, 11.01). Neither reviewer could run the CUDA and MPS synchronise branches.
