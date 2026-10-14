@@ -1619,6 +1619,46 @@ device and the CPU count, and warns if 4 workers outnumber the CPUs (a change to
 changes the config hash, your decision after the first run). Still open from review 6.02:
 whether Run > Factory reset empties `/kaggle/working`.
 
-**Next.** Session 6 is the user's (6.03, 6.04, 6.05), or item 7.01 if not yet merged.
+Review, started by the user: `/review-session 6.06` (15ce874..604aa5f), tier 2, risk files
+`notebooks/kaggle_train.ipynb`, `tests/test_device.py`, `tests/test_notebook.py`,
+`trailcam/train/device.py`; code-reviewer on Opus at xhigh, risk-reviewer on Fable at high.
+Scenarios R03, R05, R06, R07, R14, R16, R17, R27, R31, R37, R38, R41, R42, every one held. Spec
+changed: plan section 5 only (rows citing it: R14, R17, R20, R22, R27, R31, R37, R38, R40; none
+contradicted). Known gaps passed: R06 Space and slides (11.01, 12.02), R07 deploy script
+(11.01), R17 final scoring (9.01), R38 `space/requirements.txt` (11.01), R41 figures (8.06), the
+training cell and `check_gpu` not run on a real GPU (6.04). Nothing found by either reviewer.
+Neither could run nbconvert (outside their commands); it was run in this session before the
+commit and left the notebook unchanged, and the amend touched `docs/` only.
 
-Review: tier 2, `/review-session 6.06` (to be started by the user)
+Notes, recorded and not fixed (the user's decision, via the coordinator, no code change):
+
+- CPU count: `workers_warning` reads `os.cpu_count()`, which may report the host's CPUs in a
+  quota-limited container, while the DataLoader uses `len(os.sched_getaffinity(0))`. Compare
+  both on the first real run (6.04).
+- Default `COMMIT`: the notebook's default (dc05dad) predates `trailcam/train/device.py`, so with
+  the default left in place cell 8 fails with `ModuleNotFoundError` after the clone and install.
+  For 6.04 the user sets `COMMIT` to a main commit at or after the 6.06 merge (the coordinator
+  gives the exact hash).
+- Same device: `check_gpu` accepts any GPU whose architecture is in the build, not only a T4;
+  Kaggle offers T4 x2 and the P100 and the P100 is refused, so every run is on a T4 in practice.
+  The device name is printed, not in the ledger row (plan section 5 does not ask for it).
+- Pin value: `check_gpu` checks one visible device, not that `CUDA_VISIBLE_DEVICES` is `0`; a
+  hand edit to `1` would train on the second, identical T4. The committed value is tied to
+  `VISIBLE_DEVICES` by a test.
+
+R45 note, to revisit after the deadline (third occurrence): the code-reviewer again ran a
+read-only `uv run python -c` printing the notebook's cells, outside its Bash allow-list; nothing
+was written.
+
+Evidence from 6.03 that bears on this item (pasted by the user): the cache build ran on Kaggle
+at 15ce874 in a CPU session with Python 3.13.15, Pillow 12.3.0, libjpeg-turbo 3.1.4.1, timm
+1.0.29 (not 1.0.30 as 5.01 read from Colab's list) and torch 2.11.0+cpu.
+
+Merged main at 46e4330 (7.01) into this branch: one conflict, in this log (both entries kept,
+7.01's first since it merged first, so this entry's review line ends the log);
+`docs/progress.json`, `docs/review/invariants.md` and `docs/ledger.md` merged cleanly.
+
+**Next.** Session 6 is the user's (6.03, 6.04, 6.05); then 7.02 (user).
+
+Review: tier 2, ran `/review-session 6.06` (15ce874..604aa5f; code-reviewer Opus xhigh,
+risk-reviewer Fable high), nothing found, no fix round
