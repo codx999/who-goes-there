@@ -20,12 +20,14 @@ of the table, since `append_row` adds rows at the end of the file. Each row is c
 
 Across rows: the rows of one config share model and arm; one split seed has one split hash and
 one split hash one split seed (R14); the rows of one model and run seed, arm A and arm B alike,
-share the split hash and the config hash (R25); the rows of one model and split seed share the
-config hash across run seeds and arms, so every seed pairing compares one recipe (plan.md section
-6); and the rows of one config hash agree on the cells it stands for: model, split seed and
-scheduler (review 7.01). The config hash leaves out `arm` and `run_seed` (`config_hash` in
-`trailcam/train/config.py`, the user's decision on review 5.02), so a pair, or a seed, that
-differs in anything but the arm and the run seed fails here.
+share the split hash and the config hash (R25); every row of one model shares the config hash,
+whatever its split seed, run seed and arm, so every seed pairing compares one recipe on the one
+split seed of plan.md section 5 (section 6; review 7.01); and the rows of one config hash agree on
+the cells it stands for: model, split seed and scheduler (review 7.01). The config hash leaves out
+`arm` and `run_seed` (`config_hash` in `trailcam/train/config.py`, the user's decision on review
+5.02), so a pair, or a seed, that differs in anything but the arm and the run seed fails here. By
+design, so does any logged run of a model with a changed recipe or split seed (the user's decision
+on review 7.01): such a run belongs in no ledger row next to the experiment's.
 
 The summary (R17) lists val accuracy and val macro-F1 per model, arm, split seed and run seed,
 sorted by those keys and never by a score; a group of rows shows their means, and a model and arm
@@ -221,9 +223,9 @@ def check_rows(rows: Sequence[Row]) -> tuple[list[Row], list[str]]:
     )
     problems += _disagreements(
         good,
-        lambda r: (r["model"], r["split seed"]),
+        lambda r: (r["model"],),
         ("config hash",),
-        lambda k: f"the rows of {k[0]} split seed {k[1]} (every run seed and arm)",
+        lambda k: f"the rows of {k[0]} (every split seed, run seed and arm)",
     )
     problems += _disagreements(
         good,

@@ -150,7 +150,7 @@ def test_ab_pairs_are_matched_by_run_seed(tmp_path: Path) -> None:
     assert problems_of(path) == [
         "the rows of resnet18 run seed 1 (arm A and arm B alike) disagree on config hash "
         "(lines 9, 10)",
-        "the rows of resnet18 split seed 42 (every run seed and arm) disagree on config hash "
+        "the rows of resnet18 (every split seed, run seed and arm) disagree on config hash "
         "(lines 7, 8, 9, 10)",
     ]
 
@@ -167,7 +167,19 @@ def test_the_seeds_of_one_model_share_the_config_hash(tmp_path: Path) -> None:
         arm_b(1, config_hash=other),
     )
     assert problems_of(path) == [
-        "the rows of resnet18 split seed 42 (every run seed and arm) disagree on config hash "
+        "the rows of resnet18 (every split seed, run seed and arm) disagree on config hash "
+        "(lines 7, 8, 9, 10)"
+    ]
+
+
+def test_a_seed_pair_on_another_split_seed_fails(tmp_path: Path) -> None:
+    """Seed 1's pair trained on split seed 7 agrees within itself and with its split, but plan.md
+    section 5 fixes one split seed: the "all" lines would average two splits (review 7.01, fix
+    round)."""
+    seven = {"split_seed": "7", "split_hash": sha("split 7"), "config_hash": sha("config 7")}
+    path = write(tmp_path, arm_a(0), arm_b(0), arm_a(1, **seven), arm_b(1, **seven))
+    assert problems_of(path) == [
+        "the rows of resnet18 (every split seed, run seed and arm) disagree on config hash "
         "(lines 7, 8, 9, 10)"
     ]
 

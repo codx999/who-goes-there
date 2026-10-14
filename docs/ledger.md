@@ -20,9 +20,10 @@ Check it after pasting a row: `uv run python -m trailcam.train.ledger --check do
 (`trailcam/train/ledger.py`, item 7.01) exits 1 with every problem, or 0 with the val scores per
 model, arm and seed. It refuses a missing or empty cell, a repeated run id, a malformed hash, seed,
 score or run id, a `dryrun` row, one split seed with two split hashes (R14), arm A and arm B rows
-of one model and run seed that differ in split hash or config hash (R25), rows of one model and
-split seed with two config hashes, and rows of one config hash that differ in model, split seed
-or scheduler.
+of one model and run seed that differ in split hash or config hash (R25), rows of one model with
+two config hashes, whatever their split seeds, and rows of one config hash that differ in model,
+split seed or scheduler. So, by design, a logged run of a model with a changed recipe or split
+seed fails the check (the user's decision on review 7.01).
 
 Data: Caltech Camera Traps (CCT20), Beery et al. 2018, CDLA-Permissive 1.0.
 
