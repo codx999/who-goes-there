@@ -1432,4 +1432,42 @@ ledger row lacks the commit; note it with the row in the progress log.
 **Next.** Session 6 is the user's (6.03 the cache dataset, 6.04 the small CNN, 6.05 arm A seed
 0), or item 7.01 (the ledger checker).
 
-Review: tier 2, `/review-session 6.02`
+Review, started by the user: `/review-session 6.02` (dc05dad..f30e0c1), tier 2, risk files
+`notebooks/kaggle_train.ipynb`, `tests/test_notebook.py`; code-reviewer on Opus at xhigh,
+risk-reviewer on Fable at high. Known gaps passed: R06 Space and slides (11.01, 12.02), R07 deploy
+script (11.01), R17 final scoring (9.01), R38 `space/requirements.txt` (11.01), R41 figures
+(8.06), the training cell not run off Kaggle (6.04). Every scenario held (R01, R03, R06, R07, R16,
+R17, R27, R37, R38, R41 to R45). Risk-reviewer: nothing. Code-reviewer, two lows, both fixed in
+9c2260d by the user's decisions (via the coordinator):
+
+- The run steps did not carry plan section 5's accelerator, the single P100 (GPU T4 x2 uses quota
+  twice as fast and training uses one GPU). Fix: How-to-run step 4 and the no-GPU error name GPU
+  P100; more than one GPU prints a warning to stderr and does not refuse.
+- In an interactive session, a run at a new `COMMIT` after deleting the clone (as the clone cell
+  then suggested) would pass the byte-for-byte check on disk yet train with the modules Python had
+  already imported from the earlier commit. Fix: the clone cell offers only a fresh session (Run >
+  Factory reset); the first cell that imports `trailcam` refuses a kernel where it is already in
+  `sys.modules`. Side effect: a cell-8 failure (a wrong `DATA_ROOT`) also needs a Factory reset.
+
+Two new tests in `tests/test_notebook.py` (no existing test line changed); both fail on the
+f30e0c1 notebook. `check.sh` green (506 passed); nbconvert leaves the notebook unchanged; the
+guard passes.
+
+Fix round, started by the user: `/review-session f30e0c1..9c2260d 6.02`, same reviewers, models,
+scenarios and gaps. Nothing found by either; every scenario held. Notes, not findings: the four
+`# noqa: E402` comments are unused (ruff passes with `--ignore-noqa`); one assert in
+`test_trailcam_is_imported_once_per_kernel` cannot fail by construction; the clone cell's
+"reuses the clone" comment now applies only after a kernel restart that keeps `/kaggle/working`.
+
+Open for the user, unverified (no network in the review): whether Kaggle's preinstalled torch
+(2.11) still has kernels for the P100 (sm_60); recent PyTorch CUDA 12.8+ builds dropped Pascal,
+in which case the training cell would fail at its first CUDA call, after the setup cells. Also
+whether Run > Factory reset empties `/kaggle/working`. Both are checked in the first Kaggle
+session (6.03 or 6.04).
+
+R45 note, to revisit after the deadline: in the first round the code-reviewer again ran a
+read-only `uv run python -c` (printing the notebook's cells), outside its Bash allow-list; nothing
+was written. Same pattern as review 5.03; its agent file's limits rest on the prompt.
+
+Review: tier 2, ran `/review-session 6.02` (dc05dad..f30e0c1; code-reviewer Opus xhigh,
+risk-reviewer Fable high), fix round `/review-session f30e0c1..9c2260d 6.02` (same reviewers)
