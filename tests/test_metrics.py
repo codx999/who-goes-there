@@ -19,10 +19,12 @@ from trailcam.data.classes import NUM_CLASSES
 from trailcam.data.dataset import EvalTransform
 from trailcam.evaluate import metrics
 from trailcam.evaluate.metrics import (
+    CameraScores,
     ClassScores,
     accuracy,
     confusion_matrix,
     macro_f1,
+    per_camera_scores,
     per_class_scores,
     time_one_prediction,
 )
@@ -162,6 +164,28 @@ def test_macro_f1_is_the_mean_of_the_per_class_f1() -> None:
         matrix = confusion_matrix(predictions, labels)
         assert sum(map(sum, matrix)) == len(labels)
         assert [sum(matrix[c]) for c in scores] == [s.support for s in scores.values()]
+
+
+def test_per_camera_scores_by_hand() -> None:
+    """Location 7: labels 0, 0, 1, predictions 0, 1, 1: accuracy 2/3; class 0 F1 = 2/(2+0+1) =
+    2/3, class 1 F1 = 2/(2+1+0) = 2/3, macro-F1 2/3. Location 3: labels 2, 2, 2, predictions
+    2, 2, 5: accuracy 2/3; only class 2 is present there, F1 = 4/(4+0+1) = 0.8, so the
+    prediction of the absent class 5 costs recall only. Pooled, macro-F1 would be (2/3 + 2/3 +
+    0.8) / 3 = 0.7111 at both: each location is scored on its own images. Keys ascend."""
+    predictions = [0, 1, 1, 2, 2, 5]
+    labels = [0, 0, 1, 2, 2, 2]
+    locations = [7, 7, 7, 3, 3, 3]
+    scores = per_camera_scores(predictions, labels, locations)
+    assert list(scores) == [3, 7]
+    assert scores[7] == CameraScores(3, pytest.approx(2 / 3), pytest.approx(2 / 3))
+    assert scores[3] == CameraScores(3, pytest.approx(2 / 3), pytest.approx(0.8))
+
+
+def test_per_camera_scores_refuse_mismatched_locations() -> None:
+    with pytest.raises(ValueError):
+        per_camera_scores([0, 1], [0, 1], [5])
+    with pytest.raises(ValueError):
+        per_camera_scores([0, 12], [0, 1], [5, 5])
 
 
 def test_the_timer_runs_one_fixture_image_through_the_small_cnn(tmp_path: Path) -> None:
