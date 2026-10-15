@@ -1920,3 +1920,40 @@ Merged main at 21faa79 (6.07) before this commit, through the sync tool. Two con
 8.03's `tests/test_attention.py` both kept).
 
 **Next.** 8.02 (overlays draw `trailcam.evaluate.gradcam.gradcam`), 8.04.
+
+## 2026-10-15: session 12, item 12.07, the learning journal (Opus 5.5)
+
+New item, approved by the user in the coordinator session on 2026-10-15 and added to
+`docs/progress.json` as 12.07 (session 12, owner claude, due 2026-10-17). Why: the user wants a
+record written for them, to go back and learn what was done and why; this log is written for
+reviewers and later sessions. The journal also feeds the slides (12.06, the presentation plan,
+comes next).
+
+**Done.** `docs/learning-journal.md`, in plain language, by topic: the problem and the dataset
+choice; inspecting and cleaning the data; splitting without leakage; Dataset, DataLoader and
+transforms; arm A vs arm B; the models; the training loop and the ledger; macro-F1 next to
+accuracy; test-set isolation and leakage alarms; the evaluation pieces built so far (8.02 and 8.04
+named as still to come); running on Kaggle; how the project was run. Each topic has What we did,
+Why it mattered here, Where to look and Try it yourself. Then a dated "Surprises and lessons"
+timeline (eight entries, from the paper vs files counts to the partial file count settled by
+`check_images`), "Kaggle steps you did" (seven steps, training commit 21faa79b0aed), and "How to keep
+this journal". Sources: this log, the plan, the data card, the data inspection, the research
+report, the code and tests, and the Kaggle facts the user gave in the item (6.03's 22-minute build,
+night share 63.6% overall and 68.8% in trans_test, hour 12 at 61.5% night, the quota and phone
+verification, the dataset page error). Counts only: no image id, file name or data row (R03); the
+Beery et al. 2018 citation sits in the introduction.
+
+Steps: the file exists; a scratch script checked all 92 links (relative file links and the
+in-page topic anchors): every file link resolves to a tracked file and every anchor to a heading.
+All 13 "Try it yourself" commands, extracted from the file and run as written, exit 0 on the Mac
+(0 to 10 s each, the dry run 22 s; the dry run printed its row and left `docs/ledger.md`
+unchanged). `check.sh` green (645 passed). `passes` is flipped.
+
+Noted, not changed (outside this item): `docs/data-card.md` still says the day/night share is
+pending 6.03, and plan section 2 says about half the images are night shots; the measured share
+(63.6%) is in the journal only. Recording it in the data card is 6.03's step (owner user).
+
+**Next.** 12.06, the presentation plan, which can draw on the journal; each later item appends 3 to
+5 lines to the journal under its topic.
+
+Review: tier 0 (docs only), nothing to run; no invariant row's spec document changed.
