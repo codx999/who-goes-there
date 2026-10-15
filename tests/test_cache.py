@@ -8,6 +8,8 @@ outside the top folder, each refused before anything is written.
 """
 
 import io
+import os
+import shutil
 import tarfile
 from pathlib import Path
 from typing import Any
@@ -19,11 +21,13 @@ from trailcam.data import synthetic
 from trailcam.data.cache import (
     CACHE_TOP,
     MAX_DEPTH,
+    UNPACK_MARGIN,
     ArchiveError,
     archive_files,
     check_images,
     missing_images,
     sidecar_folders,
+    space_needed,
     unpack_cache,
 )
 from trailcam.data.metadata import DAY_NIGHT_SIDECAR, SPLITS, Metadata, load_metadata
@@ -239,3 +243,40 @@ def test_the_archive_search_finds_kaggles_dataset_mount(tmp_path: Path) -> None:
     assert archive_files(tmp_path) == [mount / f"{CACHE_TOP}.tar"]
     assert archive_files(tmp_path, max_depth=2) == []
     assert archive_files(tmp_path / "absent") == []
+
+
+def test_the_space_needed_rounds_each_file_to_blocks_and_adds_a_margin() -> None:
+    """Review 6.08: 57,864 files lose about 100 to 150 MB to block rounding."""
+    small, large, folder = (tarfile.TarInfo(n) for n in ("a", "b", "c"))
+    small.size, large.size = 1, 4097
+    folder.type = tarfile.DIRTYPE
+    assert space_needed([small, large, folder], 4096) == (1 + 2 + 1) * 4096 + UNPACK_MARGIN
+    assert space_needed([], 4096) == UNPACK_MARGIN
+
+
+def test_too_little_space_for_the_blocks_is_refused_before_writing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Free space above the files' bytes but below their blocks and the margin is refused, and
+    nothing is written; exactly the blocks and the margin is enough."""
+    archive = _tar(tmp_path / "cache.tar", NORMAL)
+    with tarfile.open(archive) as tar:
+        members = tar.getmembers()
+    size = sum(m.size for m in members if m.isfile())
+    needed = space_needed(members, os.statvfs(tmp_path).f_frsize or 4096)
+    free = {"bytes": size + 1}
+    real = shutil.disk_usage
+
+    def disk_usage(path: Path | str) -> Any:
+        return real(path)._replace(free=free["bytes"])
+
+    monkeypatch.setattr(cache_module.shutil, "disk_usage", disk_usage)
+    dest = tmp_path / "local"
+    with pytest.raises(OSError, match="nothing was extracted"):
+        unpack_cache(archive, dest)
+    assert not dest.exists()
+    free["bytes"] = needed - 1
+    with pytest.raises(OSError, match=f"needs about {needed} "):
+        unpack_cache(archive, dest)
+    free["bytes"] = needed
+    assert unpack_cache(archive, dest).files == 3
