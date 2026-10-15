@@ -400,20 +400,30 @@ def test_the_look_notebook_shows_train_photos_only() -> None:
     assert every.count(".records[") == 1
 
 
-def test_the_look_notebook_s_photo_titles_name_no_file_or_id() -> None:
-    """R03's exception for the photo grid: its titles show the class and day or night only."""
+def test_the_look_notebook_names_no_id_and_reads_file_names_only_to_open_photos() -> None:
+    """R03's exception for the photo grid (review 8.07, fix round): no code cell touches an image
+    id, sequence id or location in any form (attribute, name or string key), and `file_name` is
+    read only inside the one `Image.open(...)` call, so no title, label, text or print can show a
+    file name, however it is built."""
     _, code, _ = _notebook()
-    titles = [
-        ast.unparse(node)
-        for tree in (ast.parse(source) for source in code)
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and node.func.attr in ("set_title", "suptitle", "title")
+    trees = [ast.parse(source) for source in code]
+    nodes = [node for tree in trees for node in ast.walk(tree)]
+    forbidden = {"image_id", "seq_id", "location"}
+    for node in nodes:
+        assert not (isinstance(node, ast.Attribute) and node.attr in forbidden)
+        assert not (isinstance(node, ast.Name) and node.id in forbidden)
+        assert not (isinstance(node, ast.Constant) and node.value in forbidden | {"file_name"})
+    opens = [
+        node
+        for node in nodes
+        if isinstance(node, ast.Call) and ast.unparse(node.func) in ("Image.open", "PIL.Image.open")
     ]
-    assert titles
-    for title in titles:
-        assert not any(key in title for key in ("file_name", "image_id", "seq_id", "location"))
+    assert len(opens) == 1
+    inside_open = {id(n) for arg in opens[0].args for n in ast.walk(arg)}
+    file_names = [n for n in nodes if isinstance(n, ast.Attribute) and n.attr == "file_name"]
+    assert len(file_names) == 1
+    assert all(id(n) in inside_open for n in file_names)
+    assert not any(isinstance(n, ast.Name) and n.id == "file_name" for n in nodes)
 
 
 def test_the_look_notebook_s_trailcam_names_exist() -> None:

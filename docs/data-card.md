@@ -156,9 +156,10 @@ copy sits in the main checkout's `data/` (gitignored, never committed). Added 20
 | trans_test | 16006 | 23275 | 0.688 |
 | all | 36776 | 57864 | 0.636 |
 
-- About six in ten kept images are infrared night frames, and trans_test is the most night-heavy
-  split (0.716 against 0.600 to 0.626 for the cis splits): the trans cameras are judged more on
-  night frames than the model trains on (the day/night slices, item 8.04, measure the effect).
+- About two in three kept images (0.657) are infrared night frames, and trans_test is the most
+  night-heavy split (0.716 against 0.600 to 0.626 for the cis splits): the trans cameras are
+  judged more on night frames than the model trains on (the day/night slices, item 8.04, measure
+  the effect).
 - The drop rules raise the night share (0.636 to 0.657): of the 4,329 dropped images only 1,630
   (0.377) are night frames.
 - The gap is clean: over all annotated images 36,776 have a channel spread in [0, 0.5), none in

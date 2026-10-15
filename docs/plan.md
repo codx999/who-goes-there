@@ -172,7 +172,7 @@ before any training run, and checks the head size against the class map.
 | Schedule | Cosine annealing with a one-epoch linear warmup, **and** early stopping on val macro-F1 with patience 3; the best checkpoint is restored |
 | Epochs | Up to 15 for the small CNN, up to 10 for the backbone, the first of them head-only: the head-only epoch counts inside the 10, so the body trains at most 9 epochs, the same for both arms (user's decision, review 5.03); the ledger records epochs run and the best epoch |
 | Batch and input | 64 images at 224 x 224; mixed precision on the GPU |
-| Augmentation, control arm | Training only: random resized crop (scale 0.65 to 1.0, mirroring the paper's crops), horizontal flip, mild colour jitter, random grayscale with probability 0.1 (half the data is infrared). Val and test: resize so the shorter side is 256, centre crop 224, normalise |
+| Augmentation, control arm | Training only: random resized crop (scale 0.65 to 1.0, mirroring the paper's crops), horizontal flip, mild colour jitter, random grayscale with probability 0.1 (about two thirds of the kept images are infrared (section 2)). Val and test: resize so the shorter side is 256, centre crop 224, normalise |
 | Augmentation, treatment arm | Identical, except the crop sampler described in section 6 |
 | Seeds | One seed for the split, one per run; both set (`torch`, `numpy`, `random`) and logged |
 | DataLoader | Shuffle on the training loader only; val and test loaders never shuffle |
