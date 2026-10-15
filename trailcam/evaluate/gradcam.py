@@ -24,11 +24,13 @@ under the `assets/` folder (`ASSETS_DIR`, or another folder named `assets` passe
 `assets_root`, e.g. a clone's on Kaggle): the trans-test demo photos the user picks (item 8.05)
 are the only dataset images allowed in the repo, so `assets_image` refuses any other path,
 including one that leaves the folder through `..` or a symbolic link. The photo goes through the
-eval transform; the frame shown is that transform's output with the normalisation undone, so the
-overlay shows exactly the 224 x 224 pixels the model saw. For display the map is divided by its
+eval transform; the overlay is drawn on that transform's output with the normalisation undone,
+so it covers exactly the 224 x 224 pixels the model saw. For display the map is divided by its
 maximum (attention-in-box divides by its sum; the two differ by a constant factor, so the shape
 shown is the shape scored) and blended in one colour whose opacity grows with the map, up to
-`OVERLAY_ALPHA`; where the map is zero the photo is untouched.
+`OVERLAY_ALPHA`; where the map is zero the photo is untouched. The PNG holds the blended image
+only, never the unblended photo: generated figures go to `docs/figures/`, which must never hold a
+raw dataset image (`.claude/rules/data.md`; the user's decision, review 8.02).
 """
 
 from __future__ import annotations
@@ -149,10 +151,10 @@ def blend(frame: Image.Image, cam: Tensor) -> Image.Image:
 
 @dataclass(frozen=True)
 class Overlay:
-    """One photo's overlay: the eval frame as the model saw it, the same frame with the top-1
-    class's Grad-CAM map blended in, and that class with its softmax confidence."""
+    """One photo's overlay: the eval frame with the top-1 class's Grad-CAM map blended in, and
+    that class with its softmax confidence. The unblended frame is not kept, so no caller can
+    write the raw photo out by mistake."""
 
-    frame: Image.Image
     image: Image.Image
     prediction: int
     confidence: float
@@ -170,8 +172,8 @@ def overlay(model: nn.Module, path: Path, assets_root: Path = ASSETS_DIR) -> Ove
     model.eval()
     maps, logits = gradcam(model, batch.to(device))
     confidence, prediction = logits[0].float().softmax(dim=0).max(dim=0)
-    frame = denormalise(batch[0])
-    return Overlay(frame, blend(frame, maps[0]), int(prediction), float(confidence))
+    image = blend(denormalise(batch[0]), maps[0])
+    return Overlay(image, int(prediction), float(confidence))
 
 
 def write_overlay(
@@ -181,24 +183,20 @@ def write_overlay(
     label: int | None = None,
     assets_root: Path = ASSETS_DIR,
 ) -> Overlay:
-    """`overlay` as a PNG at `out_path`: the eval frame beside the overlay, titled with the
-    predicted class and its confidence, and the true class when `label` is given."""
+    """`overlay` as a PNG at `out_path`: one panel, the blended image only (no raw photo),
+    titled with the predicted class and its confidence, and the true class when `label` is
+    given."""
     result = overlay(model, path, assets_root)
     title = f"predicted {CLASSES[result.prediction]} ({result.confidence:.2f})"
     if label is not None:
         verdict = "correct" if label == result.prediction else "wrong"
         title += f", true {CLASSES[label]}: {verdict}"
-    figure = Figure(figsize=(6.4, 3.6), layout="constrained", facecolor="#fcfcfb")
-    for ax, picture, caption in zip(
-        figure.subplots(1, 2),
-        (result.frame, result.image),
-        ("input (eval frame, 224 x 224)", "Grad-CAM, top-1 class"),
-        strict=True,
-    ):
-        ax.imshow(picture)
-        ax.set_title(caption, fontsize=9, color="#52514e")
-        ax.set_axis_off()
-    figure.suptitle(title, fontsize=10, color="#0b0b0b")
+    figure = Figure(figsize=(3.6, 3.9), layout="constrained", facecolor="#fcfcfb")
+    ax = figure.subplots()
+    ax.imshow(result.image)
+    ax.set_title("Grad-CAM of the top-1 class, eval frame 224 x 224", fontsize=8, color="#52514e")
+    ax.set_axis_off()
+    figure.suptitle(title, fontsize=9, color="#0b0b0b")
     out_path.parent.mkdir(parents=True, exist_ok=True)
     figure.savefig(out_path, dpi=120, facecolor="#fcfcfb")
     return result

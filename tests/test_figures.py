@@ -13,6 +13,7 @@ import pytest
 import torch
 import torchvision.transforms as T
 import yaml
+from matplotlib.figure import Figure
 from PIL import Image
 from torch import Tensor, nn
 
@@ -20,7 +21,7 @@ from trailcam.data import synthetic
 from trailcam.data.classes import CLASSES, NUM_CLASSES, index_of_name
 from trailcam.data.dataset import EVAL_RESIZE, INPUT_SIZE, EvalTransform
 from trailcam.data.metadata import DAY_NIGHT_SIDECAR, Record, load_metadata
-from trailcam.evaluate import evaluate, gradcam
+from trailcam.evaluate import evaluate, gradcam, slices
 from trailcam.evaluate.evaluate import SplitResult, parse_overlay, render_metrics
 from trailcam.evaluate.figures import (
     camera_order,
@@ -208,8 +209,39 @@ def test_the_overlay_draws_the_scored_gradcam_map(
     maps, logits = real(model, batch)
     assert result.prediction == int(logits.argmax())
     assert result.confidence == pytest.approx(float(logits.softmax(dim=1).max()))
-    assert np.array_equal(np.asarray(result.frame), np.asarray(denormalise(batch[0])))
-    assert np.array_equal(np.asarray(result.image), np.asarray(blend(result.frame, maps[0])))
+    frame = denormalise(batch[0])
+    assert np.array_equal(np.asarray(result.image), np.asarray(blend(frame, maps[0])))
+
+
+def test_the_overlay_png_holds_the_blended_image_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review 8.02 (the user's decision): the PNG has one panel, the blended image; the
+    unblended photo is neither drawn nor kept on the result, so no raw dataset image can reach
+    docs/figures/ (.claude/rules/data.md)."""
+    assets = tmp_path / "assets"
+    photo = _photo(assets / "a.jpg")
+    torch.manual_seed(0)
+    model = build_model("resnet18", pretrained=False).eval()
+    saved: list[Figure] = []
+    real_savefig = Figure.savefig
+
+    def keep(figure: Figure, *args: object, **kwargs: object) -> None:
+        saved.append(figure)
+        real_savefig(figure, *args, **kwargs)
+
+    monkeypatch.setattr(Figure, "savefig", keep)
+    out = tmp_path / "out" / "overlay.png"
+    result = write_overlay(model, photo, out, assets_root=assets)
+    assert out.read_bytes().startswith(PNG)
+    assert len(saved) == 1 and len(saved[0].axes) == 1
+    images = saved[0].axes[0].get_images()
+    assert len(images) == 1
+    assert np.array_equal(np.asarray(images[0].get_array()), np.asarray(result.image))
+    with Image.open(photo) as opened:
+        frame = denormalise(EvalTransform()(opened.convert("RGB")))
+    assert not np.array_equal(np.asarray(result.image), np.asarray(frame))  # blended, not raw
+    assert not hasattr(result, "frame")
 
 
 def test_the_overlay_refuses_a_photo_outside_assets(tmp_path: Path) -> None:
@@ -440,3 +472,17 @@ def test_a_real_run_on_a_cache_shaped_fixture(tmp_path: Path) -> None:
     torch.save({"model": "resnet18", "classes": list(CLASSES), "state_dict": state}, checkpoint)
     with pytest.raises(ValueError):  # a checkpoint of another model than the config's
         evaluate.main([*argv[:-1], str(tmp_path / "other")])
+
+
+def test_slices_predictions_score_here_without_a_second_pass() -> None:
+    """The hook in evaluate.py's docstring: 8.04's `SplitPredictions` carries what `SplitResult`
+    needs, so one pass serves the slice tables and the metrics table."""
+    run = slices.SplitPredictions(
+        split="val",
+        labels=(0, 0, 1),
+        predictions=(0, 1, 1),
+        night=(True, False, False),
+        locations=(7, 7, 3),
+    )
+    result = SplitResult(run.split, run.labels, run.predictions, run.locations)
+    assert "| val | cis | 3 | 2 | 0.6667 | 0.6667 |" in render_metrics([result])
