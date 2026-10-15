@@ -37,6 +37,9 @@ images) prints them and exits 0.
 Before a real run trains, `preflight` checks that `--out-dir` can be written and that `--ledger`
 exists with the header of `LEDGER_COLUMNS` (review 5.03), so a bad path fails in seconds instead
 of after the GPU hour.
+`train_run` then checks that the image of every kept record is under the image folder
+(`trailcam/data/cache.py`, item 6.07) before the split is drawn, so an incomplete cache fails in
+seconds too, with counts only.
 
 Command-line overrides (R25): `--run-seed` for any config; `--max-epochs` and `--batch-size` with
 `--dry-run=True` only. No other field can be changed from the command line, so the arm A and arm
@@ -73,6 +76,7 @@ import torch
 from torch import Tensor, nn
 from torch.optim.lr_scheduler import LambdaLR
 
+from trailcam.data.cache import check_images
 from trailcam.data.classes import CLASSES
 from trailcam.data.dataset import CCT20Dataset, TrainTransform
 from trailcam.data.loaders import Loader, make_loaders
@@ -355,7 +359,8 @@ def train_run(
     out_dir: Path,
     log: Callable[[str], None] = print,
 ) -> RunResult:
-    """Split, seed, build, train, restore, save and hash, then score trans_val once."""
+    """Check the images, split, seed, build, train, restore, save and hash, then score trans_val
+    once."""
     started = datetime.now(UTC)
     run_id = f"{config_name}-seed{config.run_seed}-{started:%Y%m%dT%H%M%SZ}"
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -370,6 +375,7 @@ def train_run(
         f"{overlap}, then cosine; early stopping on val macro-F1, patience {config.patience}"
     )
 
+    log(check_images(meta, image_root))  # a missing or empty image fails here, not mid-epoch
     split = make_split(meta, config.split_seed)
     log(repr(split))
     generator = seed_everything(config.run_seed)
