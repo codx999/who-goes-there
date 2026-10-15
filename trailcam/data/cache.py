@@ -43,6 +43,7 @@ MAX_DEPTH: Final = 8  # folder levels searched below the root; the Kaggle mount 
 CACHE_TOP: Final = "cct20_512"  # the archive's one top folder: annotations/, images/, sidecar
 ARCHIVE_SUFFIX: Final = ".tar"
 KAGGLE_WORKING: Final = Path("/kaggle/working")  # saved as the version's output
+UNPACK_MARGIN: Final = 64 << 20  # bytes kept free beyond the files' blocks, as the packer keeps
 
 
 def sidecar_folders(root: Path, max_depth: int = MAX_DEPTH) -> list[Path]:
@@ -153,6 +154,14 @@ def _checked_members(tar: tarfile.TarFile, top: str) -> list[tarfile.TarInfo]:
     return members
 
 
+def space_needed(members: list[tarfile.TarInfo], block: int) -> int:
+    """Bytes the members take on disk, about: each file rounded up to whole blocks, one block per
+    folder, plus `UNPACK_MARGIN` for inodes and folder entries (review 6.08: about 100 to 150 MB
+    of rounding over 57,864 files)."""
+    blocks = sum(-(-m.size // block) if m.isfile() else 1 for m in members)
+    return blocks * block + UNPACK_MARGIN
+
+
 def unpack_cache(archive: Path, dest: Path, top: str = CACHE_TOP) -> Unpacked:
     """Extract the cache archive into `dest` and return the data root, `dest / top`, with counts
     and the seconds taken. Refuses a `dest` under `KAGGLE_WORKING`, an existing `dest / top`, too
@@ -167,10 +176,15 @@ def unpack_cache(archive: Path, dest: Path, top: str = CACHE_TOP) -> Unpacked:
         members = _checked_members(tar, top)
         files = [m for m in members if m.isfile()]
         size = sum(m.size for m in files)
+        disk = next(p for p in (dest, *dest.parents) if p.exists())  # dest may not exist yet
+        needed = space_needed(members, os.statvfs(disk).f_frsize or 4096)
+        free = shutil.disk_usage(disk).free
+        if free < needed:
+            raise OSError(
+                f"{dest} has {free} bytes free, the archive needs about {needed} "
+                f"({size} bytes of files, rounded to blocks, and a margin); nothing was extracted"
+            )
         dest.mkdir(parents=True, exist_ok=True)
-        free = shutil.disk_usage(dest).free
-        if free < size:
-            raise OSError(f"{dest} has {free} bytes free, the archive needs {size}")
         tar.extractall(dest, members=members, filter="data")
     if not root.is_dir():
         raise ArchiveError(f"the archive holds no {top}/ folder")

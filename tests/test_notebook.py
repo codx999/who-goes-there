@@ -13,6 +13,7 @@ import importlib
 import importlib.util
 import io
 import json
+import os
 import re
 import subprocess
 import sys
@@ -21,7 +22,8 @@ from pathlib import Path
 
 import pytest
 
-from trailcam.data.cache import CACHE_TOP, archive_files, unpack_cache
+from trailcam.data.cache import CACHE_TOP, archive_files, sidecar_folders, unpack_cache
+from trailcam.data.metadata import DAY_NIGHT_SIDECAR
 from trailcam.train import device, train
 from trailcam.train.config import load_configs
 
@@ -195,13 +197,27 @@ def test_the_archive_is_unpacked_after_the_gpu_check_and_before_the_cache_check(
     assert gpu < cell < cache
     (call,) = _calls_in(TREES[cell], "unpack_cache")
     assert ast.unparse(call) == "unpack_cache(CACHE_ARCHIVE, LOCAL_CACHE)"
-    assert 'archive_files(Path("/kaggle/input"))' in CODE[cell]
+    assert "archive_files(INPUT)" in CODE[cell]
+    # Review 6.08: the loose dataset attached too is refused before anything is unpacked.
+    assert CODE[cell].index("sidecar_folders(INPUT)") < CODE[cell].index("unpack_cache(")
     assert "needed = {" in CODE[cache] and "DATA_ROOT / CACHE_IMAGES" in CODE[cache]
 
 
-def _run_unpack_cell(archive: Path | None, local: Path, data_root: Path) -> dict[str, object]:
+def _run_unpack_cell(
+    archive: Path | None, local: Path, data_root: Path, attached: Path | None = None
+) -> dict[str, object]:
+    """The unpacking cell run as written, with `attached` (default: an empty folder) as
+    Kaggle's input folder."""
+    if attached is None:
+        attached = local.parent / "empty-input"
+        attached.mkdir(exist_ok=True)
     names: dict[str, object] = {
         "Path": Path,
+        "os": os,
+        "sys": sys,
+        "INPUT": attached,
+        "DAY_NIGHT_SIDECAR": DAY_NIGHT_SIDECAR,
+        "sidecar_folders": sidecar_folders,
         "CACHE_ARCHIVE": archive,
         "LOCAL_CACHE": local,
         "DATA_ROOT": data_root,
@@ -238,13 +254,51 @@ def test_the_unpack_cell_sets_data_root_or_keeps_the_loose_dataset(
         _run_unpack_cell(tmp_path / "absent.tar", tmp_path / "third", loose)
 
 
+def test_the_unpack_cell_refuses_the_loose_dataset_only_in_an_interactive_session(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Review 6.08: with the loose cct20-512 dataset still attached next to the archive, a
+    rehearsal (run type Interactive) is refused with a count, before unpacking. A committed run
+    (Batch, or any other value) has already paid for its start, so it warns on stderr and
+    unpacks (fix round). With `CACHE_ARCHIVE = None` the loose dataset is the one read."""
+    attached = tmp_path / "input"
+    mount = attached / "datasets" / "codx888" / "cct20-512" / "cct20_512"
+    mount.mkdir(parents=True)
+    (mount / DAY_NIGHT_SIDECAR).write_text("{}")
+    archive = tmp_path / "cct20_512.tar"
+    with tarfile.open(archive, "w:") as tar:
+        top = tarfile.TarInfo(CACHE_TOP)
+        top.type = tarfile.DIRTYPE
+        tar.addfile(top)
+
+    monkeypatch.setenv("KAGGLE_KERNEL_RUN_TYPE", "Interactive")
+    with pytest.raises(RuntimeError, match="1 folder\\(s\\) under .* still attached") as refused:
+        _run_unpack_cell(archive, tmp_path / "local", mount, attached)
+    assert "Remove it from the inputs" in str(refused.value)
+    assert not (tmp_path / "local").exists()
+
+    for run_type, local in (("Batch", "batch"), (None, "unset")):
+        if run_type is None:
+            monkeypatch.delenv("KAGGLE_KERNEL_RUN_TYPE")
+        else:
+            monkeypatch.setenv("KAGGLE_KERNEL_RUN_TYPE", run_type)
+        capsys.readouterr()
+        names = _run_unpack_cell(archive, tmp_path / local, mount, attached)
+        assert names["DATA_ROOT"] == tmp_path / local / CACHE_TOP
+        err = capsys.readouterr().err
+        assert f"{run_type or 'unknown'} run, continuing" in err and "still attached" in err
+
+    monkeypatch.setenv("KAGGLE_KERNEL_RUN_TYPE", "Interactive")
+    assert _run_unpack_cell(None, tmp_path / "none", mount, attached)["DATA_ROOT"] == mount
+
+
 def test_the_cache_cell_searches_any_depth_and_checks_every_image() -> None:
     """Item 6.07: a wrong DATA_ROOT lists the folders holding a day_night.json at any depth
     under /kaggle/input (Kaggle's datasets/<user>/<slug>/<folder> mount is four levels down), and
     `check_images` refuses an incomplete cache after the metadata is loaded, before training."""
     (cell,) = [i for i, tree in enumerate(TREES) if _calls_in(tree, "load_metadata")]
     source = CODE[cell]
-    assert 'sidecar_folders(Path("/kaggle/input"))' in source
+    assert "sidecar_folders(INPUT)" in source and _parameters()["INPUT"] == "Path('/kaggle/input')"
     assert ".glob(" not in source and "*/*" not in source
     (check,) = _calls_in(TREES[cell], "check_images")
     assert ast.unparse(check) == "check_images(meta, needed['images'])"
@@ -327,6 +381,7 @@ def test_how_to_run_says_import_attach_one_cell_rehearse_then_run() -> None:
         "cache archive dataset of item 6.08",
         "/kaggle/input/datasets/<user>/<slug>/<file>",
         "another\n   account or dataset name changes it",
+        "Remove the `cct20-512` input if the notebook still has it",
         "`CACHE_ARCHIVE = None` reads the loose 6.03 dataset",
         "Keep exactly one parameter cell",
         "Edit only\n   `COMMIT` (and `CACHE_ARCHIVE` for another dataset)",
