@@ -97,7 +97,15 @@ alone would reward predicting opossum, so macro-F1 sits next to accuracy everywh
 (`scripts/kaggle_prepare_cct20.py`, about 2 to 3 GB) and saved as a private Kaggle dataset;
 training reads the cache. Models take 224 x 224 inputs; 512 leaves room for a 320 px run if there
 is time. Normalisation uses ImageNet mean and standard deviation for both models so they share
-one pipeline.
+one pipeline. Training runs attach the cache as one uncompressed tar (item 6.08,
+`scripts/kaggle_pack_cache.py`, packed from that dataset on a CPU session and saved as a second
+private dataset, `cct20-512-tar`) and unpack it to local disk under `/tmp` at the start
+(`trailcam.data.cache.unpack_cache`): one file starts faster than 57,864 and training reads
+local disk. The 6.04 version sat at "Starting..." for about 48 billed GPU minutes with the loose
+files attached (2026-10-15), but a CPU run with the same files started in about 5, so the cause
+is not known (more likely the GPU session's own start). Whatever the cause, a version still
+"Starting..." with an empty Logs tab about 10 minutes after Save & Run All is cancelled and
+resubmitted.
 
 ## 3. Split design and leakage tests
 

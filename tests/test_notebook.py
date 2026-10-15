@@ -1,7 +1,8 @@
-"""notebooks/kaggle_train.ipynb, read as JSON and its code cells as Python (items 6.02, 6.06, 6.07).
+"""notebooks/kaggle_train.ipynb, read as JSON and its code cells as Python (items 6.02, 6.06-6.08).
 
-The notebook runs only on Kaggle, so it is never executed here: these tests check its shape. Every
-code cell parses as plain Python (no magics) and defines nothing, so the logic stays in `trailcam`
+The notebook runs only on Kaggle, so it is never executed here: these tests check its shape, and
+run its one unpacking cell on a tiny tar (item 6.08). Every code cell parses as plain Python (no
+magics) and defines nothing, so the logic stays in `trailcam`
 (R41 outputs cleared; R38 the one pip install, of the clone; R37 and R25 the real-run entry point
 with no dry-run or recipe flags; R17 no test split; R16 an alarm fails the cell; R27 seeds only
 through the config and `--run-seed`; R06 the licence and citation).
@@ -10,14 +11,19 @@ through the config and `--run-seed`; R06 the licence and citation).
 import ast
 import importlib
 import importlib.util
+import io
 import json
+import os
 import re
 import subprocess
 import sys
+import tarfile
 from pathlib import Path
 
 import pytest
 
+from trailcam.data.cache import CACHE_TOP, archive_files, sidecar_folders, unpack_cache
+from trailcam.data.metadata import DAY_NIGHT_SIDECAR
 from trailcam.train import device, train
 from trailcam.train.config import load_configs
 
@@ -28,7 +34,9 @@ PUBLIC_REPO = "https://github.com/codx999/who-goes-there"
 # the main commit that holds trailcam/train/device.py (6.06): the default COMMIT descends from it.
 KAGGLE_DATA_ROOT = "Path('/kaggle/input/datasets/codx888/cct20-512/cct20_512')"
 OLDEST_COMMIT = "17ca508d420cccf10f4ed83d8df849a1dde153cd"
-PARAMETERS = {"CONFIG_NAME", "RUN_SEED", "COMMIT", "DATA_ROOT"}
+# Item 6.08: the archive dataset the user makes with scripts/kaggle_pack_cache.py.
+KAGGLE_ARCHIVE = "Path('/kaggle/input/datasets/codx888/cct20-512-tar/cct20_512.tar')"
+PARAMETERS = {"CONFIG_NAME", "RUN_SEED", "COMMIT", "CACHE_ARCHIVE", "DATA_ROOT"}
 
 _spec = importlib.util.spec_from_file_location("guard_data", ROOT / "scripts" / "guard_data.py")
 assert _spec is not None and _spec.loader is not None
@@ -105,6 +113,8 @@ def test_parameters() -> None:
     training = {name for name, c in load_configs().items() if not c.fixture}
     assert p["CONFIG_NAME"] == "small_cnn" and p["CONFIG_NAME"] in training  # 6.04 first
     assert p["DATA_ROOT"] == KAGGLE_DATA_ROOT
+    assert p["CACHE_ARCHIVE"] == KAGGLE_ARCHIVE
+    assert p["LOCAL_CACHE"] == "Path('/tmp/trailcam-cache')"  # local disk, not /kaggle/working
     # The check cell's list of config names is the training configs of config.yaml.
     (listed,) = [
         ast.literal_eval(n.comparators[0])
@@ -131,29 +141,155 @@ def test_the_default_commit_has_the_gpu_check() -> None:
 
 def test_exactly_one_parameter_cell() -> None:
     """Item 6.07: a stale second parameter cell overrode a hand edit on Kaggle. Only the first
-    code cell assigns a parameter, and the check cell prints the values in effect."""
+    code cell assigns a parameter, and the check cell prints the values in effect. The one other
+    assignment is the unpacking cell's `DATA_ROOT = unpacked.root` (item 6.08)."""
     assigning = [
-        i
+        (i, ast.unparse(node))
         for i, tree in enumerate(TREES)
         for node in ast.walk(tree)
         if isinstance(node, ast.Assign)
         and {ast.unparse(target) for target in node.targets} & PARAMETERS
     ]
-    assert set(assigning) == {0} and len(assigning) == len(PARAMETERS)
+    first = [i for i, _ in assigning if i == 0]
+    later = [(i, line) for i, line in assigning if i != 0]
+    assert len(first) == len(PARAMETERS)
+    assert [line for _, line in later] == ["DATA_ROOT = unpacked.root"]
+    assert _calls_in(TREES[later[0][0]], "unpack_cache")
     (check,) = [source for source in CODE if "CONFIG_NAME must be" in source]
     for name in PARAMETERS:
         assert f"{name} {{{name}}}" in check
 
 
-def test_a_commit_before_the_cache_check_is_refused_before_the_install() -> None:
-    """Item 6.07: the clone cell refuses a commit without trailcam/data/cache.py, the module the
-    cache cell imports, before pip installs it."""
+def test_a_commit_before_the_archive_unpacking_is_refused_before_the_install() -> None:
+    """Items 6.07 and 6.08: the clone cell refuses a commit whose trailcam/data/cache.py is
+    missing or has no `unpack_cache`, which section 3 imports, before pip installs it."""
     (clone,) = [i for i, tree in enumerate(TREES) if "'git', 'clone'" in ast.unparse(tree)]
     (pip,) = [i for i, tree in enumerate(TREES) if "'pip', 'install'" in ast.unparse(tree)]
     assert clone < pip
-    assert 'if not (CLONE / "trailcam" / "data" / "cache.py").is_file():' in CODE[clone]
-    assert "predates item 6.07" in CODE[clone]
-    assert (ROOT / "trailcam" / "data" / "cache.py").is_file()
+    assert 'cache_module = CLONE / "trailcam" / "data" / "cache.py"' in CODE[clone]
+    assert (
+        'if not cache_module.is_file() or "def unpack_cache(" not in '
+        'cache_module.read_text("utf-8"):'
+    ) in CODE[clone]
+    assert "predates item 6.08" in CODE[clone]
+    assert "def unpack_cache(" in (ROOT / "trailcam" / "data" / "cache.py").read_text("utf-8")
+    default = str(_parameters()["COMMIT"])  # written against a main before 6.08: refused
+    shown = subprocess.run(
+        ["git", "-C", str(ROOT), "show", f"{default}:trailcam/data/cache.py"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert "def unpack_cache(" not in shown
+
+
+def _unpack_cell() -> int:
+    (cell,) = [i for i, tree in enumerate(TREES) if _calls_in(tree, "unpack_cache")]
+    return cell
+
+
+def test_the_archive_is_unpacked_after_the_gpu_check_and_before_the_cache_check() -> None:
+    """Item 6.08: the GPU check fails in seconds first; then the archive is unpacked to
+    LOCAL_CACHE and `DATA_ROOT` names the copy, so the cache cell and training read local disk."""
+    cell = _unpack_cell()
+    (gpu,) = [i for i, tree in enumerate(TREES) if _calls_in(tree, "check_gpu")]
+    (cache,) = [i for i, tree in enumerate(TREES) if _calls_in(tree, "load_metadata")]
+    assert gpu < cell < cache
+    (call,) = _calls_in(TREES[cell], "unpack_cache")
+    assert ast.unparse(call) == "unpack_cache(CACHE_ARCHIVE, LOCAL_CACHE)"
+    assert "archive_files(INPUT)" in CODE[cell]
+    # Review 6.08: the loose dataset attached too is refused before anything is unpacked.
+    assert CODE[cell].index("sidecar_folders(INPUT)") < CODE[cell].index("unpack_cache(")
+    assert "needed = {" in CODE[cache] and "DATA_ROOT / CACHE_IMAGES" in CODE[cache]
+
+
+def _run_unpack_cell(
+    archive: Path | None, local: Path, data_root: Path, attached: Path | None = None
+) -> dict[str, object]:
+    """The unpacking cell run as written, with `attached` (default: an empty folder) as
+    Kaggle's input folder."""
+    if attached is None:
+        attached = local.parent / "empty-input"
+        attached.mkdir(exist_ok=True)
+    names: dict[str, object] = {
+        "Path": Path,
+        "os": os,
+        "sys": sys,
+        "INPUT": attached,
+        "DAY_NIGHT_SIDECAR": DAY_NIGHT_SIDECAR,
+        "sidecar_folders": sidecar_folders,
+        "CACHE_ARCHIVE": archive,
+        "LOCAL_CACHE": local,
+        "DATA_ROOT": data_root,
+        "archive_files": archive_files,
+        "unpack_cache": unpack_cache,
+    }
+    exec(compile(TREES[_unpack_cell()], "unpack cell", "exec"), names)
+    return names
+
+
+def test_the_unpack_cell_sets_data_root_or_keeps_the_loose_dataset(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The cell run as written: a tar becomes the local DATA_ROOT; None keeps DATA_ROOT; a wrong
+    path is refused."""
+    archive = tmp_path / "cct20_512.tar"
+    with tarfile.open(archive, "w:") as tar:
+        top = tarfile.TarInfo(CACHE_TOP)
+        top.type = tarfile.DIRTYPE
+        tar.addfile(top)
+        info = tarfile.TarInfo(f"{CACHE_TOP}/images/a.jpg")
+        info.size = 2
+        tar.addfile(info, io.BytesIO(b"ab"))
+    loose = tmp_path / "loose"
+    names = _run_unpack_cell(archive, tmp_path / "local", loose)
+    assert names["DATA_ROOT"] == tmp_path / "local" / CACHE_TOP
+    assert (tmp_path / "local" / CACHE_TOP / "images" / "a.jpg").read_bytes() == b"ab"
+    assert "unpacked 1 files" in capsys.readouterr().out
+
+    assert _run_unpack_cell(None, tmp_path / "other", loose)["DATA_ROOT"] == loose
+    assert not (tmp_path / "other").exists()
+
+    with pytest.raises(FileNotFoundError, match="is not a file"):
+        _run_unpack_cell(tmp_path / "absent.tar", tmp_path / "third", loose)
+
+
+def test_the_unpack_cell_refuses_the_loose_dataset_only_in_an_interactive_session(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Review 6.08: with the loose cct20-512 dataset still attached next to the archive, a
+    rehearsal (run type Interactive) is refused with a count, before unpacking. A committed run
+    (Batch, or any other value) has already paid for its start, so it warns on stderr and
+    unpacks (fix round). With `CACHE_ARCHIVE = None` the loose dataset is the one read."""
+    attached = tmp_path / "input"
+    mount = attached / "datasets" / "codx888" / "cct20-512" / "cct20_512"
+    mount.mkdir(parents=True)
+    (mount / DAY_NIGHT_SIDECAR).write_text("{}")
+    archive = tmp_path / "cct20_512.tar"
+    with tarfile.open(archive, "w:") as tar:
+        top = tarfile.TarInfo(CACHE_TOP)
+        top.type = tarfile.DIRTYPE
+        tar.addfile(top)
+
+    monkeypatch.setenv("KAGGLE_KERNEL_RUN_TYPE", "Interactive")
+    with pytest.raises(RuntimeError, match="1 folder\\(s\\) under .* still attached") as refused:
+        _run_unpack_cell(archive, tmp_path / "local", mount, attached)
+    assert "Remove it from the inputs" in str(refused.value)
+    assert not (tmp_path / "local").exists()
+
+    for run_type, local in (("Batch", "batch"), (None, "unset")):
+        if run_type is None:
+            monkeypatch.delenv("KAGGLE_KERNEL_RUN_TYPE")
+        else:
+            monkeypatch.setenv("KAGGLE_KERNEL_RUN_TYPE", run_type)
+        capsys.readouterr()
+        names = _run_unpack_cell(archive, tmp_path / local, mount, attached)
+        assert names["DATA_ROOT"] == tmp_path / local / CACHE_TOP
+        err = capsys.readouterr().err
+        assert f"{run_type or 'unknown'} run, continuing" in err and "still attached" in err
+
+    monkeypatch.setenv("KAGGLE_KERNEL_RUN_TYPE", "Interactive")
+    assert _run_unpack_cell(None, tmp_path / "none", mount, attached)["DATA_ROOT"] == mount
 
 
 def test_the_cache_cell_searches_any_depth_and_checks_every_image() -> None:
@@ -162,7 +298,7 @@ def test_the_cache_cell_searches_any_depth_and_checks_every_image() -> None:
     `check_images` refuses an incomplete cache after the metadata is loaded, before training."""
     (cell,) = [i for i, tree in enumerate(TREES) if _calls_in(tree, "load_metadata")]
     source = CODE[cell]
-    assert 'sidecar_folders(Path("/kaggle/input"))' in source
+    assert "sidecar_folders(INPUT)" in source and _parameters()["INPUT"] == "Path('/kaggle/input')"
     assert ".glob(" not in source and "*/*" not in source
     (check,) = _calls_in(TREES[cell], "check_images")
     assert ast.unparse(check) == "check_images(meta, needed['images'])"
@@ -242,16 +378,20 @@ def test_how_to_run_says_import_attach_one_cell_rehearse_then_run() -> None:
         "File > Import Notebook",
         f"{PUBLIC_REPO}/blob/main/notebooks/kaggle_train.ipynb",
         "Add Input",
-        "/kaggle/input/datasets/<user>/<slug>/<folder>",
+        "cache archive dataset of item 6.08",
+        "/kaggle/input/datasets/<user>/<slug>/<file>",
         "another\n   account or dataset name changes it",
+        "Remove the `cct20-512` input if the notebook still has it",
+        "`CACHE_ARCHIVE = None` reads the loose 6.03 dataset",
         "Keep exactly one parameter cell",
-        "Edit only\n   `COMMIT` (and `DATA_ROOT` for another dataset)",
-        "at or after the merge of item 6.07",
+        "Edit only\n   `COMMIT` (and `CACHE_ARCHIVE` for another dataset)",
+        "at or after the merge of item 6.08",
         "Accelerator GPU T4 x2",
         "Internet on",
         "Rehearse: run sections 1 to 3",
         "then stop the session",
         "Save Version > Save & Run All",
+        "one line per epoch with the epoch's seconds and training images per second",
     ]
     positions = [MARKDOWN.find(step) for step in steps]
     assert -1 not in positions, [s for s, i in zip(steps, positions, strict=True) if i == -1]

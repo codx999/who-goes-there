@@ -58,7 +58,12 @@ testpaths = ["tests"]
 [tool.mypy]
 python_version = "3.12"
 strict = true
-files = ["trailcam", "scripts/guard_data.py", "scripts/kaggle_prepare_cct20.py"]
+files = [
+    "trailcam",
+    "scripts/guard_data.py",
+    "scripts/kaggle_prepare_cct20.py",
+    "scripts/kaggle_pack_cache.py",
+]
 
 # torchvision ships no type information (no py.typed); its names are typed Any. torch, timm and
 # Pillow ship py.typed and need no override.
