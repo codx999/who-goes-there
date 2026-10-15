@@ -85,7 +85,7 @@
     {"id": "6.03", "session": 6, "owner": "user", "due": "2026-10-15",
      "description": "Run scripts/kaggle_prepare_cct20.py on Kaggle once and save the 512 px cache with its sidecar as a private Kaggle dataset",
      "steps": "manual: the Kaggle dataset exists; the printed image count is 57,864 and the per-split counts match docs/data-card.md; the tarball folder layout is recorded in docs/plan.md open question 3; the day/night share is recorded in the data card",
-     "passes": false},
+     "passes": true},
     {"id": "6.04", "session": 6, "owner": "user", "due": "2026-10-15",
      "description": "Run the small CNN on Kaggle with the full small-CNN config",
      "steps": "manual: the ledger row is pasted into docs/ledger.md (header from 5.03) with seeds, split hash, epochs run, best epoch, val accuracy and macro-F1, trans_val accuracy and the checkpoint hash; the checkpoint is kept as a Kaggle output",
