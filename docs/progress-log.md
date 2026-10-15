@@ -1920,3 +1920,110 @@ Merged main at 21faa79 (6.07) before this commit, through the sync tool. Two con
 8.03's `tests/test_attention.py` both kept).
 
 **Next.** 8.02 (overlays draw `trailcam.evaluate.gradcam.gradcam`), 8.04.
+
+## 2026-10-15: session 8, item 8.02, the evaluation figures, the Grad-CAM overlays and the entry point (Opus 5.5)
+
+Taken ahead of its 10-18 date by the user's decision in the coordinator session. Main at 0968e1a
+(8.03 merged); 8.04 (`slices.py`) is reviewed on its branch but not on main, so it is not imported
+here (see "8.04" below).
+
+**Done.** `trailcam/evaluate/figures.py`, `trailcam/evaluate/evaluate.py`, the overlays added to
+`trailcam/evaluate/gradcam.py`, `per_camera_scores` added to `trailcam/evaluate/metrics.py`;
+`tests/test_figures.py` (21 tests) and two tests in `tests/test_metrics.py`. Rules, stated in the
+module docstrings:
+
+- `figures.py` takes scores, never images (R03, R04): the confusion matrix (rows true, columns
+  predicted, `CLASSES` order; counts in the cells, shaded by share of the row so rare classes
+  read; an absent class's row is empty and labelled "absent"), per-class bars (precision, recall,
+  F1 for the classes present, support under each name) and per-camera bars. The per-camera bars
+  show accuracy beside macro-F1 (R32), worst accuracy first, with the split's accuracy as a dashed
+  line; the item says "accuracy bars", and R32 asks for macro-F1 wherever a score is shown.
+  Colours from the reference data-viz palette: one blue ramp for the matrix, categorical slots 1
+  to 3 for the bars.
+- `per_camera_scores` (metrics.py): accuracy and macro-F1 per camera location, each location
+  scored on its own images, so macro-F1 averages over the classes present there.
+- Overlays (`gradcam.py`): `overlay` and `write_overlay` draw `trailcam.evaluate.gradcam.gradcam`,
+  the function attention-in-box scores (R26), on the photo's eval-transform output; the frame
+  shown is that output with the normalisation undone, so it is the 224 x 224 the model saw. For
+  display the map is divided by its maximum (attention divides by its sum: same shape) and
+  blended in orange with opacity up to 0.6; zero-map pixels are untouched. The PNG is the frame
+  beside the overlay, titled with the prediction, its confidence and, when a class is given,
+  correct or wrong. `assets_image` refuses any photo not under a folder named `assets` (the repo's
+  `assets/` by default), including one reached through `..` or a symbolic link, and its message
+  does not echo the path (R03, R04, R35). The repo's `assets/` was not created (8.05).
+- `evaluate.py`: `python -m trailcam.evaluate.evaluate --config <name> [--checkpoint <run>.pt
+  --data-root <cache>] --split val [--split trans_val] --out <dir> [--overlay
+  assets/<photo>[=<class>] ...] [--assets <dir>] [--config-file <config.yaml>]`. One eval pass
+  per split; `metrics.md` (per split: accuracy, macro-F1, classes present; per-class, per-camera
+  and confusion-matrix tables) and `<split>_confusion_matrix.png`, `<split>_per_class.png`,
+  `<split>_per_camera.png` under `--out`; overlays as `gradcam_overlay_<n>.png`, numbered, so no
+  photo file name (possibly an image id) reaches the output. A `fixture: true` config (dryrun)
+  uses the synthetic fixture and random weights; any other needs `--checkpoint` (loaded with
+  8.03's `load_checkpoint`, which refuses another model or class map) and `--data-root`. The
+  header gives the checkpoint sha256, split seed and split hash, as attention.md does.
+- Test-set isolation (R17): `--split` takes `val` and `trans_val` only (exit 2 otherwise); the
+  split object is deleted once the given splits' records are taken. 9.01 calls `predict`,
+  `write_report` and `write_overlays` directly.
+
+Decision to review: the item's step spells the config as `--config dryrun`, so here `--config`
+is the config name (`--config-name` is accepted as an alias) and the YAML path is
+`--config-file`. In `train.py`, `attention.py` and `slices.py`, `--config` is the YAML path. A path
+given to `--config` here fails with "no config named ...", exit 2, so a mix-up cannot run the
+wrong config; but the flag means two things across the four entry points.
+
+8.04: `evaluate.py` does not run attention (8.03) or the slices (8.04). Each has its own entry
+point with its own `--out`; slices takes arm A and arm B together, which a one-checkpoint entry
+point cannot. 8.04's `SplitPredictions` carries labels, predictions and locations, so a caller
+holding one scores it here with `SplitResult(run.split, run.labels, run.predictions,
+run.locations)`, no second pass (the hook is stated in the docstring).
+
+Steps: `uv run python -m trailcam.evaluate.evaluate --config dryrun --split val --out <scratch>`
+exit 0, writes `metrics.md`, `val_confusion_matrix.png`, `val_per_class.png`,
+`val_per_camera.png`, and `docs/figures/` does not exist before or after. `uv run pytest
+tests/test_figures.py` 21 passed. The figures were looked at on the fixture and on a made-up
+1,500-image trans_val score set (scratchpad only, not committed). Each of these mutations fails a
+test: no assets containment check, any root name accepted, the overlay map squared or taken on
+a flipped image, the frame denormalised without the mean, cameras ordered by id, an absent row
+divided by its zero total, the overlay paths checked only after evaluating, `cis_test` added to
+`CLI_SPLITS`, trans_val read when only val is asked for, and per-camera macro-F1 computed over
+the whole split. The last two first survived and the tests were tightened. `check.sh` green
+(668 passed). Invariants: R04 and R26 (the rows naming 8.02) have their test cells filled; R03
+and R35 now cite `tests/test_figures.py`.
+
+Process note: during the mutation checks a helper restored files with `git checkout`, which
+reset the uncommitted `gradcam.py` to HEAD; it was restored from a copy taken just before, and
+the two mutations it left in untracked files were undone by hand. The final diff was re-read and
+the full suite rerun afterwards.
+
+**For 8.06: an evaluation notebook is needed (not built; needs your OK).**
+`notebooks/kaggle_train.ipynb` cannot take it: `tests/test_notebook.py` (R17) forbids an
+evaluation call in any of its code cells. A separate `notebooks/kaggle_evaluate.ipynb` would:
+
+1. install `trailcam` from the public repo at a pinned commit, and clone the repo at the same
+   commit for `config.yaml` and `assets/` (8.05 must be merged first; a wheel ships neither);
+2. attach the 512 px cache dataset and the checkpoints (the training runs' outputs as a Kaggle
+   dataset), and check each checkpoint's sha256 against its ledger row;
+3. per checkpoint: `python -m trailcam.evaluate.evaluate --config <name> --config-file
+   <clone>/config.yaml --checkpoint <run>.pt --data-root <cache> --split val --split trans_val
+   --out /kaggle/working/eval/<run>`, plus `--overlay <clone>/assets/<photo>=<class>` four times
+   and `--assets <clone>/assets` on the checkpoint the overlays come from; then
+   `python -m trailcam.evaluate.attention` with the same checkpoint;
+4. once per seed: `python -m trailcam.evaluate.slices` with the arm A and arm B checkpoints;
+5. zip `/kaggle/working/eval` for download. You then copy the chosen PNGs into `docs/figures/`
+   (40 files, 20 MB in all; one checkpoint's val set is 3 PNGs + 4 overlays + the attention
+   histogram + 2 feature maps).
+
+It would come with a test like `tests/test_notebook.py`: no code cell names cis_test or
+trans_test, outputs cleared.
+
+Notes, not fixed:
+
+- 11.01: `gradcam.py` now imports matplotlib (for `write_overlay`) and torchvision's eval
+  transform. If the Space imports it for its optional overlay, `space/requirements.txt` needs
+  matplotlib; `overlay()` returns PIL images, which Gradio can show without a PNG.
+- 9.01 must call `write_overlays` (like `attention_pass`) outside `torch.inference_mode()`.
+
+**Next.** Review 8.02. Then 8.04 merge, 8.05 (your photos into `assets/`), and the 8.06
+notebook if you approve it.
+
+Review: tier 2, `/review-session 8.02`
