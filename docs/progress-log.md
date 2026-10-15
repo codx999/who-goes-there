@@ -2345,3 +2345,66 @@ Notes, not fixed:
 notebook if you approve it.
 
 Review: tier 2, `/review-session 8.02`
+
+Review: tier 2, ran `/review-session 8.02` (0968e1a..d3ee3ca; code-reviewer Opus xhigh,
+risk-reviewer Fable high). risk-reviewer found nothing. code-reviewer found one low: R17's
+"where" column did not name `evaluate.py` or `attention.py`, so a later diff to either alone would
+not bring the test-isolation scenarios to a reviewer. It also raised a note for 8.06: the
+overlay's left panel was the unblended eval crop of the `assets/` photo, which would have put a
+raw dataset image into `docs/figures/`. Scenarios R01, R03, R04, R05, R17, R26, R32, R33, R35
+and R42 to R45 held. Known gaps passed: R04 and R35 the real photos and the `docs/figures/` copy
+(8.05, 8.06), R26 and R32 the final scoring's calls (9.01), R35 the demo and the Space.
+
+Fix 79b9594 (the user's decisions, via the coordinator):
+
+- R17's "where" column now names `evaluate.py`, `attention.py` and item 8.02, and R32's
+  `evaluate.py`. The user approved the rule-map change.
+- The overlay PNG is now one panel, the blended image, and `Overlay` no longer keeps the
+  unblended frame. A test captures the saved figure and checks it has one axes holding the
+  blended image. This supersedes "the eval frame beside the overlay" above.
+- 8.04 merged first (c303041). I did not fold its slices into the val report: slices takes arm A
+  and arm B together, and `evaluate.py` works on one checkpoint. A test shows that 8.04's
+  `SplitPredictions` scores in `evaluate.py` without a second pass. That is the hook for 8.06.
+
+Before the fix I merged main twice through the sync tool: c303041 (8.04) and ef9100d (6.08).
+Both times the conflicts were in this log and in the test cells of R03 and R04. Both sides were
+kept, and the other items' entries come first.
+
+Fix round: `/review-session cb258d4..79b9594 8.02` (the gradcam.py and test_figures.py the
+high-stakes files). Both reviewers found the same low independently. A map that is zero
+everywhere left the photo unblended, so the one-panel PNG would have been the raw photo.
+code-reviewer found a second low: R17's and R32's test cells did not name the tests guarding the
+newly listed modules. Both were fixed in c8a9a08, after merging main at 61f1ecc (6.08's review;
+the one conflict was in this log). The fixes:
+
+- `overlay` raises `ZeroMapError`, with no path in the message, and no PNG is written. The test
+  fails if the refusal is removed.
+- R17's test cell now names the split refusals in `tests/test_figures.py` and
+  `tests/test_attention.py`. R32's names `per_camera_scores` and `test_render_metrics_by_hand`.
+
+Scenarios R01, R03, R04, R05, R17, R26, R35 and R42 to R45 held. No third round. `check.sh`
+green (724 passed).
+
+Notes, recorded and not fixed:
+
+- mypy on tests: `tests/` is outside `check.sh`'s mypy scope. Run there, it reports 4 `arg-type`
+  errors at `tests/test_metrics.py:180-181` (`pytest.approx` in a `CameraScores`) and 3 at the
+  `Figure.savefig` wrapper in `tests/test_figures.py`. The tests are correct at runtime. These
+  matter only if mypy is widened to `tests/`.
+- 8.06 needs `notebooks/kaggle_evaluate.ipynb` (described above). It still needs the user's OK.
+- 11.01: `gradcam.py` imports matplotlib. `overlay()` returns the blended PIL image, which Gradio
+  shows without a PNG.
+
+For the learning journal (`docs/learning-journal.md` is not on main yet):
+
+- A figure can leak data through the panel beside the one you look at: the overlay's raw left
+  panel would have put a dataset photo into `docs/figures/` with every test still green.
+- "Never the raw photo" needs the degenerate input too: a zero heat map blends to nothing, so
+  the guard has to refuse it, not just draw it.
+- A review map only works if the rows name the files: a new module that enforces a rule must be
+  added to that rule's "where" and test columns, or later diffs to it skip the scenario.
+- Restore mutation tests by copying files, never with `git checkout`: it silently reset
+  uncommitted work, which a backup taken just before recovered.
+
+**Next.** The user merges this branch. Then 8.05 (photos into `assets/`) and the 8.06 evaluation
+notebook, if approved.
