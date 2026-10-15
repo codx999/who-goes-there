@@ -2340,3 +2340,67 @@ For the learning journal (`docs/learning-journal.md` does not exist on main yet)
 **Next.** 8.02, 8.04 (the day/night slices measure accuracy by night and day).
 
 Review: tier 2, `/review-session 8.07`
+
+Coordinator request after the item commit (from the user, 2026-10-15): the user copied the 6.03
+sidecar to the main checkout's `data/day_night.json` (gitignored). `day_night.png` was redrawn
+with it (kept images per split, seed 42), the data card gives both sets of numbers (kept images
+per split first, all annotated images per official file second), and a real-data test pins the
+kept-image counts. Folded into the item commit (0bce6a5) before any review.
+
+Review: tier 2, ran `/review-session 8.07` (0968e1a..0bce6a5; code-reviewer Opus xhigh,
+risk-reviewer Fable high). risk-reviewer found nothing. code-reviewer found two lows, fixed in
+fade23f with the user's go-ahead via the coordinator:
+
+- R03 listed "a notebook cell displays a batch of training images" as a failure while the look
+  notebook does exactly that. R03 now records the photo grid as the one exception, with its
+  conditions: Kaggle only, train split only, titles with the class and day or night (no file name
+  or id), outputs never committed (the guard refuses them).
+- The 6.03 night counts were never checked against the sidecar, and a docstring said the sum test
+  checked them. A real-data test now recomputes night per official file and per capture hour from
+  the sidecar and the raw annotation files, and requires every annotated image to have a flag;
+  both constants match. Swapping two hours' night counts fails it. The docstring is corrected.
+- Not a finding, fixed with the user's approval: `docs/plan.md` section 2 said "About half the
+  images are night shots"; it now gives the measured shares (65.7% of kept images, 63.6% of all
+  annotated images; trans_test 71.6% against cis_test 62.6% of kept images). Spec changed: plan
+  §2. The rows citing it (R01, R05, R06, R15, R21, R23, R32) were re-read; none states a night
+  share, so none changes.
+
+Scenarios R01, R03, R04, R06, R07, R16, R17, R27, R37, R38, R41 to R45 held for both reviewers;
+known gaps passed: R04 the figure and Grad-CAM writers (8.02), R06 the Space and the slides
+(11.01, 12.02), R17 the scoring script (9.01). Main was merged before the fix at c303041 (8.04;
+conflicts in this log and in R03, R04 and R17, both sides kept) and after it at ef9100d (6.08;
+conflicts in this log and R03).
+
+Fix round: `/review-session 054f7be..fade23f 8.07` (`tests/test_datavis.py` the one high-stakes
+file). Fixed in e1f67cf, after merging main at 61f1ecc (conflict in this log only):
+
+- Both reviewers, low: the photo-title test searched only the source text of title calls, so a
+  file name passed through a variable, a label, `ax.text` or a `print` slipped by. The test now
+  walks every code cell's syntax tree: no image id, seq id or location as an attribute, a name or
+  a string key, and `file_name` only inside the one `Image.open(...)` call. Each of those four
+  bypasses fails it. R03's test cell says so.
+- code-reviewer, low: plan section 5's augmentation row said "half the data is infrared". With the
+  user's approval it now reads "about two thirds of the kept images are infrared (section 2)".
+  Spec changed: plan §5. The rows citing it (R17, R20, R22, R27, R31, R37, R38, R40) were
+  re-read; R20 gives the grayscale probability without a share, so none changes.
+- code-reviewer, outside the range: the data card's "About six in ten kept images" became two in
+  three (0.657), matching its table.
+
+Scenarios R01, R03, R04, R42 to R45 held for both. No third round (the user's decision).
+
+Notes, recorded and not fixed:
+
+- R45: code-reviewer reported one stray no-op command (`uv run --quiet python -c "pass"`)
+  outside its allowed list in the fix round; it read nothing. The harness flagged risk-reviewer's
+  fix-round report for a settings-shaped pattern; the only match was its mention of
+  `.claude/settings.json` in the R43 result, with no instruction in it.
+- The look notebook reads the loose 6.03 dataset (`cct20-512`), which still exists and is the
+  training notebook's fallback; since 6.08, training reads the archive dataset (`cct20-512-tar`).
+  Moving the look notebook to the archive is the user's call.
+- `uv run mypy tests/test_datavis.py` reports two `no-untyped-call` errors on
+  `FigureCanvasAgg.draw`; `check.sh` type-checks `trailcam/` and the scripts only, not `tests/`.
+
+`check.sh` green at e1f67cf: 718 passed. `docs/learning-journal.md` is still not on main, so the
+learning-journal lines stay above, under "For the learning journal".
+
+**Next.** 8.02, then 9.01.
