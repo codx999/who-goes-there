@@ -653,6 +653,12 @@ Dated, oldest first. Each: what happened, how it was caught, the lesson.
   unseen cameras showed up at once, as Beery et al. found, and it is large for a model trained from
   scratch. Val was still improving at the 15-epoch cap, but the recipe was fixed in advance and is
   not tuned on this run, so the later runs are not fitted to what this one showed.
+- **2026-10-15. The first real ledger row turned main red.** Committing 6.04's row to
+  `docs/ledger.md` broke a test written before any run existed, "the ledger holds the header and
+  no rows" (`tests/test_train.py`). The commit was made without running `check.sh` first, because it
+  touched docs only. *Caught by* main going red after the commit; the commit was reverted, and a
+  later item (6.09) changes the test. *Lesson:* run `check.sh` before every commit, docs-only ones
+  included, as CLAUDE.md says. A test can depend on a file that looks like plain documentation.
 
 ---
 

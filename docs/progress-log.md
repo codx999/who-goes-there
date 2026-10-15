@@ -2313,3 +2313,11 @@ Noted for the coordinator, not changed here (outside a docs item): the notebook'
 unpacks; runs set it by hand to the notebook-output path, as the journal's step 9 says.
 
 Review: tier 0 (docs only), nothing to run.
+
+Third update (requested by the coordinator session): a timeline entry for the 6.04 ledger row
+that turned main red at 93b9769 (`tests/test_train.py::test_the_ledger_file_holds_the_header_and_no_rows`,
+committed without running `check.sh`), reverted by f414912; the test change belongs to item 6.09
+and is not touched here. This branch was never on 93b9769 (it sits on 61f1ecc, whose files equal
+f414912's), so no sync. Links (96) and all 15 commands re-checked; `check.sh` green.
+
+Review: tier 0 (docs only), nothing to run.
