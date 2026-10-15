@@ -1892,3 +1892,31 @@ Handed on:
   names grad-cam, stays as written because items are not edited).
 - 9.01 must call `attention_pass` outside `torch.inference_mode()`: Grad-CAM needs autograd and
   raises inside it.
+
+Review: tier 2, ran `/review-session 8.03` (0270f80..b28e75a; code-reviewer Opus xhigh,
+risk-reviewer Fable high; both resumed once after a network error). One low, made by both: the
+Grad-CAM drift fixed above. Scenarios R01, R03, R04, R05, R23, R26, R35, R38, R42 to R45 held;
+known gaps passed: R04 and R35 the overlay writer (8.02), R26 the final scoring's calls (9.01), R23
+the demo and the Space (10.01), R38 Kaggle's preinstalled matplotlib version. Fix 367f87f, after
+merging main at e321151 (one conflict, in this log: 8.01's notes kept with its entry). The CLAUDE.md
+Stack line was approved by the user directly in this session.
+
+Fix round: `/review-session 3e8089c..HEAD 8.03` (CLAUDE.md the one high-stakes file). One low
+from code-reviewer, fixed in the next commit: R26 asked the 8.02 overlays to draw the same
+`gradcam` function but did not name 8.02, so a session that leaves `gradcam.py` alone would not
+get the row. R26 now names item 8.02 and gives "none yet for the overlays drawing `gradcam`
+(8.02)" in its test column. risk-reviewer found nothing in CLAUDE.md. Scenarios R01, R03, R23,
+R26, R42 to R45 held. No third round.
+
+Notes, recorded and not fixed (the user's decision, via the coordinator):
+
+- 11.01: the Space imports `trailcam.evaluate.gradcam` for its optional overlay, not the
+  `grad-cam` package. Item 11.01's steps, `docs/setup-playbook.md` and `docs/HANDOFF.md` still
+  name the package. plan.md wins, and the item is not edited.
+- gradio is in CLAUDE.md's stack but not yet in `pyproject.toml`: the demo item (10.01) adds it.
+
+Merged main at 21faa79 (6.07) before this commit, through the sync tool. Two conflicts: this log
+(6.07's entry first, since it merged first) and R03's test cell (6.07's `tests/test_cache.py` and
+8.03's `tests/test_attention.py` both kept).
+
+**Next.** 8.02 (overlays draw `trailcam.evaluate.gradcam.gradcam`), 8.04.
