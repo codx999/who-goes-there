@@ -2291,3 +2291,25 @@ in topic 12 is now 669. Steps re-run: 94 links resolve; all 14 commands exit 0 (
 8 s); `check.sh` green (669 passed).
 
 Review: tier 0 (docs only), nothing to run.
+
+Second update after main moved (requested by the coordinator session): main at 61f1ecc (6.08)
+merged in through the sync tool, one conflict in this log (6.08's entry kept first, then this
+one). The journal's Kaggle topic and timeline now cover, from 6.08's entry and the coordinator's
+message: the cache as one tar packed on a CPU notebook and unpacked to `/tmp` (about 35 s, with
+`unpack_cache`'s member checks); the 48-minute "Starting..." stall of the first 6.04 version,
+with its cause not known, and the 10-minute check-and-resubmit practice; Kaggle extracting a
+`.tar` when a notebook output becomes a dataset, so the packing notebook's output is attached
+instead (`/kaggle/input/notebooks/<user>/<slug>/cct20_512.tar`, 3,213,506,560 bytes); and the
+first real run (6.04, small CNN, commit 61f1ecc): 15 epochs at about 44 s, about 350 train
+images/s, 12.8 minutes, about 13 minutes of quota, val accuracy 0.6625 and macro-F1 0.6216
+against trans_val 0.1965 and 0.0775, still improving at the 15-epoch cap, recipe not tuned on it.
+"Kaggle steps you did" now runs to 11 steps, with the training COMMIT 61f1ecc after the first
+21faa79 attempt. New links: `scripts/kaggle_pack_cache.py`, `tests/test_kaggle_pack.py`; a
+second command for the archive tests. Steps re-run: 96 links resolve; all 15 commands exit 0;
+`check.sh` green (698 passed).
+
+Noted for the coordinator, not changed here (outside a docs item): the notebook's
+`CACHE_ARCHIVE` default on main still points at the `cct20-512-tar` dataset path, which Kaggle
+unpacks; runs set it by hand to the notebook-output path, as the journal's step 9 says.
+
+Review: tier 0 (docs only), nothing to run.

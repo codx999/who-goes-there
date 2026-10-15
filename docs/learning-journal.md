@@ -10,8 +10,9 @@ It is organised by **topic**, not by date. Each topic has four parts:
 - **What we did**: the work, in plain words.
 - **Why it mattered here**: the reasoning, and what would have gone wrong without it.
 - **Where to look**: the files, tests, docs and plan sections (links are relative to this folder).
-- **Try it yourself**: one command that is safe and quick to run on the Mac from the repository
-  root (each takes seconds, except the dry run at about half a minute).
+- **Try it yourself**: one or two commands that are safe and quick to run on the Mac from the
+  repository root (most take seconds; the training dry run and the two evaluation dry runs take
+  under a minute).
 
 After the topics come a dated **Surprises and lessons** timeline, the **Kaggle steps you did**,
 and **How to keep this journal**.
@@ -447,6 +448,18 @@ several pieces:
 - **The image cache.** The 6.5 GB tarball of 1024 px images is streamed once on a Kaggle CPU
   session, each photo resized so its longer side is 512 px, and saved as a private Kaggle dataset
   (about 2.9 GiB). Training reads the cache, not the tarball.
+- **One archive, unpacked to local disk** (item 6.08). The cache is 57,864 small files. It is now
+  packed once, on a CPU notebook, into one uncompressed tar (`cct20_512.tar`, 3,213,506,560
+  bytes) with `scripts/kaggle_pack_cache.py`. At the start of every run the notebook unpacks it to
+  `/tmp` on the session's local disk (about 35 s), and training reads from there. `unpack_cache`
+  checks every member before writing anything: no links, no absolute names, no `..`, nothing
+  outside the top folder, enough free space. That is the standard defence against a tar file
+  that tries to write outside its folder.
+- **Attach the notebook output, not a dataset.** When a notebook's output is turned into a Kaggle
+  dataset, Kaggle unpacks a `.tar` into folders, which undoes the point of the archive. So the
+  training notebook attaches the packing notebook's output directly. It mounts at
+  `/kaggle/input/notebooks/<user>/<slug>/cct20_512.tar`, and `CACHE_ARCHIVE` in the parameter cell
+  is set to that path.
 - **The day/night flag.** Infrared night photos are grey: their three colour channels are almost
   equal. The **channel spread** (largest channel minus smallest, averaged over the pixels) is at
   most 2.0 for night and much higher for day. It is stored per photo in `day_night.json` beside the
@@ -457,7 +470,12 @@ several pieces:
   ledger row to paste.
 - **GPU quota.** Kaggle gives 30 GPU hours a week. GPU sessions only for training and scoring;
   the cache build on CPU; real runs with "Save & Run All", so they run in the background and no
-  GPU time idles; interactive GPU sessions stopped right after use.
+  GPU time idles; interactive GPU sessions stopped right after use. GPU T4 x2 is billed at
+  about its wall time, not double. A committed version is billed from submission, including any
+  time it sits at "Starting...". So, about 10 minutes after Save & Run All, open the Logs tab: if
+  it is still empty and the version still says "Starting...", cancel it and resubmit. Every
+  training log line is flushed, with seconds and images per second per epoch, so an empty log
+  really means no cell has started.
 - **GPU architectures.** Each GPU generation has a compute capability ("sm" number): the P100 is
   Pascal, sm_60; the T4 is Turing, sm_75. A torch build only contains GPU code for the
   architectures it was compiled for. Kaggle's torch 2.11 (built for CUDA 12.8) includes sm_75 to
@@ -466,20 +484,32 @@ several pieces:
   training.
 - **The rehearsal.** Before a real run: run sections 1 to 3 (setup, GPU check, cache check), stop
   the session, then "Save & Run All". Mistakes surface in a minute, not after an hour.
+- **The first real run** (6.04, the small CNN, commit `61f1ecc`). 15 epochs at about 44 s each,
+  about 350 training images per second from local disk, 12.8 minutes in all and about 13 minutes
+  of quota. Val accuracy 0.6625 and macro-F1 0.6216, against trans_val accuracy 0.1965 and
+  macro-F1 0.0775. That is cameras seen in training against a camera never seen, the gap the
+  project is about. trans_val is one camera and small, so its numbers are noisy; the reported
+  results come only from the final test scoring. The leakage alarm stayed quiet, as it should:
+  trans_val is far below val, and val is below 0.95. Val macro-F1 was still improving when the
+  15-epoch cap ended the run. The recipe was fixed in advance, so it stays as it is: tuning the
+  small CNN on this run, then carrying that over to the ResNet runs, would quietly turn val into
+  something the experiment was fitted to.
 
 **Why it mattered here.** Every one of these pieces came from a real failure mode: a silently
 replaced torch, a GPU that cannot run the code, a dataset mounted at an unexpected path, a cache
-that loaded only partly, a stale notebook cell. The common lesson is to **check cheaply up front
-and fail loudly**, before spending GPU quota.
+that loaded only partly, a stale notebook cell, a run stuck starting while billed. The common
+lesson is to **check cheaply up front and fail loudly**, before spending GPU quota.
 
 **Where to look.** [plan.md](plan.md) sections 2 (preprocessing, the sidecar) and 5 (compute, GPU
 budget, platform); [pyproject.toml](../pyproject.toml);
-[kaggle_prepare_cct20.py](../scripts/kaggle_prepare_cct20.py);
+[kaggle_prepare_cct20.py](../scripts/kaggle_prepare_cct20.py),
+[kaggle_pack_cache.py](../scripts/kaggle_pack_cache.py) (its docstring has the packing steps);
 [daynight.py](../trailcam/data/daynight.py), [cache.py](../trailcam/data/cache.py),
 [device.py](../trailcam/train/device.py); [kaggle_train.ipynb](../notebooks/kaggle_train.ipynb)
 (its first cell is the "How to run on Kaggle" list); [test_device.py](../tests/test_device.py),
 [test_cache.py](../tests/test_cache.py), [test_daynight.py](../tests/test_daynight.py),
 [test_kaggle_prepare.py](../tests/test_kaggle_prepare.py),
+[test_kaggle_pack.py](../tests/test_kaggle_pack.py),
 [test_dependencies.py](../tests/test_dependencies.py).
 
 **Try it yourself.** The GPU check against Kaggle's real architecture list (a T4 accepted, a P100
@@ -487,6 +517,13 @@ refused), shown test by test:
 
 ```bash
 uv run pytest -q tests/test_device.py -v
+```
+
+And the archive: packed and unpacked to the same files, and a tar that tries to escape its folder
+(a `..`, an absolute name, a link) refused before anything is written:
+
+```bash
+uv run pytest -q tests/test_kaggle_pack.py tests/test_cache.py -k "same or traversal or space"
 ```
 
 ## 12. How the project was run
@@ -498,7 +535,7 @@ uv run pytest -q tests/test_device.py -v
   pass before it is marked done.
 - **Tests and mutation checks.** Each item comes with tests, and the important ones are checked by
   planting bugs on purpose (a "mutation") and confirming a test fails. By 2026-10-15 the suite has
-  669 tests. `bash scripts/check.sh` runs them all plus strict type checking (mypy), linting and
+  698 tests. `bash scripts/check.sh` runs them all plus strict type checking (mypy), linting and
   formatting (ruff) and the data guard; it must be green before every commit.
 - **The data guard.** `scripts/guard_data.py` runs in the git hooks and in CI and refuses images,
   metadata dumps, weights and keys, so no dataset photo or secret can reach the public repo.
@@ -580,8 +617,9 @@ Dated, oldest first. Each: what happened, how it was caught, the lesson.
 - **2026-10-14/15. The dataset mount was one level deeper than expected.** Kaggle mounted the
   dataset at `/kaggle/input/datasets/<user>/<slug>/`, not `/kaggle/input/<slug>/`, and below the
   notebook's three-level search. *Caught* during the rehearsal: the notebook's default path did
-  not exist and its search did not reach the mount. *Lesson:* never hard-code a platform path from memory; search for a marker file
-  (`day_night.json`) and print what is found. The search now goes 8 levels deep.
+  not exist and its search did not reach the mount. *Lesson:* never hard-code a platform path from
+  memory; search for a marker file (`day_night.json`) and print what is found. The search now goes 8
+  levels deep.
 - **2026-10-14/15. A duplicate parameter cell overrode the edited one.** The notebook had a stale
   second copy of the parameter cell, which ran after the edited one and silently put the old values
   back. *Caught* during the rehearsal, when the hand edit did not take effect. *Lesson:*
@@ -590,9 +628,31 @@ Dated, oldest first. Each: what happened, how it was caught, the lesson.
   dataset path, the values printed, and a cache completeness check.
 - **2026-10-15. Kaggle printed a partial file count.** One session start showed 645 files (about
   65 MiB of the 2.9 GiB cache), as if the dataset had only partly loaded; an earlier session had
-  found all 57,864. *Caught by* comparing the count with the expected total. Settled by the new completeness check (`check_images`), which
-  checks every kept photo exists and is not empty: all 53,535 kept images were present. *Lesson:*
-  do not trust a progress display; check completeness against the metadata before training on it.
+  found all 57,864. *Caught by* comparing the count with the expected total. Settled by the new
+  completeness check (`check_images`), which checks every kept photo exists and is not empty: all
+  53,535 kept images were present. *Lesson:* do not trust a progress display; check completeness
+  against the metadata before training on it.
+- **2026-10-15. The first GPU run sat at "Starting..." for 48 minutes.** The 6.04 version (57,864
+  small input files) showed "Starting..." for about 48 minutes with an empty Logs tab and no
+  output, and the quota fell by about that much. *Caught by* the empty Logs tab and the quota
+  page. The first guess was that Kaggle copies every input file before the first cell. But a CPU
+  version with the same files logged its first line after about 5 minutes, so that does not
+  explain it; a slow GPU session start is likelier, and the cause is still not known. *Lesson:*
+  when you cannot find the cause, protect yourself from the cost: check the log about 10 minutes
+  after submitting and cancel and resubmit if nothing has started. Item 6.08 also packed the cache
+  into one archive, which starts faster and trains from local disk.
+- **2026-10-15. Kaggle unpacked the archive.** Turning the packing notebook's output into a
+  dataset made Kaggle extract the `.tar` back into its 57,864 files. *Caught by* the check that
+  6.08's steps asked for: the dataset's Data tab must show the one tar file. *Lesson:* platforms
+  "help" in ways you did not ask for; verify the thing you meant to create. The fix was to attach
+  the notebook's output itself, which keeps the tar as one file (unpacked to local disk in about
+  35 s).
+- **2026-10-15. The first real training run (6.04, small CNN).** 12.8 minutes, about 13 minutes of
+  quota, val accuracy 0.6625 against trans_val accuracy 0.1965 (macro-F1 0.6216 against 0.0775).
+  *Caught by* the ledger row and the per-epoch log lines. *Lesson:* the gap between seen and
+  unseen cameras showed up at once, as Beery et al. found, and it is large for a model trained from
+  scratch. Val was still improving at the 15-epoch cap, but the recipe was fixed in advance and is
+  not tuned on this run, so the later runs are not fitted to what this one showed.
 
 ---
 
@@ -608,11 +668,22 @@ In order:
 3. **Import the training notebook** with File > Import Notebook and the GitHub link to
    `notebooks/kaggle_train.ipynb`.
 4. **Attach the dataset** with Add Input; it mounts under `/kaggle/input/datasets/<user>/<slug>/`.
-5. **Set `COMMIT`** in the one parameter cell. Training commit for all runs:
-   `21faa79b0aed9ff4bb776bc5aa85f65ba73bfbe6`, so every run and both arms train on identical code.
+5. **Set `COMMIT`** in the one parameter cell. It was first
+   `21faa79b0aed9ff4bb776bc5aa85f65ba73bfbe6`.
 6. **Rehearse sections 1 to 3** (setup, install, GPU check, cache check) with GPU T4 x2 and internet
    on, then **stop the session**.
-7. **Save & Run All**, so the run finishes in the background; then paste the printed ledger row.
+7. **Save & Run All.** This first 6.04 version sat at "Starting..." for about 48 minutes (see the
+   timeline), which led to item 6.08.
+8. **Pack the cache into one archive on a CPU notebook**: attach `cct20-512`, clone the repo,
+   `pip install` it and run `scripts/kaggle_pack_cache.py` with Save & Run All (about 17 minutes;
+   it prints the file counts, the size and the SHA-256).
+9. **Attach the packing notebook's output** to the training notebook (not a dataset made from it,
+   which Kaggle unpacks), remove the loose `cct20-512` input, and set `CACHE_ARCHIVE` to the
+   archive's path under `/kaggle/input/notebooks/<user>/<slug>/`.
+10. **Set `COMMIT`** to `61f1eccf24a3e33cf876e4ceb9dd5e5af8aed020`, the training commit for 6.04
+    and the runs after it, so every run and both arms train on identical code.
+11. **Save & Run All**, check the Logs tab after about 10 minutes, then paste the printed ledger
+    row when the run ends.
 
 ---
 
