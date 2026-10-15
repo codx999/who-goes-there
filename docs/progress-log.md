@@ -2238,3 +2238,76 @@ coordinator gives it.
 
 **Next.** The user creates `cct20-512-tar` from the packing run's output (the steps in
 `scripts/kaggle_pack_cache.py`), then 6.04 on it at the coordinator's COMMIT.
+
+## 2026-10-15: session 6, item 6.09, a ledger test for the life of the ledger, the small CNN row, the 6.08 wording (Opus 5.5)
+
+New item, approved by the user in the coordinator session on 2026-10-15 and added to
+`docs/progress.json` as 6.09 (session 6, owner claude, due 2026-10-16). What happened: the user
+committed the small CNN run's ledger row (93b9769, item 6.04) and CI failed on
+`tests/test_train.py::test_the_ledger_file_holds_the_header_and_no_rows`, a 5.03 test written
+before any run existed. The row itself passed the ledger checker. 93b9769 was reverted by
+f414912 (main green, 698 passed); the commit had been made without running `check.sh` first.
+
+**Done.**
+
+- Test: `test_the_ledger_file_holds_the_header_and_no_rows` is replaced by
+  `test_the_ledger_file_is_its_text_then_the_header_then_rows_that_pass_the_check`: the
+  explanatory text (non-empty, no table line), the header of `LEDGER_COLUMNS` (both lines of
+  `ledger_header`), then zero or more rows. It calls `trailcam.train.ledger.check_ledger` for the
+  rest (header exactly once, every line after it a well-formed row, the cross-row checks), with
+  no problems and one good row per line after the header; nothing of the checker is copied.
+  5.03's other guarantee, that the dry run never appends, is
+  `test_the_dry_run_trains_on_its_own_fixture_and_never_appends` (the ledger file is unchanged
+  byte for byte), and the checker refuses a `dryrun` row (`tests/test_ledger.py`). R40's test
+  cell in `docs/review/invariants.md` now says this.
+- Ledger row, re-added byte for byte from 93b9769, and checked against the values of the brief
+  through `ledger_row` before it was appended:
+
+  `| small_cnn-seed0-20261015T223717Z | small_cnn | A | small_cnn | f40ed6e3960104f10a78e3d33a8f530cde82e23a555def76f694e19ab09a3e95 | 42 | 0 | c78a9c1048f63aa52f34578ca17a6391315afdc2e478b4dbfd8a3aa954d1b009 | 15 | 14 | cosine warmup 1 | 0.6625 | 0.6216 | 0.1965 | 0.0775 | 18529bf80a299551e41970e380f36cb2d1d217ddb838322b56b596829c47573c |`
+
+  `uv run python -m trailcam.train.ledger --check docs/ledger.md` exits 0: "ledger: 1 rows, every
+  check passed", small_cnn A, split seed 42, run seed 0. No leakage alarm: trans_val accuracy
+  (0.1965) is far below val (0.6625). Item 6.04 is the user's and stays `passes: false`; the user
+  flips it after the merge.
+- Notebook (text and defaults only; outputs cleared): How-to-run step 2 attaches the packing
+  notebook's output with Add Input > Notebook, not a dataset, since Kaggle extracts a `.tar` when
+  a notebook's output becomes a dataset (`cct20-512-tar` came out as folders); it says to remove
+  both `cct20-512` and `cct20-512-tar`. Default `CACHE_ARCHIVE =
+  Path("/kaggle/input/notebooks/codx888/notebook2b5a4bf6ad/cct20_512.tar")` (verified
+  2026-10-15: one file of 3,213,506,560 bytes, unpacked in about 35 s; step 5 gives the 35 s).
+  Step 6 adds the practice: about 10 minutes after Save & Run All, open the Logs tab and, if it
+  is empty and the version still shows "Starting...", cancel and submit again; it says why the
+  2026-10-15 stall happened is not known. The unpacking cell's message no longer says a committed
+  run copies the 57,864 files; section 3's text no longer says the loose files slow the start.
+  Default `COMMIT` is left as it was (0968e1a, refused in section 2); the user sets the pinned
+  training commit 61f1eccf24a3e33cf876e4ceb9dd5e5af8aed020, which this item leaves valid: no
+  training code changes here (the only `trailcam` change is the docstring of
+  `trailcam/data/cache.py`).
+- Docstrings: `trailcam/data/cache.py` and `scripts/kaggle_pack_cache.py` no longer name the input
+  copy as the cause of the stall (cause not known; a CPU run with the same input logged its first
+  line in about 5 minutes). The packing script's step 5 now says to keep the version and attach
+  its output as a notebook input, not to make it a dataset, and its note on Save & Run All no
+  longer says the run copies every input file.
+- `tests/test_notebook.py`: the new default and How-to-run strings (step 2, the 10-minute
+  practice in step 6, in order), and a new test that neither the notebook nor the two docstrings
+  name the input copy as the cause.
+- Not changed, for the coordinator: `docs/plan.md` line 102 still names the private dataset
+  `cct20-512-tar` as where the archive comes from; plan.md is edited by other sessions, so it is
+  left for one of them or a follow-up item.
+
+Checks: `bash scripts/check.sh` green; the ledger checker exits 0 with the row; `uvx --from
+nbconvert jupyter nbconvert --clear-output --inplace notebooks/kaggle_train.ipynb` leaves the
+notebook byte for byte unchanged; `uv run python scripts/guard_data.py --all` passes.
+
+For the learning journal (`docs/learning-journal.md` is not on main yet; testing topic):
+
+- Lesson: a test written for the starting state (an empty ledger) broke on the first real row,
+  because it pinned a moment, not the rule. Test the invariant that holds for the file's whole
+  life, and reuse the checker the project already has instead of a second copy of its rules.
+- Practice: run `bash scripts/check.sh` before every commit, even one that only touches docs or
+  data rows: the docs are read by the tests, so a docs-only commit can turn CI red.
+- Evidence: 93b9769 added one ledger row, passed the ledger checker, and failed CI on the 5.03
+  test; it was reverted (f414912) and re-landed here with the test replaced.
+
+**Next.** Review tier 2. After the merge, the user flips 6.04; the next GPU run uses the
+notebook's new `CACHE_ARCHIVE` default at the commit the coordinator gives.

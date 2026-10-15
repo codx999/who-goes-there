@@ -29,3 +29,4 @@ Data: Caltech Camera Traps (CCT20), Beery et al. 2018, CDLA-Permissive 1.0.
 
 | run id | model | arm | config | config hash | split seed | run seed | split hash | epochs run | best epoch | scheduler | val accuracy | val macro-F1 | trans_val accuracy | trans_val macro-F1 | checkpoint sha256 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| small_cnn-seed0-20261015T223717Z | small_cnn | A | small_cnn | f40ed6e3960104f10a78e3d33a8f530cde82e23a555def76f694e19ab09a3e95 | 42 | 0 | c78a9c1048f63aa52f34578ca17a6391315afdc2e478b4dbfd8a3aa954d1b009 | 15 | 14 | cosine warmup 1 | 0.6625 | 0.6216 | 0.1965 | 0.0775 | 18529bf80a299551e41970e380f36cb2d1d217ddb838322b56b596829c47573c |

@@ -17,10 +17,12 @@ checked. `trailcam.train.train.train_run` calls `check_images` before the split 
 run is protected, not only notebook runs; the notebook calls it in its cache cell too.
 
 Item 6.08: a committed GPU run of the 6.04 small CNN sat at "Starting..." for about 48 minutes
-with an empty log while the GPU quota fell by about that much (2026-10-15): Kaggle copies every
-input file before the first cell, and the cache is 57,864 small files. So the cache also ships as
-one uncompressed tar (`scripts/kaggle_pack_cache.py`) with the tree under `CACHE_TOP`, and
-`unpack_cache` extracts it to local disk at the start of a run. It checks every member before
+with an empty log while the GPU quota fell by about that much (2026-10-15). Why is not known: a
+CPU run with the same input of 57,864 small files logged its first line in about 5 minutes. One
+file is still a lighter input than 57,864, so the cache also ships as one uncompressed tar
+(`scripts/kaggle_pack_cache.py`) with the tree under `CACHE_TOP`, attached as the packing
+notebook's output (made a dataset, Kaggle extracts it), and `unpack_cache` extracts it to local
+disk at the start of a run (about 35 s for the 2.99 GiB archive). It checks every member before
 writing anything: only regular files and folders, every name relative, without `..` and under
 `CACHE_TOP`; links of any kind are refused. The extraction itself uses tarfile's `data` filter
 too. The destination may not lie under `/kaggle/working`, so the copy is not saved as output.
