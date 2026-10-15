@@ -1784,3 +1784,23 @@ from this session.
 **Next.** For 6.04: set `COMMIT` to the main commit the coordinator gives at or after this
 item's merge, rehearse sections 1 to 3 (section 3 should print all kept images found), stop the
 session, then Save & Run All. Review: tier 2, `/review-session 6.07`.
+
+Notes, recorded and not fixed (the user's decision, via the coordinator, no code or notebook
+change):
+
+- Section 1 wording: "a second parameter cell would show here" holds only for a duplicate cell
+  above section 1; a later one would override the values without showing there. Left as is, to
+  avoid another review round on the item that blocks 6.04: How-to-run step 3 says to delete
+  duplicates, and section 4's printed command line and section 5's row show the values used.
+- Default `COMMIT`: it predates 6.07 and is refused in section 2 by design. A session started
+  without changing it leaves the clone at e321151, so the re-run with the right sha asks for a
+  Factory reset (the existing clone-reuse behaviour, named in the message); no GPU time is spent.
+- Size before content: `check_images` stats each kept image (present, regular, non-empty) and
+  does not decode it, so a file Kaggle shows at full size before its content has loaded would
+  pass. Whether a partly loaded session can do that was not observed and cannot be checked here.
+
+Review: tier 2, ran `/review-session 6.07` (e321151..532a74f; code-reviewer Opus xhigh,
+risk-reviewer Fable high), nothing found, no fix round. Scenarios R01, R03, R05, R06, R07, R14,
+R16, R17, R25, R27, R31, R32, R37, R38, R40 to R45 held; no known gaps passed, no spec changed.
+Neither reviewer could run the nbconvert step (no network; it was run in the session and left the
+notebook unchanged) or check the Kaggle mount and the stat cost there (the rehearsal of 6.04).
