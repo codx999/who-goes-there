@@ -1921,6 +1921,124 @@ Merged main at 21faa79 (6.07) before this commit, through the sync tool. Two con
 
 **Next.** 8.02 (overlays draw `trailcam.evaluate.gradcam.gradcam`), 8.04.
 
+## 2026-10-14: session 8, item 8.04, day/night and common/rare slices and the feature map (Opus 5.5)
+
+Taken ahead of its 10-18 date by the user's decision in the coordinator session, to start the
+evaluation code early. Built on 8.03's branch (merged locally at 367f87f, its fix round
+included) for matplotlib, `CAMERA_GROUPS`, `CLI_SPLITS` and `load_checkpoint`; no second copy of
+the dependency. 8.03 must reach main before this branch does.
+
+**Done.** `trailcam/evaluate/slices.py`:
+
+- `predict_split(model, records, split, ...) -> SplitPredictions`: one eval-mode pass that keeps
+  the label, prediction, night flag and location per image and, unless `keep_features=False`, the
+  backbone features (the head's input, flattened: 512 for ResNet-18). Refuses records from another
+  split or without a night flag (the sidecar must be loaded).
+- `slice_rows`: per split (one camera group each) and per cut, the whole split and its two slices,
+  day/night and common/rare, with images, classes present, accuracy and macro-F1 from
+  `metrics.py` (macro-F1 over the classes present in the slice, R32).
+- `mix_rows`: for val with trans_val and cis_test with trans_test, the trans accuracy re-weighted
+  to the cis night share, `(1 - p) * day + p * night`, and the gap left at that common mix. This
+  separates the cis-to-trans gap from trans_test's larger night share (0.688 vs 0.604 at 6.03).
+  Only accuracy is re-weighted, since macro-F1 is not a weighted mean of its slices.
+- `render_report` / `write_report`: `slices.md`, one section per checkpoint with a day/night
+  table and a common/rare table (split, camera group, counts, share, accuracy and macro-F1 for
+  all and each slice, classes present), plus the same-mix table.
+- `pca_2d` (centred, `torch.linalg.svd` in float64, each component's sign fixed by its largest
+  loading, explained variance share), `project` (one PCA per checkpoint over all splits given, so
+  cis and trans share a map), `write_feature_maps`: `features_by_species.png` and
+  `features_by_camera.png`, each with one block of small panels per checkpoint side by side
+  (arm A beside arm B), one panel per species or per camera location with its images highlighted
+  over the rest in grey (blue for cis cameras, orange for trans). I used small panels because 12
+  species or up to 20 cameras in one scatter cannot be told apart by colour.
+- Command line: `--checkpoint CONFIG_NAME PATH` (repeat per arm), `--data-root`, `--split` (val
+  and/or trans_val, both by default), `--out`; `--dry-run=True` uses the fixture and two
+  random-weight models. One checkpoint per model and arm; the configs must share a split seed.
+  The header gives each checkpoint's sha256 and the split hash.
+
+Common vs rare rule, fixed now, before any test scoring (R17), and not tuned on results: a class
+is rare when it holds fewer than 4% of the seed-42 train images (`docs/data-card.md`, 13,587).
+Rare: bird (509, 3.7%), rodent (440, 3.2%) and skunk (232, 1.7%), the same three the research
+report calls rare. The next class, car (603, 4.4%), is common. `RARE_CLASSES` is a constant, and a
+test re-derives it from the data card's train column.
+
+Test-set isolation: the command line accepts val and trans_val only (argparse choices plus a
+second check) and drops the `Split` before the pass. 9.01 produces the slices and feature maps
+of the test images by calling `predict_split`, `write_report`, `project` and
+`write_feature_maps` directly.
+
+Steps: `uv run pytest tests/test_slices.py` 20 passed. Slice scores are hand-computed. Day + night
+and common + rare add up to the split, both on the data and in the dry run's written table. An
+empty slice shows n/a. The same-mix row is hand-computed. PCA recovers known components with
+explained shares 0.9 and 0.1. `predict_split` matches the model's argmax and the head input, and
+removes its hook. The dry run writes `slices.md` and two PNGs under `--out` and nothing under
+`docs/figures/`. A real run on the fixture laid out as the cache, with a small CNN and a ResNet-18
+arm A checkpoint, names both sha256s. The command line refuses cis_test, trans_test and train
+(exit 2, nothing written) and reads only the splits given. No image id, sequence id or file name
+appears in the table or the printout. Each of these mutations fails a test: car added to the rare
+classes, re-weighting by the trans share, no sign fix, no centring, trans_test added to the CLI
+splits, the whole split's macro-F1 for every slice, truncated features, the hook left on, and every
+image counted as rare. `check.sh` green (651 passed).
+
+`docs/review/invariants.md`: no row names 8.04, so no test cell names it. `tests/test_slices.py` is
+added to the test cells of R03 (no ids), R04 (PNGs under `--out` only), R17 (CLI refuses test
+splits; the rare rule comes from train counts) and R32 (accuracy beside macro-F1 per slice). Not
+changed, for the user to decide: the "where" columns of R17 and R32 do not list
+`trailcam/evaluate/slices.py` or 8.04, so `/review-session` selects those rows only through
+`trailcam/**` (R03) and `trailcam/evaluate/**` (R05).
+
+For 9.01: call `predict_split` once per checkpoint and test split, and pass the results to both
+`write_report` and `project`. A small-CNN pass on both test splits with features kept holds about
+36k x 25,088 floats, so pass `keep_features=False` there; the feature map is for the ResNet-18
+arms.
+
+**Next.** 8.02 (figures, Grad-CAM overlays drawn with `trailcam.evaluate.gradcam.gradcam`, the
+evaluate entry point).
+
+Review: tier 2, ran `/review-session 8.04` on 37ff282..138dd07, the 8.04 commit only (the user
+chose to leave out 8.03's commits, which were merged here and reviewed in 8.03's session).
+code-reviewer ran on Opus at xhigh and risk-reviewer on Fable at high. Two lows, both from
+code-reviewer, both fixed in d8e06e6 (the user's decision, via the coordinator):
+
+- Invariants map: no "where" column routed `trailcam/evaluate/slices.py` to R04, R17 or R32.
+  Those three rows now list the path and item 8.04, and `tests/test_risk_files.py` stays green.
+- Mix table: the cis-trans comparison at the same day/night mix reported accuracy only. It now has
+  an accuracy row and a macro-F1 row per pair. Each trans image is weighted `p / q` at night and
+  `(1 - p) / (1 - q)` by day, with p the cis and q the trans night share. Both scores come from
+  the weighted counts, and macro-F1 averages over the classes with a positive weighted support.
+  The weighted accuracy equals the earlier `(1 - p) * day + p * night`. The module docstring now
+  says macro-F1 is re-weighted inside the counts, since it is not a weighted mean of its slices.
+  New functions: `weighted_scores` and `mix_weights`; `MixRow` now has `metric`, `cis` and `trans`.
+  Tests: hand-computed one-class and two-class cases; unit weights reproduce `metrics.py` on 200
+  random cases; the weights average 1 and put the cis share at night; bad input is refused. Seven
+  mutations of the new code each fail a test. `tests/test_slices.py`: 24 passed.
+
+risk-reviewer found nothing. Scenarios R01, R03, R04, R05, R17, R32, R42 to R45 held, except R32
+(partial for the mix table, the second low) and R44 (the map gap, the first low). Known gaps
+passed: R17 and R32 the final scoring (9.01), R04 the figure and Grad-CAM writers (8.02).
+
+Fix round: `/review-session 138dd07..d8e06e6 8.04`, same reviewers, models and effort. Nothing
+found by either; every scenario held. No third round.
+
+Notes, recorded and not fixed (the user's decision, via the coordinator):
+
+- 9.01: `predict_split` keeps the backbone features by default. A small-CNN pass on cis_test plus
+  trans_test (14,478 + 21,473 images, 25,088 features each) would need well over 20 GB for the
+  float64 copy and the SVD in `pca_2d`. 9.01 passes `keep_features=False` for the small CNN and
+  projects the ResNet-18 arms only, which is what plan.md section 7 asks for.
+- matplotlib floor: `pyproject.toml` declares `matplotlib>=3.8.4`, a floor checked with
+  `tests/test_attention.py` only. `slices.py` also uses `Figure.subfigures(squeeze=False)` and
+  constrained layout with subfigures, and its tests ran on the locked 3.11.2 only.
+- Comment slip in `tests/test_slices.py`: the macro-F1 comment in
+  `test_the_trans_scores_are_reweighted_to_the_cis_night_share` reads "FN 0.5 + 2 x 0.5 = 2.5";
+  the day miss weighs 1.5, so it should read "1.5 + 2 x 0.5". The asserted value, 3 / 5.5, is
+  right. Left as it is, since a test edit would need a third review round.
+
+Merged main at 0968e1a (6.07 and 8.03) through the sync tool. Two conflicts: this log (8.03's
+review lines kept with its entry, then this entry) and R03's test cell (main's
+`tests/test_cache.py` and this item's `tests/test_slices.py` both kept). `uv.lock` merged without
+a conflict. `check.sh` green after the merge (669 passed).
+
 ## 2026-10-15: session 8, item 8.07, the data charts (Opus 5.5)
 
 New item, approved by the user in the coordinator session on 2026-10-15 and added to
