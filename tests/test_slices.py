@@ -8,6 +8,7 @@ random weights, no download.
 """
 
 import dataclasses
+import random
 import re
 import shutil
 from pathlib import Path
@@ -31,12 +32,14 @@ from trailcam.evaluate.slices import (
     TABLE_NAME,
     SplitPredictions,
     mix_rows,
+    mix_weights,
     pca_2d,
     predict_split,
     project,
     rare_classes,
     render_report,
     slice_rows,
+    weighted_scores,
     write_feature_maps,
 )
 from trailcam.model.factory import build_model, head_module
@@ -152,8 +155,9 @@ def test_an_empty_slice_has_no_score_and_the_report_says_so() -> None:
     assert "### Cis and trans at the same day/night mix" not in table
 
 
-def test_the_trans_accuracy_is_reweighted_to_the_cis_night_share() -> None:
-    # cis: 4 images, 1 at night (p = 0.25), all right. trans: 2 day (1 right), 2 night (0 right).
+def test_the_trans_scores_are_reweighted_to_the_cis_night_share() -> None:
+    # cis: 4 images, 1 at night (p = 0.25), all right. trans: 2 day (1 right), 2 night (0 right),
+    # q = 0.5, so day images weigh 0.75 / 0.5 = 1.5 and night images 0.25 / 0.5 = 0.5.
     cis = _run("val", [OPOSSUM] * 4, [OPOSSUM] * 4, [True, False, False, False])
     trans = _run(
         "trans_val",
@@ -161,25 +165,82 @@ def test_the_trans_accuracy_is_reweighted_to_the_cis_night_share() -> None:
         [OPOSSUM, RABBIT, RABBIT, RABBIT],
         [False, False, True, True],
     )
-    (row,) = mix_rows([trans, cis])
-    assert (row.cis_split, row.trans_split) == ("val", "trans_val")
-    assert row.cis_accuracy == 1.0
-    assert row.trans_accuracy == 0.25
-    assert row.cis_night_share == 0.25
-    assert row.trans_night_share == 0.5
-    assert row.trans_at_cis_mix == pytest.approx(0.75 * 0.5 + 0.25 * 0.0)
-    assert row.gap == 0.75
-    assert row.gap_at_cis_mix == pytest.approx(1.0 - 0.375)
+    acc, f1 = mix_rows([trans, cis])
+    for row in (acc, f1):
+        assert (row.cis_split, row.trans_split) == ("val", "trans_val")
+        assert row.cis_night_share == 0.25
+        assert row.trans_night_share == 0.5
+    assert acc.metric == "accuracy"
+    assert (acc.cis, acc.trans, acc.gap) == (1.0, 0.25, 0.75)
+    assert acc.trans_at_cis_mix == pytest.approx(0.75 * 0.5 + 0.25 * 0.0)
+    assert acc.gap_at_cis_mix == pytest.approx(1.0 - 0.375)
+    # Macro-F1, opossum the one class present: unweighted TP 1, FN 3 -> 2/5. Weighted: TP 1.5,
+    # FN 0.5 + 2 x 0.5 = 2.5 -> 3 / 5.5. The rabbit predictions are misses only.
+    assert f1.metric == "macro-F1"
+    assert f1.cis == 1.0
+    assert f1.trans == pytest.approx(0.4)
+    assert f1.gap == pytest.approx(0.6)
+    assert f1.trans_at_cis_mix == pytest.approx(3 / 5.5)
+    assert f1.gap_at_cis_mix == pytest.approx(1 - 3 / 5.5)
     table = render_report({"arm A": [cis, trans]})
-    assert (
-        "| val | trans_val | 1.0000 | 0.2500 | 0.7500 | 0.250 | 0.500 | 0.3750 | 0.6250 |" in table
-    )
+    for metric, scores in (
+        ("accuracy", "1.0000 | 0.2500 | 0.7500 | 0.250 | 0.500 | 0.3750 | 0.6250"),
+        ("macro-F1", "1.0000 | 0.4000 | 0.6000 | 0.250 | 0.500 | 0.5455 | 0.4545"),
+    ):
+        assert f"| val | trans_val | {metric} | {scores} |" in table
 
     night_only = _run("trans_val", [OPOSSUM], [OPOSSUM], [True])
-    (row,) = mix_rows([cis, night_only])
-    assert row.trans_at_cis_mix is None and row.gap_at_cis_mix is None
+    for row in mix_rows([cis, night_only]):
+        assert row.trans_at_cis_mix is None and row.gap_at_cis_mix is None
+    assert "| n/a | n/a |" in render_report({"arm A": [cis, night_only]})
     assert mix_rows([cis]) == ()
     assert mix_rows([cis, _run("trans_test", [OPOSSUM], [OPOSSUM], [True])]) == ()
+
+
+def test_weighted_macro_f1_by_hand_on_two_classes() -> None:
+    """Day images weigh 1.5, night images 0.5. Opossum: TP 1.5, FP 1.5, FN 0.5 -> 3 / 5;
+    rabbit: TP 0.5, FP 0.5, FN 1.5 -> 1 / 3. Unweighted both classes score 1 / 2."""
+    labels = [OPOSSUM, RABBIT, OPOSSUM, RABBIT]
+    predicted = [OPOSSUM, OPOSSUM, RABBIT, RABBIT]
+    weights = mix_weights([False, False, True, True], 0.25)
+    assert weights == (1.5, 1.5, 0.5, 0.5)
+    acc, f1 = weighted_scores(predicted, labels, weights)
+    assert acc == pytest.approx(0.5)
+    assert f1 == pytest.approx((3 / 5 + 1 / 3) / 2)
+    assert macro_f1(predicted, labels) == pytest.approx(0.5)
+
+
+def test_weighted_scores_with_unit_weights_match_the_metrics_module() -> None:
+    generator = random.Random(SEED)
+    for _ in range(200):
+        n = generator.randint(1, 30)
+        labels = [generator.randrange(len(CLASSES)) for _ in range(n)]
+        predicted = [generator.randrange(len(CLASSES)) for _ in range(n)]
+        acc, f1 = weighted_scores(predicted, labels, [1.0] * n)
+        assert acc == pytest.approx(accuracy(predicted, labels))
+        assert f1 == pytest.approx(macro_f1(predicted, labels))
+
+
+def test_mix_weights_average_one_and_need_both_day_and_night() -> None:
+    night = [True, True, True, False, False]  # q = 0.6
+    weights = mix_weights(night, 0.25)
+    assert weights is not None
+    assert sum(weights) / len(weights) == pytest.approx(1.0)
+    night_mass = sum(w for w, flag in zip(weights, night, strict=True) if flag)
+    assert night_mass / sum(weights) == pytest.approx(0.25)
+    assert mix_weights([True, True], 0.5) is None
+    assert mix_weights([False], 0.5) is None
+
+
+def test_weighted_scores_refuse_bad_input() -> None:
+    with pytest.raises(ValueError, match="weights"):
+        weighted_scores([OPOSSUM], [OPOSSUM], [1.0, 1.0])
+    with pytest.raises(ValueError, match="negative"):
+        weighted_scores([OPOSSUM, OPOSSUM], [OPOSSUM, OPOSSUM], [1.0, -1.0])
+    with pytest.raises(ValueError, match="no weight"):
+        weighted_scores([OPOSSUM], [OPOSSUM], [0.0])
+    with pytest.raises(ValueError, match="outside the class indices"):
+        weighted_scores([len(CLASSES)], [OPOSSUM], [1.0])
 
 
 def test_the_report_puts_accuracy_beside_macro_f1_and_states_the_rule() -> None:
@@ -375,7 +436,7 @@ def test_the_dry_run_writes_the_table_and_two_pngs_under_out_only(
     assert len(cut_rows) == 2 * 2 * 2  # two models, two cuts, val and trans_val
     for row in cut_rows:
         assert int(row[3]) + int(row[4]) == int(row[2])  # the slices add up to the split
-    assert len([r for r in rows if len(r) == 9]) == 2  # one mix row per model
+    assert len([r for r in rows if len(r) == 10]) == 2 * 2  # accuracy and macro-F1 per model
 
     printed = capsys.readouterr().out
     meta = load_metadata(*_fixture_paths(tmp_path / "ids"))

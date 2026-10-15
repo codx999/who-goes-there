@@ -6,13 +6,17 @@ features, and everything here is cut from them.
 **Day and night.** Each image's night flag comes from the cache's `day_night.json` sidecar
 (`Record.night`, loaded with an explicit sidecar). Night share differs between splits (from the
 6.03 cache build: train 0.598, cis_val 0.588, trans_val 0.609, cis_test 0.604, trans_test 0.688),
-so part of a cis-to-trans accuracy gap can come from the mix of day and night images rather than
+so part of a cis-to-trans gap can come from the mix of day and night images rather than
 from the unseen cameras. The report gives accuracy and macro-F1 per split (one camera group each,
 `CAMERA_GROUPS`) for all, day and night images, and, for each cis and trans pair given (val with
-trans_val, cis_test with trans_test), the trans accuracy re-weighted to the cis night share:
-`(1 - p_cis) * day accuracy + p_cis * night accuracy` on the trans split. The gap at that common
-mix is the part of the gap the day/night mix does not explain. Only accuracy is re-weighted;
-macro-F1 is not a weighted mean of its slices.
+trans_val, cis_test with trans_test), the trans accuracy and macro-F1 re-weighted to the cis
+night share. Each trans image is weighted by the night-share ratio, `p_cis / p_trans` for a night
+image and `(1 - p_cis) / (1 - p_trans)` for a day image (the weights average 1), and both scores
+are computed from the weighted counts: accuracy becomes `(1 - p_cis) * day accuracy + p_cis *
+night accuracy`, and macro-F1 is the mean over the classes present of `2TP / (2TP + FP + FN)` on
+the weighted confusion counts. Macro-F1 is not a weighted mean of its day and night values, so it
+is re-weighted inside the counts rather than across the slices. The gap left at that common mix
+is the part of the gap the day/night mix does not explain.
 
 **Common and rare species.** The rule, fixed on the train counts before any test scoring (R17)
 and never tuned on results: a class is rare when it holds fewer than `RARE_SHARE` (4%) of the
@@ -68,7 +72,7 @@ from matplotlib.figure import Figure, SubFigure
 from torch import Tensor, nn
 from torch.utils.data import DataLoader
 
-from trailcam.data.classes import CLASSES, index_of_name
+from trailcam.data.classes import CLASSES, NUM_CLASSES, index_of_name
 from trailcam.data.dataset import CCT20Dataset, EvalTransform
 from trailcam.data.metadata import DAY_NIGHT_SIDECAR, Record, load_metadata
 from trailcam.data.split import make_split
@@ -248,54 +252,106 @@ def slice_rows(run: SplitPredictions) -> tuple[SliceRow, ...]:
     return tuple(rows)
 
 
+def weighted_scores(
+    predictions: Sequence[int], labels: Sequence[int], weights: Sequence[float]
+) -> tuple[float, float]:
+    """Accuracy and macro-F1 with each image counted `weights[i]` times, under the conventions
+    of `trailcam/evaluate/metrics.py`: macro-F1 is the mean over the classes with a positive
+    weighted support of `2TP / (2TP + FP + FN)` on the weighted counts. With every weight 1 both
+    equal `accuracy` and `macro_f1`."""
+    if not len(predictions) == len(labels) == len(weights):
+        raise ValueError(
+            f"{len(predictions)} predictions, {len(labels)} labels, {len(weights)} weights"
+        )
+    if any(w < 0 for w in weights):
+        raise ValueError("a weight is negative")
+    total = sum(weights)
+    if total <= 0:
+        raise ValueError("no weight to score")
+    accuracy(predictions, labels)  # the same checks on the class indices
+    tp = [0.0] * NUM_CLASSES
+    fp = [0.0] * NUM_CLASSES
+    support = [0.0] * NUM_CLASSES
+    for p, y, w in zip(predictions, labels, weights, strict=True):
+        support[y] += w
+        if p == y:
+            tp[y] += w
+        else:
+            fp[p] += w
+    present = [c for c in range(NUM_CLASSES) if support[c] > 0]
+    f1 = [2 * tp[c] / (2 * tp[c] + fp[c] + support[c] - tp[c]) for c in present]
+    return sum(tp) / total, sum(f1) / len(f1)
+
+
+def mix_weights(night: Sequence[bool], night_share: float) -> tuple[float, ...] | None:
+    """Per-image weights that move a split with flags `night` to `night_share` at night:
+    `night_share / q` for a night image and `(1 - night_share) / (1 - q)` for a day image, q the
+    split's own night share. None when the split has no day or no night image."""
+    q = sum(night) / len(night)
+    if q in (0.0, 1.0):
+        return None
+    day_weight, night_weight = (1 - night_share) / (1 - q), night_share / q
+    return tuple(night_weight if flag else day_weight for flag in night)
+
+
 @dataclass(frozen=True)
 class MixRow:
-    """A cis split and its trans counterpart; `trans_at_cis_mix` is the trans accuracy with day
-    and night re-weighted to the cis night share (None if the trans split lacks one of them)."""
+    """A cis split and its trans counterpart, for one metric (accuracy or macro-F1);
+    `trans_at_cis_mix` is the trans score with day and night re-weighted to the cis night share
+    (None if the trans split lacks one of them)."""
 
     cis_split: str
     trans_split: str
-    cis_accuracy: float
-    trans_accuracy: float
+    metric: str
+    cis: float
+    trans: float
     cis_night_share: float
     trans_night_share: float
     trans_at_cis_mix: float | None
 
     @property
     def gap(self) -> float:
-        return self.cis_accuracy - self.trans_accuracy
+        return self.cis - self.trans
 
     @property
     def gap_at_cis_mix(self) -> float | None:
         if self.trans_at_cis_mix is None:
             return None
-        return self.cis_accuracy - self.trans_at_cis_mix
+        return self.cis - self.trans_at_cis_mix
 
 
 def mix_rows(runs: Sequence[SplitPredictions]) -> tuple[MixRow, ...]:
-    """One row per pair in `PAIRS` whose two splits are both in `runs`."""
+    """Two rows, accuracy then macro-F1, per pair in `PAIRS` whose two splits are both in
+    `runs`."""
     by_split = {run.split: run for run in runs}
     rows = []
     for cis_name, trans_name in PAIRS:
         if cis_name not in by_split or trans_name not in by_split:
             continue
         cis, trans = by_split[cis_name], by_split[trans_name]
-        by_time = {r.slice: r.accuracy for r in slice_rows(trans) if r.cut == "day/night"}
-        day, night = by_time["day"], by_time["night"]
         p = cis.night_share
-        rows.append(
-            MixRow(
-                cis_split=cis_name,
-                trans_split=trans_name,
-                cis_accuracy=accuracy(cis.predictions, cis.labels),
-                trans_accuracy=accuracy(trans.predictions, trans.labels),
-                cis_night_share=p,
-                trans_night_share=trans.night_share,
-                trans_at_cis_mix=(
-                    None if day is None or night is None else (1 - p) * day + p * night
-                ),
-            )
+        weights = mix_weights(trans.night, p)
+        at_mix = (
+            (None, None)
+            if weights is None
+            else weighted_scores(trans.predictions, trans.labels, weights)
         )
+        for metric, score, mixed in (
+            ("accuracy", accuracy, at_mix[0]),
+            ("macro-F1", macro_f1, at_mix[1]),
+        ):
+            rows.append(
+                MixRow(
+                    cis_split=cis_name,
+                    trans_split=trans_name,
+                    metric=metric,
+                    cis=score(cis.predictions, cis.labels),
+                    trans=score(trans.predictions, trans.labels),
+                    cis_night_share=p,
+                    trans_night_share=trans.night_share,
+                    trans_at_cis_mix=mixed,
+                )
+            )
     return tuple(rows)
 
 
@@ -393,28 +449,31 @@ def render_report(
                 "",
                 "### Cis and trans at the same day/night mix",
                 "",
-                "Trans accuracy re-weighted to the cis night share: (1 - p) x day accuracy + p x",
-                "night accuracy on the trans split, p the cis night share. The gap left at the",
-                "same mix is the part the day/night mix does not explain.",
+                "Trans scores re-weighted to the cis night share p: each trans image counts p / q",
+                "at night and (1 - p) / (1 - q) by day, q the trans night share, and accuracy and",
+                "macro-F1 are computed from the weighted counts. The gap left at the same mix is",
+                "the part the day/night mix does not explain.",
                 "",
                 *_table(
                     (
                         "cis split",
                         "trans split",
-                        "cis accuracy",
-                        "trans accuracy",
+                        "metric",
+                        "cis",
+                        "trans",
                         "gap",
                         "cis night share",
                         "trans night share",
-                        "trans accuracy at the cis mix",
+                        "trans at the cis mix",
                         "gap at the cis mix",
                     ),
                     [
                         (
                             m.cis_split,
                             m.trans_split,
-                            _cell(m.cis_accuracy),
-                            _cell(m.trans_accuracy),
+                            m.metric,
+                            _cell(m.cis),
+                            _cell(m.trans),
                             _cell(m.gap),
                             f"{m.cis_night_share:.3f}",
                             f"{m.trans_night_share:.3f}",
