@@ -40,6 +40,9 @@ of after the GPU hour.
 `train_run` then checks that the image of every kept record is under the image folder
 (`trailcam/data/cache.py`, item 6.07) before the split is drawn, so an incomplete cache fails in
 seconds too, with counts only.
+Every log line is flushed as it is printed (`log_line`, item 6.08), and each epoch's line ends with
+its seconds (train and val) and training images per second, so a committed Kaggle run's Logs tab
+shows the progress and the time per epoch while it runs. The ledger row is unchanged.
 
 Command-line overrides (R25): `--run-seed` for any config; `--max-epochs` and `--batch-size` with
 `--dry-run=True` only. No other field can be changed from the command line, so the arm A and arm
@@ -65,6 +68,7 @@ import math
 import random
 import sys
 import tempfile
+import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -168,6 +172,11 @@ class RunResult:
     alarms: tuple[str, ...]
 
 
+def log_line(line: str) -> None:
+    """Print `line` and flush, so a committed Kaggle run's Logs tab shows it at once (6.08)."""
+    print(line, flush=True)
+
+
 def seed_everything(seed: int) -> torch.Generator:
     """Seed `random`, NumPy and torch (CPU and every GPU); return a generator for the shuffle."""
     random.seed(seed)
@@ -250,7 +259,7 @@ def fit(
     loaders: Mapping[str, Loader],
     config: Config,
     device: torch.device,
-    log: Callable[[str], None] = print,
+    log: Callable[[str], None] = log_line,
 ) -> FitResult:
     """Train on `loaders["train"]`, select on `loaders["val"]` macro-F1 with early stopping, and
     leave the best epoch's weights in `model`. No other loader is read."""
@@ -275,6 +284,7 @@ def fit(
         head_only = number <= config.head_only_epochs
         _set_head_only(model, groups.body, head_only)
         total, seen = 0.0, 0
+        started = time.perf_counter()
         for images, targets in loaders["train"]:
             images, targets = images.to(device), targets.to(device)
             optimizer.zero_grad(set_to_none=True)
@@ -290,14 +300,17 @@ def fit(
             scheduler.step()
             total += float(loss.detach()) * len(targets)
             seen += len(targets)
+        train_seconds = time.perf_counter() - started
         val = evaluate(model, loaders["val"], device, amp)
+        seconds = time.perf_counter() - started
         epochs.append(Epoch(number, head_only, total / seen, val))
         stop = stopper.update(number, val.macro_f1, model)
         log(
             f"epoch {number}/{config.max_epochs}{' head-only' if head_only else ''}: "
             f"train loss {total / seen:.4f}, val loss {val.loss:.4f}, "
             f"val accuracy {val.accuracy:.4f}, val macro-F1 {val.macro_f1:.4f} "
-            f"(best epoch {stopper.best_epoch})"
+            f"(best epoch {stopper.best_epoch}); {seconds:.1f} s, "
+            f"{seen / max(train_seconds, 1e-9):.1f} train images/s"
         )
         if stop:
             log(f"early stop: {config.patience} epochs without a higher val macro-F1")
@@ -357,7 +370,7 @@ def train_run(
     meta: Metadata,
     image_root: Path,
     out_dir: Path,
-    log: Callable[[str], None] = print,
+    log: Callable[[str], None] = log_line,
 ) -> RunResult:
     """Check the images, split, seed, build, train, restore, save and hash, then score trans_val
     once."""

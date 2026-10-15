@@ -8,7 +8,9 @@ end-to-end test runs `main` as `/dryrun` does, on the synthetic fixture the scri
 with the small CNN. No test opens a network connection or downloads weights.
 """
 
+import inspect
 import random
+import re
 import socket
 import tempfile
 from collections.abc import Iterator
@@ -151,6 +153,35 @@ def test_a_run_that_keeps_improving_runs_every_epoch(monkeypatch: pytest.MonkeyP
     result = fit(model, tensor_loaders(), config(max_epochs=4, patience=1), CPU, log=lambda _: None)
     assert (len(result.epochs), result.best_epoch) == (4, 4)
     assert same(state(model), scripted.states[4])
+
+
+def test_each_epoch_line_gives_its_seconds_and_images_per_second(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Item 6.08: a committed Kaggle run's Logs tab shows each epoch as it ends, with the epoch's
+    seconds and training images per second; the scores in the line are unchanged."""
+    monkeypatch.setattr(train, "evaluate", ScriptedVal([0.1, 0.2]))
+    lines: list[str] = []
+    fit(resnet(), tensor_loaders(), config(max_epochs=2, patience=3), CPU, log=lines.append)
+    epochs = [line for line in lines if line.startswith("epoch ")]
+    assert len(epochs) == 2
+    for line in epochs:
+        assert re.fullmatch(
+            r"epoch \d/2( head-only)?: train loss \d+\.\d{4}, val loss \d+\.\d{4}, "
+            r"val accuracy \d\.\d{4}, val macro-F1 \d\.\d{4} \(best epoch \d\); "
+            r"\d+\.\d s, \d+\.\d train images/s",
+            line,
+        ), line
+
+
+def test_log_lines_are_flushed_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Item 6.08: `fit` and `train_run` print through `log_line`, which flushes every line."""
+    calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+    monkeypatch.setattr(train, "print", lambda *a, **k: calls.append((a, k)), raising=False)
+    train.log_line("epoch 1/1")
+    assert calls == [(("epoch 1/1",), {"flush": True})]
+    for function in (train.fit, train.train_run):
+        assert inspect.signature(function).parameters["log"].default is train.log_line
 
 
 def test_early_stopping_keeps_the_first_of_equal_scores() -> None:

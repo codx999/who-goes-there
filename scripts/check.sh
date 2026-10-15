@@ -24,7 +24,7 @@ fi
 
 uv sync --locked --quiet
 uv run pytest --tb=short -q
-uv run mypy trailcam/ scripts/guard_data.py scripts/kaggle_prepare_cct20.py
+uv run mypy trailcam/ scripts/guard_data.py scripts/kaggle_prepare_cct20.py scripts/kaggle_pack_cache.py
 uv run ruff check .
 uv run ruff format --check .
 uv run python scripts/guard_data.py --all
