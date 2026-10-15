@@ -1,4 +1,4 @@
-"""notebooks/kaggle_train.ipynb, read as JSON and its code cells as Python (items 6.02 and 6.06).
+"""notebooks/kaggle_train.ipynb, read as JSON and its code cells as Python (items 6.02, 6.06, 6.07).
 
 The notebook runs only on Kaggle, so it is never executed here: these tests check its shape. Every
 code cell parses as plain Python (no magics) and defines nothing, so the logic stays in `trailcam`
@@ -12,6 +12,7 @@ import importlib
 import importlib.util
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -23,6 +24,11 @@ from trailcam.train.config import load_configs
 ROOT = Path(__file__).resolve().parents[1]
 NOTEBOOK = ROOT / "notebooks" / "kaggle_train.ipynb"
 PUBLIC_REPO = "https://github.com/codx999/who-goes-there"
+# Item 6.07: the user's private cache dataset as Kaggle mounts it (2026-10-14/15 rehearsal), and
+# the main commit that holds trailcam/train/device.py (6.06): the default COMMIT descends from it.
+KAGGLE_DATA_ROOT = "Path('/kaggle/input/datasets/codx888/cct20-512/cct20_512')"
+OLDEST_COMMIT = "17ca508d420cccf10f4ed83d8df849a1dde153cd"
+PARAMETERS = {"CONFIG_NAME", "RUN_SEED", "COMMIT", "DATA_ROOT"}
 
 _spec = importlib.util.spec_from_file_location("guard_data", ROOT / "scripts" / "guard_data.py")
 assert _spec is not None and _spec.loader is not None
@@ -97,7 +103,8 @@ def test_parameters() -> None:
     assert p["REPO_URL"] == PUBLIC_REPO  # the public repo, not a fork (R38)
     assert p["RUN_SEED"] is None  # the config's run seed unless the user overrides it (R27)
     training = {name for name, c in load_configs().items() if not c.fixture}
-    assert p["CONFIG_NAME"] in training
+    assert p["CONFIG_NAME"] == "small_cnn" and p["CONFIG_NAME"] in training  # 6.04 first
+    assert p["DATA_ROOT"] == KAGGLE_DATA_ROOT
     # The check cell's list of config names is the training configs of config.yaml.
     (listed,) = [
         ast.literal_eval(n.comparators[0])
@@ -106,6 +113,62 @@ def test_parameters() -> None:
         if isinstance(n, ast.Compare) and ast.unparse(n.left) == "CONFIG_NAME"
     ]
     assert set(listed) == training
+
+
+def test_the_default_commit_has_the_gpu_check() -> None:
+    """Item 6.07: the 6.06 rehearsal ran the default COMMIT dc05dad, which lacks
+    trailcam/train/device.py. The default now descends from the commit that added it (CI checks
+    out the full history)."""
+    commit = str(_parameters()["COMMIT"])
+    git = ["git", "-C", str(ROOT)]
+    known = subprocess.run([*git, "cat-file", "-e", f"{commit}^{{commit}}"], check=False)
+    assert known.returncode == 0, f"COMMIT {commit} is not a commit of this repo"
+    ancestor = subprocess.run(
+        [*git, "merge-base", "--is-ancestor", OLDEST_COMMIT, commit], check=False
+    )
+    assert ancestor.returncode == 0, f"COMMIT {commit} predates {OLDEST_COMMIT}"
+
+
+def test_exactly_one_parameter_cell() -> None:
+    """Item 6.07: a stale second parameter cell overrode a hand edit on Kaggle. Only the first
+    code cell assigns a parameter, and the check cell prints the values in effect."""
+    assigning = [
+        i
+        for i, tree in enumerate(TREES)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Assign)
+        and {ast.unparse(target) for target in node.targets} & PARAMETERS
+    ]
+    assert set(assigning) == {0} and len(assigning) == len(PARAMETERS)
+    (check,) = [source for source in CODE if "CONFIG_NAME must be" in source]
+    for name in PARAMETERS:
+        assert f"{name} {{{name}}}" in check
+
+
+def test_a_commit_before_the_cache_check_is_refused_before_the_install() -> None:
+    """Item 6.07: the clone cell refuses a commit without trailcam/data/cache.py, the module the
+    cache cell imports, before pip installs it."""
+    (clone,) = [i for i, tree in enumerate(TREES) if "'git', 'clone'" in ast.unparse(tree)]
+    (pip,) = [i for i, tree in enumerate(TREES) if "'pip', 'install'" in ast.unparse(tree)]
+    assert clone < pip
+    assert 'if not (CLONE / "trailcam" / "data" / "cache.py").is_file():' in CODE[clone]
+    assert "predates item 6.07" in CODE[clone]
+    assert (ROOT / "trailcam" / "data" / "cache.py").is_file()
+
+
+def test_the_cache_cell_searches_any_depth_and_checks_every_image() -> None:
+    """Item 6.07: a wrong DATA_ROOT lists the folders holding a day_night.json at any depth
+    under /kaggle/input (Kaggle's datasets/<user>/<slug>/<folder> mount is four levels down), and
+    `check_images` refuses an incomplete cache after the metadata is loaded, before training."""
+    (cell,) = [i for i, tree in enumerate(TREES) if _calls_in(tree, "load_metadata")]
+    source = CODE[cell]
+    assert 'sidecar_folders(Path("/kaggle/input"))' in source
+    assert ".glob(" not in source and "*/*" not in source
+    (check,) = _calls_in(TREES[cell], "check_images")
+    assert ast.unparse(check) == "check_images(meta, needed['images'])"
+    assert source.index("load_metadata(") < source.index("check_images(")
+    (training,) = [i for i, tree in enumerate(TREES) if _calls_in(tree, "train.main")]
+    assert cell < training
 
 
 def test_the_only_pip_install_is_the_clone() -> None:
@@ -171,6 +234,28 @@ def test_markdown_cites_the_data_and_says_how_to_run() -> None:
     assert "## How to run on Kaggle" in MARKDOWN
     for needle in ("Add Input", "Accelerator GPU", "Internet on", "Save & Run All", "ledger"):
         assert needle in MARKDOWN
+
+
+def test_how_to_run_says_import_attach_one_cell_rehearse_then_run() -> None:
+    """Item 6.07: the steps of the user's Kaggle rehearsal, in order."""
+    steps = [
+        "File > Import Notebook",
+        f"{PUBLIC_REPO}/blob/main/notebooks/kaggle_train.ipynb",
+        "Add Input",
+        "/kaggle/input/datasets/<user>/<slug>/<folder>",
+        "another\n   account or dataset name changes it",
+        "Keep exactly one parameter cell",
+        "Edit only\n   `COMMIT` (and `DATA_ROOT` for another dataset)",
+        "at or after the merge of item 6.07",
+        "Accelerator GPU T4 x2",
+        "Internet on",
+        "Rehearse: run sections 1 to 3",
+        "then stop the session",
+        "Save Version > Save & Run All",
+    ]
+    positions = [MARKDOWN.find(step) for step in steps]
+    assert -1 not in positions, [s for s, i in zip(steps, positions, strict=True) if i == -1]
+    assert positions == sorted(positions)
 
 
 def test_no_credentials() -> None:

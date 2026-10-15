@@ -1714,3 +1714,73 @@ Review: tier 2, ran `/review-session 8.01` (17ca508..0270f80; code-reviewer Opus
 risk-reviewer Fable high), nothing found, no fix round. Scenarios R01, R03, R05, R32, R33, R42 to
 R45 held; known gaps passed: R32 reporting on trans test (9.01), R33 the demo and Space calling
 the timer (10.01, 11.01). Neither reviewer could run the CUDA and MPS synchronise branches.
+
+## 2026-10-15: session 6, item 6.07, the notebook as imported and the cache completeness check (Opus 5.5)
+
+New item, requested by the user in the coordinator session on 2026-10-15 and added to
+`docs/progress.json` as 6.07 (session 6, owner claude, due 2026-10-15). Evidence, from the user's
+Kaggle rehearsal on 2026-10-14/15 (GPU T4 x2, the private `cct20-512` dataset made from the 6.03
+cache): Kaggle mounts the dataset at `/kaggle/input/datasets/codx888/cct20-512/cct20_512`, one
+level deeper than the notebook's `/kaggle/input/cct20-512` and below the old three-level candidate
+search; one session found 57,864 JPEGs, but a later session start loaded 645 files (64.52 MiB of
+the cache's 2.92 GiB), so completeness must be checked; the default `COMMIT` dc05dad lacks
+`trailcam/train/device.py` (6.06), so section 3 would fail; a stale duplicate parameter cell
+overrode a hand edit; pip kept torch 2.11.0+cu128, torchvision 0.26.0+cu128, Pillow 12.3.0, timm
+1.0.29 and PyYAML 6.0.3.
+
+**Done.** `trailcam/data/cache.py` (new): `sidecar_folders(root, max_depth=MAX_DEPTH)` lists
+every folder holding a `day_night.json` at most 8 levels below the root (os.walk, symlinked
+folders followed, a missing root gives none); `missing_images(meta, image_root)` gives per split
+(kept records, of those whose image is missing or empty), one `stat` per image, no decoding;
+`check_images(meta, image_root)` returns a line of counts when all are there and otherwise raises
+`FileNotFoundError` naming found of expected in all and per split, and the folder, never a file
+name, image id or seq id (R03). Only kept records of the five splits are checked: dropped images
+(empty, two species, rare) are never read, and the raw annotation lists are not in `Metadata`, so
+checking them would mean reading the files a second time for no protection.
+
+Decision: `train_run` calls `check_images` too, before the split is drawn (after the run's first
+log lines), so every run is protected, not only notebook runs, including the dry run on its
+fixture. The cost is one `stat` per kept image, seconds on the cache; on Kaggle the notebook's
+section 3 and then `train_run` each pay it once. A failure there is an exception (traceback with
+the counts), not `parser.error`: it needs the metadata loaded, so it sits in `train_run` rather
+than in `main`'s preflight, which keeps the existing `main` tests that stub `load_metadata` and
+`train_run` unchanged.
+
+`notebooks/kaggle_train.ipynb` (outputs cleared): `DATA_ROOT =
+Path("/kaggle/input/datasets/codx888/cct20-512/cct20_512")`; `COMMIT =
+e321151aed8aaf0cedc4581685235898796a511d`, main at this session's start; `CONFIG_NAME =
+"small_cnn"` and `RUN_SEED = None` kept. How to run, now seven steps: File > Import Notebook with
+the GitHub link; Add Input, with the mount path and that another account or dataset name changes
+`DATA_ROOT`; keep exactly one parameter cell and edit only `COMMIT` (and `DATA_ROOT` for another
+dataset), `COMMIT` being the main commit the coordinator gives at or after this item's merge (the
+default predates 6.07 and is refused in section 2); GPU T4 x2 and Internet on; rehearse sections
+1 to 3, then stop the session; Save & Run All; paste the row. Section 1 prints the four
+parameters in effect. Section 2 refuses a clone without `trailcam/data/cache.py` ("predates item
+6.07"), before the pip install. Section 3's cache cell lists `sidecar_folders(Path("/kaggle/input"))`
+when `DATA_ROOT` lacks a part, and after the metadata and file count prints
+`check_images(meta, needed["images"])`.
+
+Tests: `tests/test_cache.py` (new, 9): a complete fixture cache passes with its count; one image
+deleted or emptied in cis_val is refused with "N-1 of N" in all and per split and no id, file name
+or seq id in the message; a missing image folder is refused; an extra file changes nothing;
+`train_run` refuses an incomplete cache before `make_split` and writes no out dir; the search
+finds Kaggle's `datasets/codx888/cct20-512/cct20_512` (depth 4) and nothing else, the depth limit
+(depth 8 found, 9 not, `max_depth=0` the root only), a missing root, a symlinked folder.
+`tests/test_notebook.py`: `DATA_ROOT` and `CONFIG_NAME` defaults; the default `COMMIT` is a
+commit of this repo descending from 17ca508 (dc05dad does not; CI has the full history); exactly
+one cell assigns the parameters and the check cell prints them; the clone cell refuses a commit
+without `cache.py` before the pip cell; the cache cell uses `sidecar_folders` (no glob depths) and
+calls `check_images` after `load_metadata`, in a cell before `train.main`; the How-to-run steps
+in order. Mutations checked: `train_run` without the check fails the `train_run` test; an empty
+file counted as present fails the empty case. `docs/review/invariants.md`: R03's test cell names
+`tests/test_cache.py`.
+
+Steps: `check.sh` green (603 passed); the completeness and search tests above; `uvx --from
+nbconvert jupyter nbconvert --clear-output --inplace notebooks/kaggle_train.ipynb` leaves the
+notebook unchanged (`cmp`); `uv run python scripts/guard_data.py --all` exits 0 with the changes
+staged. Local `main` had not moved at commit time (still e321151); origin could not be reached
+from this session.
+
+**Next.** For 6.04: set `COMMIT` to the main commit the coordinator gives at or after this
+item's merge, rehearse sections 1 to 3 (section 3 should print all kept images found), stop the
+session, then Save & Run All. Review: tier 2, `/review-session 6.07`.
