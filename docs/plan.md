@@ -100,9 +100,12 @@ is time. Normalisation uses ImageNet mean and standard deviation for both models
 one pipeline. Training runs attach the cache as one uncompressed tar (item 6.08,
 `scripts/kaggle_pack_cache.py`, packed from that dataset on a CPU session and saved as a second
 private dataset, `cct20-512-tar`) and unpack it to local disk under `/tmp` at the start
-(`trailcam.data.cache.unpack_cache`): a committed run copies every input file before its first
-cell, and with the 57,864 loose files the 6.04 version sat at "Starting..." for about 48 billed
-GPU minutes (2026-10-15).
+(`trailcam.data.cache.unpack_cache`): one file starts faster than 57,864 and training reads
+local disk. The 6.04 version sat at "Starting..." for about 48 billed GPU minutes with the loose
+files attached (2026-10-15), but a CPU run with the same files started in about 5, so the cause
+is not known (more likely the GPU session's own start). Whatever the cause, a version still
+"Starting..." with an empty Logs tab about 10 minutes after Save & Run All is cancelled and
+resubmitted.
 
 ## 3. Split design and leakage tests
 

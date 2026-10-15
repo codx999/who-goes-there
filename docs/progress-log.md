@@ -2153,3 +2153,88 @@ kept). `check.sh` green after the merge (695 passed).
 merge commit.
 
 Review: tier 2, `/review-session 6.08`
+
+Review: tier 2, ran `/review-session 6.08` (c303041..ef9100d; code-reviewer Opus xhigh,
+risk-reviewer Fable high). Two lows, both from code-reviewer; risk-reviewer found nothing. All of
+R01, R03, R05 to R07, R14, R16, R17, R25, R27, R31, R32, R37, R38 and R40 to R45 held. The user
+merged e1fe83f and ef9100d into main as they stood, so the pack script reached GitHub and the
+packing run could start; the fixes are new commits on top, per the user's decision relayed by the
+coordinator.
+
+- Low: nothing caught the loose `cct20-512` dataset still being attached next to the archive.
+  Fix 67b61ce: the unpacking cell refuses while a folder holding a `day_night.json` is under
+  `/kaggle/input` and `CACHE_ARCHIVE` is set, and How-to-run step 2 says to remove that input.
+  The input folder is now the constant `INPUT` in the parameter cell (not a parameter), so the
+  tests can run the cell on a temporary folder.
+- Low: `unpack_cache`'s free-space check ignored block rounding (about 100 to 150 MB over 57,864
+  files), so a disk-full error could stop it partway and name one image path (R03). Fix 67b61ce:
+  `space_needed` rounds each file up to the disk's block size, counts one block per folder and
+  adds a 64 MiB margin (`UNPACK_MARGIN`). The check now runs on the nearest existing folder,
+  before `dest` is created. A test sets the free space just above the files' bytes (refused,
+  nothing written), one byte short of the blocks and margin (refused), and exactly that (enough).
+
+Fix round: `/review-session ef9100d..HEAD 6.08` (67b61ce; files: the notebook, `cache.py`,
+`tests/test_cache.py`, `tests/test_notebook.py`). One low from code-reviewer; risk-reviewer found
+nothing and noted the same limitation. All of R01, R03, R06, R07, R16, R17, R27, R37, R38 and R41
+to R45 held.
+
+- Low: the refusal also fired in a committed run, whose start is already paid for, so it threw
+  away the run and saved nothing. Fixed in 18f7e6a, as the playbook asks for fix-round findings:
+  the cell refuses only when `KAGGLE_KERNEL_RUN_TYPE` is `Interactive` (the rehearsal); any other
+  value, `Batch` or unset, warns on stderr and unpacks. The cell prints the run type. The
+  variable's name and values come from memory: I could not confirm them online. A wrong guess
+  only means the check warns instead of refusing, so a committed run is never lost. The next
+  rehearsal's printed "run type" line confirms it. No third round, as none was requested.
+- Note (risk-reviewer): mypy strict run directly on `tests/test_cache.py` flags
+  `cache_module.shutil` as not explicitly exported. Tests are outside the mypy `files` list, so
+  `check.sh` and CI are unaffected.
+
+New evidence (the user, via the coordinator, 2026-10-15): the user's CPU packing run (Save & Run
+All, no accelerator, the same 57,864-file `cct20-512` attached, commit ef9100d) printed its first
+log line about 5 minutes after submission. So copying the input files does not by itself explain
+the 48-minute "Starting..." of the 6.04 GPU run. The cause is uncertain, and the likelier one is
+the GPU session itself (waiting for a T4, or a GPU container stuck starting), billed throughout.
+Plan.md section 2 (not a high-stakes file) now says the cause is not known and gives the practice
+that protects the quota whatever the cause: about 10 minutes after Save & Run All, open the Logs
+tab; if it is still empty and the version still shows "Starting...", cancel it and resubmit.
+Deferred to a later item, by the coordinator's correction: the same change in high-stakes files
+would need another review round after the fix round. These still state the input copy as the
+cause: How-to-run step 2 of `notebooks/kaggle_train.ipynb`, the module docstrings of
+`trailcam/data/cache.py` and `scripts/kaggle_pack_cache.py`, and the reason in the unpacking
+cell's message. The 10-minute practice is not yet in How-to-run step 6. This log commit changes
+only `docs/plan.md` and this log. `check.sh` green.
+
+The user's packing run (the coordinator, 2026-10-15). CPU, Save & Run All, commit ef9100d, 17
+minutes in all, the first log line about 5 minutes after submission. It printed:
+
+- "Packing 57870 files (2.95 GiB) from /kaggle/input/datasets/codx888/cct20-512/cct20_512".
+- Progress every 10,000 files, at about 40 s each.
+- "Archive /kaggle/working/cct20_512.tar: 57870 files (annotations 5, images 57864,
+  day_night.json 1) under cct20_512/".
+- "3213506560 bytes (2.99 GiB), 377 s".
+- "sha256 724ec52cd59ecd96b752347449dd94932eb984355c700e16c8f8234a481081ed".
+
+The user is creating the private dataset `cct20-512-tar` from that output. Its Data tab should
+show the one file, `cct20_512.tar`, at 3,213,506,560 bytes.
+
+For the learning journal (`docs/learning-journal.md` is not on main yet; Kaggle topic; these
+replace the lines in the 6.08 entry above):
+
+- Lesson: on Kaggle a committed version is billed from submission, including any time it sits at
+  "Starting..."; why it can sit there is not always clear.
+- Evidence: the 6.04 GPU version (57,864 small input files) showed "Starting..." for about 48
+  minutes with an empty Logs tab, and the quota fell by about that much. A CPU version with the
+  same files logged its first line in about 5 minutes, so the input copy alone does not explain
+  it; a slow GPU session start (a T4 queue or a stuck container) is likelier.
+- The archive still helps: one 2.9 GiB tar instead of 57,864 files starts faster, and training
+  reads local disk (`scripts/kaggle_pack_cache.py`, `trailcam.data.cache.unpack_cache`).
+- Practice: about 10 minutes after Save & Run All, check the Logs tab. If it is still empty and
+  the version still shows "Starting...", cancel and resubmit. Every training log line is flushed,
+  with seconds per epoch, so an empty log does mean that no cell has started. The practice is
+  not yet in the notebook's How-to-run step 6; a later item adds it.
+
+The training COMMIT for every GPU run is the merge of this final state into main; the
+coordinator gives it.
+
+**Next.** The user creates `cct20-512-tar` from the packing run's output (the steps in
+`scripts/kaggle_pack_cache.py`), then 6.04 on it at the coordinator's COMMIT.
