@@ -131,7 +131,7 @@
     {"id": "8.04", "session": 8, "owner": "claude", "due": "2026-10-18",
      "description": "trailcam/evaluate/slices.py: the same predictions cut by day/night and by common vs rare species (accuracy and macro-F1 per slice and camera group), and a 2-D projection of backbone features of the test images (PCA, no new dependency) coloured once by species and once by camera, arm A and arm B side by side",
      "steps": "uv run pytest tests/test_slices.py passes on the fixture: slice tables sum to the overall counts; the projection writes two PNGs under --out",
-     "passes": false},
+     "passes": true},
     {"id": "8.05", "session": 8, "owner": "user", "due": "2026-10-18",
      "description": "Choose 6 to 12 trans-test example photos including infrared night frames, copy them into assets/, and list their locations in docs/data-card.md (they are the demo examples and the only images Grad-CAM overlays are made from)",
      "steps": "manual: files are under assets/, `uv run python scripts/guard_data.py --all` passes (24 files, 12 MB budget), the locations are trans-test locations only, at least two are night frames",
