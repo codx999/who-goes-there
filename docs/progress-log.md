@@ -1992,7 +1992,49 @@ For 9.01: call `predict_split` once per checkpoint and test split, and pass the 
 36k x 25,088 floats, so pass `keep_features=False` there; the feature map is for the ResNet-18
 arms.
 
-**Next.** 8.02 (figures, Grad-CAM overlays, the evaluate entry point); 8.03 merges first, then this
-branch is synced with main.
+**Next.** 8.02 (figures, Grad-CAM overlays drawn with `trailcam.evaluate.gradcam.gradcam`, the
+evaluate entry point).
 
-Review: tier 2, `/review-session 8.04`
+Review: tier 2, ran `/review-session 8.04` on 37ff282..138dd07, the 8.04 commit only (the user
+chose to leave out 8.03's commits, which were merged here and reviewed in 8.03's session).
+code-reviewer ran on Opus at xhigh and risk-reviewer on Fable at high. Two lows, both from
+code-reviewer, both fixed in d8e06e6 (the user's decision, via the coordinator):
+
+- Invariants map: no "where" column routed `trailcam/evaluate/slices.py` to R04, R17 or R32.
+  Those three rows now list the path and item 8.04, and `tests/test_risk_files.py` stays green.
+- Mix table: the cis-trans comparison at the same day/night mix reported accuracy only. It now has
+  an accuracy row and a macro-F1 row per pair. Each trans image is weighted `p / q` at night and
+  `(1 - p) / (1 - q)` by day, with p the cis and q the trans night share. Both scores come from
+  the weighted counts, and macro-F1 averages over the classes with a positive weighted support.
+  The weighted accuracy equals the earlier `(1 - p) * day + p * night`. The module docstring now
+  says macro-F1 is re-weighted inside the counts, since it is not a weighted mean of its slices.
+  New functions: `weighted_scores` and `mix_weights`; `MixRow` now has `metric`, `cis` and `trans`.
+  Tests: hand-computed one-class and two-class cases; unit weights reproduce `metrics.py` on 200
+  random cases; the weights average 1 and put the cis share at night; bad input is refused. Seven
+  mutations of the new code each fail a test. `tests/test_slices.py`: 24 passed.
+
+risk-reviewer found nothing. Scenarios R01, R03, R04, R05, R17, R32, R42 to R45 held, except R32
+(partial for the mix table, the second low) and R44 (the map gap, the first low). Known gaps
+passed: R17 and R32 the final scoring (9.01), R04 the figure and Grad-CAM writers (8.02).
+
+Fix round: `/review-session 138dd07..d8e06e6 8.04`, same reviewers, models and effort. Nothing
+found by either; every scenario held. No third round.
+
+Notes, recorded and not fixed (the user's decision, via the coordinator):
+
+- 9.01: `predict_split` keeps the backbone features by default. A small-CNN pass on cis_test plus
+  trans_test (14,478 + 21,473 images, 25,088 features each) would need well over 20 GB for the
+  float64 copy and the SVD in `pca_2d`. 9.01 passes `keep_features=False` for the small CNN and
+  projects the ResNet-18 arms only, which is what plan.md section 7 asks for.
+- matplotlib floor: `pyproject.toml` declares `matplotlib>=3.8.4`, a floor checked with
+  `tests/test_attention.py` only. `slices.py` also uses `Figure.subfigures(squeeze=False)` and
+  constrained layout with subfigures, and its tests ran on the locked 3.11.2 only.
+- Comment slip in `tests/test_slices.py`: the macro-F1 comment in
+  `test_the_trans_scores_are_reweighted_to_the_cis_night_share` reads "FN 0.5 + 2 x 0.5 = 2.5";
+  the day miss weighs 1.5, so it should read "1.5 + 2 x 0.5". The asserted value, 3 / 5.5, is
+  right. Left as it is, since a test edit would need a third review round.
+
+Merged main at 0968e1a (6.07 and 8.03) through the sync tool. Two conflicts: this log (8.03's
+review lines kept with its entry, then this entry) and R03's test cell (main's
+`tests/test_cache.py` and this item's `tests/test_slices.py` both kept). `uv.lock` merged without
+a conflict. `check.sh` green after the merge (669 passed).
