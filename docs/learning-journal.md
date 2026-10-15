@@ -1,8 +1,9 @@
 # Learning journal
 
 A plain-language record of what this project did and why, written for you (the student) to come
-back to. It covers sessions 0 to 6 and the Kaggle work up to 2026-10-15. `docs/progress-log.md`
-holds the full detail for reviewers and later sessions; this file holds the ideas behind it.
+back to. It covers sessions 0 to 6, the Kaggle work and the evaluation items taken early (8.01,
+8.03, 8.04), up to 2026-10-15. `docs/progress-log.md` holds the full detail for reviewers and
+later sessions; this file holds the ideas behind it.
 
 It is organised by **topic**, not by date. Each topic has four parts:
 
@@ -384,20 +385,38 @@ uv run pytest -q tests/test_train.py tests/test_attention.py tests/test_notebook
   which the report prints alongside as the "chance" level.
 - **Animal-removed test**: paint the box with the photo's average colour and predict again. A model
   that learned animals should lose its answer; a model that learned the scenery keeps it.
+- **Slices** (item 8.04): the same predictions cut two ways, with no extra training. *Day vs
+  night* uses the pixel-based night flag of topic 11. *Common vs rare* uses a rule fixed on the
+  train counts before any test scoring: a class is rare when it holds under 4% of the training
+  photos, which makes bird, rodent and skunk rare (car, at 4.4%, is common). Each slice gets
+  accuracy and macro-F1, and the two slices of a cut always add up to the whole split.
+- **Same day/night mix**: the splits differ in how many night photos they hold. Over the kept,
+  re-split photos the night share is 0.607 in train, 0.600 in val, 0.633 in trans_val, 0.626 in
+  cis_test and 0.716 in trans_test (0.657 overall). So part of a cis-to-trans gap could come from
+  trans_test simply having more night photos, not from the new cameras. The report re-weights the
+  trans photos (night ones by p / q, day ones by (1 - p) / (1 - q), p the cis night share and q
+  the trans one) so trans is scored as if it had the cis mix; the gap that is left is the part the
+  day/night mix does not explain.
+- **Feature map**: the backbone's features for each photo (512 numbers for ResNet-18), squashed to
+  two dimensions with PCA and plotted, once coloured by species and once by camera, arm A beside
+  arm B. If photos cluster by camera more than by species, the model has learned the scenery.
 
-Still to come: the figures and Grad-CAM overlays (item 8.02) and the day/night and common-vs-rare
-slices with the feature map (item 8.04). The day/night flag they will use already exists (topic
-11).
+Still to come: the figures and Grad-CAM overlays (item 8.02).
 
 **Why it mattered here.** Accuracy says how often the model is right, not why. Attention-in-box
 and the animal-removed test are the measurements that answer the research question (topic 5): does
 arm B look at the animal more, and does it depend less on the background? One Grad-CAM function is
-both scored and shown in the slides, so the picture and the number cannot disagree.
+both scored and shown in the slides, so the picture and the number cannot disagree. The slices
+guard against a wrong story: without the same-mix comparison, a gap caused partly by more night
+photos in trans_test would be blamed entirely on the unseen cameras. Fixing the rare rule before
+seeing any test score keeps it from being chosen to make the results look good.
 
 **Where to look.** [metrics.py](../trailcam/evaluate/metrics.py),
-[gradcam.py](../trailcam/evaluate/gradcam.py), [attention.py](../trailcam/evaluate/attention.py);
+[gradcam.py](../trailcam/evaluate/gradcam.py), [attention.py](../trailcam/evaluate/attention.py),
+[slices.py](../trailcam/evaluate/slices.py) (its docstring explains the re-weighting);
 [test_metrics.py](../tests/test_metrics.py), [test_gradcam.py](../tests/test_gradcam.py),
-[test_attention.py](../tests/test_attention.py); [plan.md](plan.md) sections 6 (outcomes) and 7.
+[test_attention.py](../tests/test_attention.py), [test_slices.py](../tests/test_slices.py);
+[plan.md](plan.md) sections 6 (outcomes) and 7.
 
 **Try it yourself.** Run attention-in-box and the animal-removed test on the synthetic fixture with
 random weights; it writes a table and a histogram into a temporary folder (the scores mean nothing
@@ -405,6 +424,13 @@ with random weights; the point is to see the shape of the report):
 
 ```bash
 uv run python -m trailcam.evaluate.attention --dry-run=True --split val --out "$(mktemp -d)"
+```
+
+The same for the slices: the day/night, common/rare and same-mix tables printed, plus the two
+feature-map PNGs in a temporary folder:
+
+```bash
+uv run python -m trailcam.evaluate.slices --dry-run=True --out "$(mktemp -d)"
 ```
 
 ## 11. Running on Kaggle
@@ -472,7 +498,7 @@ uv run pytest -q tests/test_device.py -v
   pass before it is marked done.
 - **Tests and mutation checks.** Each item comes with tests, and the important ones are checked by
   planting bugs on purpose (a "mutation") and confirming a test fails. By 2026-10-15 the suite has
-  645 tests. `bash scripts/check.sh` runs them all plus strict type checking (mypy), linting and
+  669 tests. `bash scripts/check.sh` runs them all plus strict type checking (mypy), linting and
   formatting (ruff) and the data guard; it must be green before every commit.
 - **The data guard.** `scripts/guard_data.py` runs in the git hooks and in CI and refuses images,
   metadata dumps, weights and keys, so no dataset photo or secret can reach the public repo.
@@ -534,12 +560,16 @@ Dated, oldest first. Each: what happened, how it was caught, the lesson.
   in seconds.
 - **2026-10-14. The cache build (item 6.03).** 22 minutes on a CPU session; all 57,864 photos
   written. The channel spread had a clean gap between night and day, so the threshold of 2.0 is
-  safe. Overall night share 63.6% (the plan had guessed about half); trans_test 68.8% against about
-  60% in the other splits; and hour 12 is 61.5% night, which confirms the camera clock is wrong
-  on many photos. *Caught by* the counts the prepare script prints (night share per split and per
-  hour, the spread histogram). *Lesson:* measure instead of assuming. The pixels, not the clock,
-  say day or night, and the unseen-camera test set is more nocturnal than training, which is worth
-  remembering when reading the trans gap.
+  safe. Over all 57,864 photos (empties and dropped classes included, by official file) the night
+  share is 63.6% (the plan had guessed about half); trans_test 68.8% against about 60% in the other
+  files; and hour 12 is 61.5% night, which confirms the camera clock is wrong on many photos. Over
+  the 53,535 kept photos of the re-split the shares are higher: 65.7% overall, train 60.7%, val
+  60.0%, trans_val 63.3%, cis_test 62.6% and trans_test 71.6% (computed on 2026-10-15 from the
+  sidecar copy you downloaded into `data/`). *Caught by* the counts the prepare script prints (night
+  share per split and per hour, the spread histogram). *Lesson:* measure instead of assuming, and
+  say which photos a share is over. The pixels, not the clock, say day or night, and the
+  unseen-camera test set is more nocturnal than training, which is why 8.04 compares cis and trans
+  at the same day/night mix (topic 10).
 - **2026-10-14. Kaggle's quota and account rules.** The quota is 30 GPU hours a week, and a short
   T4 x2 session cost about its wall time (29h 49m left after it), not double as a reviewer had
   feared. GPU and internet access needed phone verification of the Kaggle account first. *Caught

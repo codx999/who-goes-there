@@ -2075,3 +2075,19 @@ pending 6.03, and plan section 2 says about half the images are night shots; the
 5 lines to the journal under its topic.
 
 Review: tier 0 (docs only), nothing to run; no invariant row's spec document changed.
+
+Update after main moved (requested by the coordinator session): main at c303041 (8.04) merged in
+through the sync tool. One conflict, in this log: 8.04's entry kept first (it merged first), then
+this one; `docs/progress.json`, `docs/review/invariants.md` and 8.04's files merged cleanly. The
+journal's evaluation topic now covers 8.04 as merged: the day/night and common/rare slices (the
+under-4% rare rule fixed on train counts), the trans scores re-weighted to the cis night share,
+and the feature map, with `slices.py` and `tests/test_slices.py` linked and a second command (the
+slices dry run). Night shares over the kept, re-split images, given by the coordinator and checked
+here with `load_metadata` and `make_split` on the sidecar copy the user downloaded into `data/`
+(counts only): train 0.607, val 0.600, trans_val 0.633, cis_test 0.626, trans_test 0.716, all kept
+0.657 (35,146 of 53,535). The timeline now says which photos each share is over: 63.6% and 68.8%
+are over all 57,864 by official file (6.03), the shares above over the 53,535 kept. The test count
+in topic 12 is now 669. Steps re-run: 94 links resolve; all 14 commands exit 0 (the slices dry run
+8 s); `check.sh` green (669 passed).
+
+Review: tier 0 (docs only), nothing to run.
