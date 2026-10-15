@@ -405,8 +405,9 @@ session below also updates the setup it touches, in the same commit as the code:
    fallback only if the course later rejects the dataset outright.
 2. **Submission format.** The Space (app.py, weights, requirements.txt) is known; whether a report,
    notebook or video is also required is not.
-3. **Tarball layout.** The folder structure inside `eccv_18_all_images_sm.tar.gz` is unknown until
-   it is opened on Kaggle (session 6); the prepare script prints it.
+3. **Tarball layout.** Closed 2026-10-15 by item 6.03, from the cache build's printout:
+   `eccv_18_all_images_sm.tar.gz` holds 1 directory and 57,864 files, all `.jpg`, all at depth 1
+   (one top-level folder, the only folder holding `.jpg` files).
 4. **`car` as a class.** Kept because it has 668 training and 1,113 trans-test images; drop to 11
    classes if the audience finds a non-animal class confusing.
 5. **Grad-CAM in the Space.** It doubles the CPU work per prediction; it may stay local-only, with

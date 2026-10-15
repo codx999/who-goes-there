@@ -2400,6 +2400,11 @@ Notes, recorded and not fixed:
 - `uv run mypy tests/test_datavis.py` reports two `no-untyped-call` errors on
   `FigureCanvasAgg.draw`; `check.sh` type-checks `trailcam/` and the scripts only, not `tests/`.
 
+Also approved by the user via the coordinator, for item 6.03 (the user's): `docs/plan.md`
+section 11, open question 3 (tarball layout) is closed with the 6.03 cache build's output (1
+directory, 57,864 `.jpg` files, all at depth 1 in one top-level folder). With the data card's
+"Day and night" section, it is what 6.03 still needed; the user flips 6.03 after the merge. Spec changed: plan §11; no row cites it.
+
 `check.sh` green at e1f67cf: 718 passed. `docs/learning-journal.md` is still not on main, so the
 learning-journal lines stay above, under "For the learning journal".
 
