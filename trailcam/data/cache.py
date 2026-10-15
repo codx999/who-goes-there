@@ -15,18 +15,34 @@ check here makes one fail in seconds instead of at the first DataLoader batch:
 Images dropped by the metadata rules (empty, two species, rare) are never read, so they are not
 checked. `trailcam.train.train.train_run` calls `check_images` before the split is drawn, so every
 run is protected, not only notebook runs; the notebook calls it in its cache cell too.
+
+Item 6.08: a committed GPU run of the 6.04 small CNN sat at "Starting..." for about 48 minutes
+with an empty log while the GPU quota fell by about that much (2026-10-15): Kaggle copies every
+input file before the first cell, and the cache is 57,864 small files. So the cache also ships as
+one uncompressed tar (`scripts/kaggle_pack_cache.py`) with the tree under `CACHE_TOP`, and
+`unpack_cache` extracts it to local disk at the start of a run. It checks every member before
+writing anything: only regular files and folders, every name relative, without `..` and under
+`CACHE_TOP`; links of any kind are refused. The extraction itself uses tarfile's `data` filter
+too. The destination may not lie under `/kaggle/working`, so the copy is not saved as output.
 """
 
 from __future__ import annotations
 
 import os
+import shutil
 import stat
-from pathlib import Path
+import tarfile
+import time
+from dataclasses import dataclass
+from pathlib import Path, PurePosixPath
 from typing import Final
 
 from trailcam.data.metadata import DAY_NIGHT_SIDECAR, SPLITS, Metadata
 
 MAX_DEPTH: Final = 8  # folder levels searched below the root; the Kaggle mount needs 4
+CACHE_TOP: Final = "cct20_512"  # the archive's one top folder: annotations/, images/, sidecar
+ARCHIVE_SUFFIX: Final = ".tar"
+KAGGLE_WORKING: Final = Path("/kaggle/working")  # saved as the version's output
 
 
 def sidecar_folders(root: Path, max_depth: int = MAX_DEPTH) -> list[Path]:
@@ -36,6 +52,17 @@ def sidecar_folders(root: Path, max_depth: int = MAX_DEPTH) -> list[Path]:
     for folder, subfolders, files in os.walk(root, followlinks=True):
         if DAY_NIGHT_SIDECAR in files:
             found.append(Path(folder))
+        if len(Path(folder).relative_to(root).parts) >= max_depth:
+            subfolders.clear()
+    return sorted(found)
+
+
+def archive_files(root: Path, max_depth: int = MAX_DEPTH) -> list[Path]:
+    """Every `ARCHIVE_SUFFIX` file at most `max_depth` levels below `root`, sorted; a missing
+    root gives []. Lists the candidates when the notebook's archive path is wrong."""
+    found: list[Path] = []
+    for folder, subfolders, files in os.walk(root, followlinks=True):
+        found += [Path(folder) / name for name in files if name.endswith(ARCHIVE_SUFFIX)]
         if len(Path(folder).relative_to(root).parts) >= max_depth:
             subfolders.clear()
     return sorted(found)
@@ -82,3 +109,69 @@ def check_images(meta: Metadata, image_root: Path) -> str:
             "Is the whole dataset attached? Restart the session and check again before training."
         )
     return f"all {expected} kept images of the {len(SPLITS)} splits found under {image_root}"
+
+
+class ArchiveError(ValueError):
+    """The archive holds a member `unpack_cache` refuses; nothing was extracted."""
+
+
+@dataclass(frozen=True)
+class Unpacked:
+    root: Path  # the data root: dest / CACHE_TOP
+    files: int
+    size: int  # bytes of the regular files
+    seconds: float
+
+    def __str__(self) -> str:
+        return (
+            f"unpacked {self.files} files ({self.size / (1 << 30):.2f} GiB) into {self.root} "
+            f"in {self.seconds:.1f} s"
+        )
+
+
+def _checked_members(tar: tarfile.TarFile, top: str) -> list[tarfile.TarInfo]:
+    """Every member, refusing any that is not a regular file or a folder, or whose name is
+    absolute, holds `..` or lies outside `top`. Counts and kinds only in the message (R03)."""
+    members = tar.getmembers()
+    refused: dict[str, int] = {}
+    for member in members:
+        path = PurePosixPath(member.name)
+        if not (member.isfile() or member.isdir()):
+            reason = "links or special files"
+        elif path.is_absolute():
+            reason = "absolute names"
+        elif ".." in path.parts:
+            reason = "names with .."
+        elif not path.parts or path.parts[0] != top:
+            reason = f"names outside {top}/"
+        else:
+            continue
+        refused[reason] = refused.get(reason, 0) + 1
+    if refused:
+        found = ", ".join(f"{n} {reason}" for reason, n in refused.items())
+        raise ArchiveError(f"the archive holds {found}; nothing was extracted")
+    return members
+
+
+def unpack_cache(archive: Path, dest: Path, top: str = CACHE_TOP) -> Unpacked:
+    """Extract the cache archive into `dest` and return the data root, `dest / top`, with counts
+    and the seconds taken. Refuses a `dest` under `KAGGLE_WORKING`, an existing `dest / top`, too
+    little free space and any member `_checked_members` refuses, all before writing anything."""
+    started = time.perf_counter()
+    if dest.resolve().is_relative_to(KAGGLE_WORKING):
+        raise ValueError(f"{dest} is under {KAGGLE_WORKING}, which is saved as output")
+    root = dest / top
+    if root.exists():
+        raise FileExistsError(f"{root} already exists: restart the session and run again")
+    with tarfile.open(archive, "r:") as tar:  # uncompressed: JPEGs do not compress
+        members = _checked_members(tar, top)
+        files = [m for m in members if m.isfile()]
+        size = sum(m.size for m in files)
+        dest.mkdir(parents=True, exist_ok=True)
+        free = shutil.disk_usage(dest).free
+        if free < size:
+            raise OSError(f"{dest} has {free} bytes free, the archive needs {size}")
+        tar.extractall(dest, members=members, filter="data")
+    if not root.is_dir():
+        raise ArchiveError(f"the archive holds no {top}/ folder")
+    return Unpacked(root, len(files), size, time.perf_counter() - started)
