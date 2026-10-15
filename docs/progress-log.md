@@ -2239,6 +2239,347 @@ coordinator gives it.
 **Next.** The user creates `cct20-512-tar` from the packing run's output (the steps in
 `scripts/kaggle_pack_cache.py`), then 6.04 on it at the coordinator's COMMIT.
 
+## 2026-10-15: session 8, item 8.02, the evaluation figures, the Grad-CAM overlays and the entry point (Opus 5.5)
+
+Taken ahead of its 10-18 date by the user's decision in the coordinator session. Main at 0968e1a
+(8.03 merged); 8.04 (`slices.py`) is reviewed on its branch but not on main, so it is not imported
+here (see "8.04" below).
+
+**Done.** `trailcam/evaluate/figures.py`, `trailcam/evaluate/evaluate.py`, the overlays added to
+`trailcam/evaluate/gradcam.py`, `per_camera_scores` added to `trailcam/evaluate/metrics.py`;
+`tests/test_figures.py` (21 tests) and two tests in `tests/test_metrics.py`. Rules, stated in the
+module docstrings:
+
+- `figures.py` takes scores, never images (R03, R04): the confusion matrix (rows true, columns
+  predicted, `CLASSES` order; counts in the cells, shaded by share of the row so rare classes
+  read; an absent class's row is empty and labelled "absent"), per-class bars (precision, recall,
+  F1 for the classes present, support under each name) and per-camera bars. The per-camera bars
+  show accuracy beside macro-F1 (R32), worst accuracy first, with the split's accuracy as a dashed
+  line; the item says "accuracy bars", and R32 asks for macro-F1 wherever a score is shown.
+  Colours from the reference data-viz palette: one blue ramp for the matrix, categorical slots 1
+  to 3 for the bars.
+- `per_camera_scores` (metrics.py): accuracy and macro-F1 per camera location, each location
+  scored on its own images, so macro-F1 averages over the classes present there.
+- Overlays (`gradcam.py`): `overlay` and `write_overlay` draw `trailcam.evaluate.gradcam.gradcam`,
+  the function attention-in-box scores (R26), on the photo's eval-transform output; the frame
+  shown is that output with the normalisation undone, so it is the 224 x 224 the model saw. For
+  display the map is divided by its maximum (attention divides by its sum: same shape) and
+  blended in orange with opacity up to 0.6; zero-map pixels are untouched. The PNG is the frame
+  beside the overlay, titled with the prediction, its confidence and, when a class is given,
+  correct or wrong. `assets_image` refuses any photo not under a folder named `assets` (the repo's
+  `assets/` by default), including one reached through `..` or a symbolic link, and its message
+  does not echo the path (R03, R04, R35). The repo's `assets/` was not created (8.05).
+- `evaluate.py`: `python -m trailcam.evaluate.evaluate --config <name> [--checkpoint <run>.pt
+  --data-root <cache>] --split val [--split trans_val] --out <dir> [--overlay
+  assets/<photo>[=<class>] ...] [--assets <dir>] [--config-file <config.yaml>]`. One eval pass
+  per split; `metrics.md` (per split: accuracy, macro-F1, classes present; per-class, per-camera
+  and confusion-matrix tables) and `<split>_confusion_matrix.png`, `<split>_per_class.png`,
+  `<split>_per_camera.png` under `--out`; overlays as `gradcam_overlay_<n>.png`, numbered, so no
+  photo file name (possibly an image id) reaches the output. A `fixture: true` config (dryrun)
+  uses the synthetic fixture and random weights; any other needs `--checkpoint` (loaded with
+  8.03's `load_checkpoint`, which refuses another model or class map) and `--data-root`. The
+  header gives the checkpoint sha256, split seed and split hash, as attention.md does.
+- Test-set isolation (R17): `--split` takes `val` and `trans_val` only (exit 2 otherwise); the
+  split object is deleted once the given splits' records are taken. 9.01 calls `predict`,
+  `write_report` and `write_overlays` directly.
+
+Decision to review: the item's step spells the config as `--config dryrun`, so here `--config`
+is the config name (`--config-name` is accepted as an alias) and the YAML path is
+`--config-file`. In `train.py`, `attention.py` and `slices.py`, `--config` is the YAML path. A path
+given to `--config` here fails with "no config named ...", exit 2, so a mix-up cannot run the
+wrong config; but the flag means two things across the four entry points.
+
+8.04: `evaluate.py` does not run attention (8.03) or the slices (8.04). Each has its own entry
+point with its own `--out`; slices takes arm A and arm B together, which a one-checkpoint entry
+point cannot. 8.04's `SplitPredictions` carries labels, predictions and locations, so a caller
+holding one scores it here with `SplitResult(run.split, run.labels, run.predictions,
+run.locations)`, no second pass (the hook is stated in the docstring).
+
+Steps: `uv run python -m trailcam.evaluate.evaluate --config dryrun --split val --out <scratch>`
+exit 0, writes `metrics.md`, `val_confusion_matrix.png`, `val_per_class.png`,
+`val_per_camera.png`, and `docs/figures/` does not exist before or after. `uv run pytest
+tests/test_figures.py` 21 passed. The figures were looked at on the fixture and on a made-up
+1,500-image trans_val score set (scratchpad only, not committed). Each of these mutations fails a
+test: no assets containment check, any root name accepted, the overlay map squared or taken on
+a flipped image, the frame denormalised without the mean, cameras ordered by id, an absent row
+divided by its zero total, the overlay paths checked only after evaluating, `cis_test` added to
+`CLI_SPLITS`, trans_val read when only val is asked for, and per-camera macro-F1 computed over
+the whole split. The last two first survived and the tests were tightened. `check.sh` green
+(668 passed). Invariants: R04 and R26 (the rows naming 8.02) have their test cells filled; R03
+and R35 now cite `tests/test_figures.py`.
+
+Process note: during the mutation checks a helper restored files with `git checkout`, which
+reset the uncommitted `gradcam.py` to HEAD; it was restored from a copy taken just before, and
+the two mutations it left in untracked files were undone by hand. The final diff was re-read and
+the full suite rerun afterwards.
+
+**For 8.06: an evaluation notebook is needed (not built; needs your OK).**
+`notebooks/kaggle_train.ipynb` cannot take it: `tests/test_notebook.py` (R17) forbids an
+evaluation call in any of its code cells. A separate `notebooks/kaggle_evaluate.ipynb` would:
+
+1. install `trailcam` from the public repo at a pinned commit, and clone the repo at the same
+   commit for `config.yaml` and `assets/` (8.05 must be merged first; a wheel ships neither);
+2. attach the 512 px cache dataset and the checkpoints (the training runs' outputs as a Kaggle
+   dataset), and check each checkpoint's sha256 against its ledger row;
+3. per checkpoint: `python -m trailcam.evaluate.evaluate --config <name> --config-file
+   <clone>/config.yaml --checkpoint <run>.pt --data-root <cache> --split val --split trans_val
+   --out /kaggle/working/eval/<run>`, plus `--overlay <clone>/assets/<photo>=<class>` four times
+   and `--assets <clone>/assets` on the checkpoint the overlays come from; then
+   `python -m trailcam.evaluate.attention` with the same checkpoint;
+4. once per seed: `python -m trailcam.evaluate.slices` with the arm A and arm B checkpoints;
+5. zip `/kaggle/working/eval` for download. You then copy the chosen PNGs into `docs/figures/`
+   (40 files, 20 MB in all; one checkpoint's val set is 3 PNGs + 4 overlays + the attention
+   histogram + 2 feature maps).
+
+It would come with a test like `tests/test_notebook.py`: no code cell names cis_test or
+trans_test, outputs cleared.
+
+Notes, not fixed:
+
+- 11.01: `gradcam.py` now imports matplotlib (for `write_overlay`) and torchvision's eval
+  transform. If the Space imports it for its optional overlay, `space/requirements.txt` needs
+  matplotlib; `overlay()` returns PIL images, which Gradio can show without a PNG.
+- 9.01 must call `write_overlays` (like `attention_pass`) outside `torch.inference_mode()`.
+
+**Next.** Review 8.02. Then 8.04 merge, 8.05 (your photos into `assets/`), and the 8.06
+notebook if you approve it.
+
+Review: tier 2, `/review-session 8.02`
+
+Review: tier 2, ran `/review-session 8.02` (0968e1a..d3ee3ca; code-reviewer Opus xhigh,
+risk-reviewer Fable high). risk-reviewer found nothing. code-reviewer found one low: R17's
+"where" column did not name `evaluate.py` or `attention.py`, so a later diff to either alone would
+not bring the test-isolation scenarios to a reviewer. It also raised a note for 8.06: the
+overlay's left panel was the unblended eval crop of the `assets/` photo, which would have put a
+raw dataset image into `docs/figures/`. Scenarios R01, R03, R04, R05, R17, R26, R32, R33, R35
+and R42 to R45 held. Known gaps passed: R04 and R35 the real photos and the `docs/figures/` copy
+(8.05, 8.06), R26 and R32 the final scoring's calls (9.01), R35 the demo and the Space.
+
+Fix 79b9594 (the user's decisions, via the coordinator):
+
+- R17's "where" column now names `evaluate.py`, `attention.py` and item 8.02, and R32's
+  `evaluate.py`. The user approved the rule-map change.
+- The overlay PNG is now one panel, the blended image, and `Overlay` no longer keeps the
+  unblended frame. A test captures the saved figure and checks it has one axes holding the
+  blended image. This supersedes "the eval frame beside the overlay" above.
+- 8.04 merged first (c303041). I did not fold its slices into the val report: slices takes arm A
+  and arm B together, and `evaluate.py` works on one checkpoint. A test shows that 8.04's
+  `SplitPredictions` scores in `evaluate.py` without a second pass. That is the hook for 8.06.
+
+Before the fix I merged main twice through the sync tool: c303041 (8.04) and ef9100d (6.08).
+Both times the conflicts were in this log and in the test cells of R03 and R04. Both sides were
+kept, and the other items' entries come first.
+
+Fix round: `/review-session cb258d4..79b9594 8.02` (the gradcam.py and test_figures.py the
+high-stakes files). Both reviewers found the same low independently. A map that is zero
+everywhere left the photo unblended, so the one-panel PNG would have been the raw photo.
+code-reviewer found a second low: R17's and R32's test cells did not name the tests guarding the
+newly listed modules. Both were fixed in c8a9a08, after merging main at 61f1ecc (6.08's review;
+the one conflict was in this log). The fixes:
+
+- `overlay` raises `ZeroMapError`, with no path in the message, and no PNG is written. The test
+  fails if the refusal is removed.
+- R17's test cell now names the split refusals in `tests/test_figures.py` and
+  `tests/test_attention.py`. R32's names `per_camera_scores` and `test_render_metrics_by_hand`.
+
+Scenarios R01, R03, R04, R05, R17, R26, R35 and R42 to R45 held. No third round. `check.sh`
+green (724 passed).
+
+Notes, recorded and not fixed:
+
+- mypy on tests: `tests/` is outside `check.sh`'s mypy scope. Run there, it reports 4 `arg-type`
+  errors at `tests/test_metrics.py:180-181` (`pytest.approx` in a `CameraScores`) and 3 at the
+  `Figure.savefig` wrapper in `tests/test_figures.py`. The tests are correct at runtime. These
+  matter only if mypy is widened to `tests/`.
+- 8.06 needs `notebooks/kaggle_evaluate.ipynb` (described above). It still needs the user's OK.
+- 11.01: `gradcam.py` imports matplotlib. `overlay()` returns the blended PIL image, which Gradio
+  shows without a PNG.
+
+For the learning journal (`docs/learning-journal.md` is not on main yet):
+
+- A figure can leak data through the panel beside the one you look at: the overlay's raw left
+  panel would have put a dataset photo into `docs/figures/` with every test still green.
+- "Never the raw photo" needs the degenerate input too: a zero heat map blends to nothing, so
+  the guard has to refuse it, not just draw it.
+- A review map only works if the rows name the files: a new module that enforces a rule must be
+  added to that rule's "where" and test columns, or later diffs to it skip the scenario.
+- Restore mutation tests by copying files, never with `git checkout`: it silently reset
+  uncommitted work, which a backup taken just before recovered.
+
+**Next.** The user merges this branch. Then 8.05 (photos into `assets/`) and the 8.06 evaluation
+notebook, if approved.
+
+## 2026-10-15: session 8, item 8.07, the data charts (Opus 5.5)
+
+New item, approved by the user in the coordinator session on 2026-10-15 and added to
+`docs/progress.json` as 8.07 (session 8, owner claude, due 2026-10-17). Why: the data was
+inspected and cleaned in numbers and tests (items 3.01 to 3.05) but no chart existed; the user
+wants the exploration visible, for learning and for the presentation's data slide.
+
+**Done.** `trailcam/data/datavis.py` (new). Placed in `trailcam/data/`, not `trailcam/evaluate/`:
+it reads the metadata and the split only, no model, prediction or image, so it belongs with the
+data code and keeps imports one way (`evaluate` uses `data`, never the reverse); `.claude/rules/data.md`
+covers both folders. `python -m trailcam.data.datavis --root <dir> --seed 42 --out <dir>
+[--sidecar day_night.json]` writes five PNGs and prints counts only:
+
+1. `class_counts.png`: each class's share of each split with its count (opossum 20% of train;
+   raccoon 25% of trans_test against 7% of train; trans_val lacks squirrel, car and rodent).
+2. `camera_locations.png`: images per camera stacked by split, cis vs trans. Cameras are labelled
+   C1 to C10 and T1 to T10 by image count; location ids are never drawn (R03). One cis camera
+   holds 9,579 kept images, the smallest 891; trans_val is a single camera.
+3. `day_night.png`: night share of the kept images per split and kept images per capture hour by
+   day and night, hour 12 annotated. At first no `day_night.json` was in the main checkout's
+   `data/`, so the chart drew the 6.03 cache build's numbers (all 57,864 annotated images before
+   the drop rules, per official file). Then the coordinator reported that the user had copied the
+   6.03 sidecar to `data/day_night.json` (gitignored, never committed) and asked for kept-image
+   shares, with both sets in the data card. The committed chart is now drawn with `--sidecar`.
+   Kept images, seed 42: train 8246/13587 = 0.607, val 1436/2394 = 0.600, trans_val 1014/1603 =
+   0.633, cis_test 9066/14478 = 0.626, trans_test 15384/21473 = 0.716, all 35146/53535 = 0.657;
+   hour 12 has 2,990 night frames of 4,525. These match the coordinator's counts. Without a
+   sidecar the chart falls back to the 6.03 numbers and its subtitle says so.
+4. `box_fill.png`: box width x height as fractions of the image, log bins, cis vs trans, arm B's
+   0.2 to 1.0 range shaded. 93% of the 12,177 train boxes cover less than 20% of the image (median
+   near 2 to 3%), so arm B's crop zooms in on almost every boxed image it takes; a second bump
+   near the whole frame.
+5. `burst_length.png`: sequences and kept images by `seq_num_frames` (4,787 single frames,
+   15,969 bursts of 3, 196 of 5); 48,701 of the 53,535 kept images (91%) share their burst with
+   another kept image, and 222 bursts have frames in both official train and cis_val.
+
+Every chart carries the Beery et al. 2018 citation and the licence in a footer. Colours: the
+dataviz reference palette, one colour per split across all charts, validated with its checker
+(adjacent pairs pass; yellow is below 3:1 on white, so every yellow bar has a label or legend).
+`ARM_B_FILL` is a copy of `boxcrop.FILL` because only the training transform may import
+`boxcrop` (R24); a test checks the two agree. The 6.03 numbers are constants
+(`CACHE_BUILD_NIGHT_BY_FILE`, `CACHE_BUILD_NIGHT_BY_HOUR`).
+
+The five PNGs are committed in `docs/figures/` (384 KB of the 20 MB budget, 5 of 40 files),
+generated from the real metadata and the sidecar with seed 42. `docs/data-card.md`: "Day and
+night" now gives, first, the kept images per split and per hour (sidecar, seed 42) and, second,
+the 6.03 build's numbers per official file and per hour, labelled as all annotated images before
+the drop rules; the channel-spread gap and the 551 single-band images; and the hour-12 note. A
+"Figures" section lists the charts and the command. Item 6.03 stays the user's and is not
+flipped.
+
+`notebooks/kaggle_look_at_data.ipynb` (new, outputs cleared): a separate notebook rather than a
+section of `kaggle_train.ipynb`, because the training notebook is a Save & Run All batch run whose
+tests forbid definitions and extra calls, and a photo grid there would run and be stored with every
+training version. It installs `trailcam` from the public repo at `COMMIT`, loads the metadata with
+the sidecar, shows a grid of train photos per class, day vs night (titles: class and day or night
+only), then runs the datavis CLI with the sidecar into `/kaggle/working/figures` for the
+kept-image night shares. Its markdown says never to commit it with outputs (the guard refuses
+them anyway, R41) and that photos never go into `docs/figures/`. Only the train split is read for
+photos (R17). Smoke-run locally on the synthetic fixture with the install stubbed: every cell ran.
+
+`tests/test_datavis.py` (new, 18 tests): the CLI on the fixture (with and without the sidecar)
+writes exactly the five PNGs under `--out` and nothing under `docs/figures/`, from a fixture with
+no image file; no drawn text or printed line holds an image id, seq id or file name, and on a
+fixture with locations shifted to distinctive numbers no location id is drawn (CCT20's own
+location ids are small numbers that collide with counts, so they are checked there); camera tick
+labels are C1, C2, T1; every chart has the citation; class counts, camera totals and ranking,
+night counts from the sidecar, the fallback to the 6.03 numbers, box fill = w x h, burst counts;
+the 6.03 numbers sum to 57,864 and 36,776 and hour 12 is (3120, 5077); on the real metadata the
+summary gives 53,535 images, 10 + 10 cameras, 47,729 boxes, 20,952 sequences, 222 shared, 48,701
+with a sibling, and the raw annotation files hold the 6.03 build's images per file and per hour;
+the look notebook has no outputs, says never to commit them, cites the data and reads the train
+split only. Mutations that each fail a test: location ids as labels, no citation, big boxes
+dropped, singletons counted as siblings, cameras unranked, a typo in hour 12, the sidecar ignored.
+
+`docs/review/invariants.md`: `trailcam/data/datavis.py` added to the "where" of R03 and R04 (and
+8.07 to R04's items); test cells of R03, R04, R06, R17 and R41 name `tests/test_datavis.py`.
+
+Steps: the CLI wrote the five PNGs into a tmp `--out` on the fixture (tests) and into
+`docs/figures/` on the real metadata; `uv run pytest tests/test_datavis.py` 18 passed (the 18th
+pins the kept-image night counts from the sidecar in `data/`, and fails locally if it is missing);
+`uv run python scripts/guard_data.py --all` passed with the PNGs staged; `check.sh` green.
+`tests/test_notebook.py` unchanged and passing. Main had not moved, so no sync was needed.
+
+For the learning journal (`docs/learning-journal.md` does not exist on main yet):
+
+- Data charts (8.07): five PNGs in `docs/figures/`, from metadata only; regenerate with
+  `uv run python -m trailcam.data.datavis --root <data dir> --seed 42 --sidecar <data
+  dir>/day_night.json --out docs/figures`.
+- `class_counts.png` and `camera_locations.png`: the classes and the cameras are both imbalanced,
+  and the trans cameras see a different mix (raccoon, bobcat), so accuracy alone flatters.
+- `day_night.png`: 60 to 72% of kept frames per split are infrared night shots (trans_test
+  the most), and hour 12 holds 2,990 night frames: the camera clock is wrong on some cameras, so
+  day/night is read from the pixels.
+- `box_fill.png`: most animals cover 1 to 5% of the frame, which is why arm B crops in on the box.
+- `burst_length.png`: 91% of images have a near-identical sibling in their burst, so splitting by
+  image would leak; the split goes by sequence.
+
+**Next.** 8.02, 8.04 (the day/night slices measure accuracy by night and day).
+
+Review: tier 2, `/review-session 8.07`
+
+Coordinator request after the item commit (from the user, 2026-10-15): the user copied the 6.03
+sidecar to the main checkout's `data/day_night.json` (gitignored). `day_night.png` was redrawn
+with it (kept images per split, seed 42), the data card gives both sets of numbers (kept images
+per split first, all annotated images per official file second), and a real-data test pins the
+kept-image counts. Folded into the item commit (0bce6a5) before any review.
+
+Review: tier 2, ran `/review-session 8.07` (0968e1a..0bce6a5; code-reviewer Opus xhigh,
+risk-reviewer Fable high). risk-reviewer found nothing. code-reviewer found two lows, fixed in
+fade23f with the user's go-ahead via the coordinator:
+
+- R03 listed "a notebook cell displays a batch of training images" as a failure while the look
+  notebook does exactly that. R03 now records the photo grid as the one exception, with its
+  conditions: Kaggle only, train split only, titles with the class and day or night (no file name
+  or id), outputs never committed (the guard refuses them).
+- The 6.03 night counts were never checked against the sidecar, and a docstring said the sum test
+  checked them. A real-data test now recomputes night per official file and per capture hour from
+  the sidecar and the raw annotation files, and requires every annotated image to have a flag;
+  both constants match. Swapping two hours' night counts fails it. The docstring is corrected.
+- Not a finding, fixed with the user's approval: `docs/plan.md` section 2 said "About half the
+  images are night shots"; it now gives the measured shares (65.7% of kept images, 63.6% of all
+  annotated images; trans_test 71.6% against cis_test 62.6% of kept images). Spec changed: plan
+  §2. The rows citing it (R01, R05, R06, R15, R21, R23, R32) were re-read; none states a night
+  share, so none changes.
+
+Scenarios R01, R03, R04, R06, R07, R16, R17, R27, R37, R38, R41 to R45 held for both reviewers;
+known gaps passed: R04 the figure and Grad-CAM writers (8.02), R06 the Space and the slides
+(11.01, 12.02), R17 the scoring script (9.01). Main was merged before the fix at c303041 (8.04;
+conflicts in this log and in R03, R04 and R17, both sides kept) and after it at ef9100d (6.08;
+conflicts in this log and R03).
+
+Fix round: `/review-session 054f7be..fade23f 8.07` (`tests/test_datavis.py` the one high-stakes
+file). Fixed in e1f67cf, after merging main at 61f1ecc (conflict in this log only):
+
+- Both reviewers, low: the photo-title test searched only the source text of title calls, so a
+  file name passed through a variable, a label, `ax.text` or a `print` slipped by. The test now
+  walks every code cell's syntax tree: no image id, seq id or location as an attribute, a name or
+  a string key, and `file_name` only inside the one `Image.open(...)` call. Each of those four
+  bypasses fails it. R03's test cell says so.
+- code-reviewer, low: plan section 5's augmentation row said "half the data is infrared". With the
+  user's approval it now reads "about two thirds of the kept images are infrared (section 2)".
+  Spec changed: plan §5. The rows citing it (R17, R20, R22, R27, R31, R37, R38, R40) were
+  re-read; R20 gives the grayscale probability without a share, so none changes.
+- code-reviewer, outside the range: the data card's "About six in ten kept images" became two in
+  three (0.657), matching its table.
+
+Scenarios R01, R03, R04, R42 to R45 held for both. No third round (the user's decision).
+
+Notes, recorded and not fixed:
+
+- R45: code-reviewer reported one stray no-op command (`uv run --quiet python -c "pass"`)
+  outside its allowed list in the fix round; it read nothing. The harness flagged risk-reviewer's
+  fix-round report for a settings-shaped pattern; the only match was its mention of
+  `.claude/settings.json` in the R43 result, with no instruction in it.
+- The look notebook reads the loose 6.03 dataset (`cct20-512`), which still exists and is the
+  training notebook's fallback; since 6.08, training reads the archive dataset (`cct20-512-tar`).
+  Moving the look notebook to the archive is the user's call.
+- `uv run mypy tests/test_datavis.py` reports two `no-untyped-call` errors on
+  `FigureCanvasAgg.draw`; `check.sh` type-checks `trailcam/` and the scripts only, not `tests/`.
+
+Also approved by the user via the coordinator, for item 6.03 (the user's): `docs/plan.md`
+section 11, open question 3 (tarball layout) is closed with the 6.03 cache build's output (1
+directory, 57,864 `.jpg` files, all at depth 1 in one top-level folder). With the data card's
+"Day and night" section, it is what 6.03 still needed; the user flips 6.03 after the merge. Spec changed: plan §11; no row cites it.
+
+`check.sh` green at e1f67cf: 718 passed. `docs/learning-journal.md` is still not on main, so the
+learning-journal lines stay above, under "For the learning journal".
+
+**Next.** 8.02, then 9.01.
+
 ## 2026-10-15: session 6, item 6.09, a ledger test for the life of the ledger, the small CNN row, the 6.08 wording (Opus 5.5)
 
 New item, approved by the user in the coordinator session on 2026-10-15 and added to
