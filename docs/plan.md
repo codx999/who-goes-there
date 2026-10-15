@@ -77,7 +77,9 @@ evaluation, the demo and the Space. Nothing redefines it inline.
 augmentation and the attention score, never a model input), the capture hour from `date_captured`,
 and a day/night flag computed during the Kaggle resize from the pixels (infrared frames are
 grayscale JPEGs whose three channels are near-identical; the clock alone is unreliable, hour 12
-holds about twice as many images as its neighbours). About half the images are night shots.
+holds about twice as many images as its neighbours). Most images are night shots: 65.7% of the
+kept images and 63.6% of all annotated images; trans_test is 71.6% night against cis_test's 62.6%
+of kept images (`docs/data-card.md`, "Day and night").
 
 Boxes are stored once, in `trailcam/data/metadata.py`, as fractions (x, y, width, height) of the
 image's original `width` and `height`, so the same box holds on the 1024 px tarball, the 512 px

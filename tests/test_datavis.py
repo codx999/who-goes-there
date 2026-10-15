@@ -37,6 +37,7 @@ from trailcam.data.metadata import (
     capture_hour,
     find_annotation_files,
     load_metadata,
+    load_night_flags,
 )
 from trailcam.data.split import CIS_SPLITS, SPLIT_NAMES, TRANS_SPLITS, Split, make_split
 from trailcam.data.synthetic import write_synthetic_metadata
@@ -321,7 +322,7 @@ def test_real_sidecar_gives_the_data_card_s_kept_image_night_shares() -> None:
 
 def test_real_annotation_files_hold_the_cache_build_s_images_per_hour() -> None:
     """The cache build's image counts per file and per hour are the annotation files' own, before
-    the drop rules (the night counts come from the pixels and are checked by the sum test)."""
+    the drop rules (the night counts are checked against the sidecar by the next test)."""
     files = find_annotation_files(Path(real_root()))
     per_file = {}
     per_hour = Counter[int]()
@@ -331,6 +332,34 @@ def test_real_annotation_files_hold_the_cache_build_s_images_per_hour() -> None:
         per_hour.update(capture_hour(image["date_captured"]) for image in images)
     assert per_file == RELEASED
     assert [per_hour[h] for h in range(24)] == [t for _, t in CACHE_BUILD_NIGHT_BY_HOUR]
+
+
+def test_real_sidecar_holds_the_cache_build_s_night_counts_per_file_and_hour() -> None:
+    """The 6.03 numbers recomputed from the sidecar and the raw annotation files, before the drop
+    rules: night per official file and per capture hour (review 8.07). Every annotated image must
+    have a flag, so no image can drop out of the count unseen."""
+    root = Path(real_root())
+    sidecar = root / "day_night.json"
+    if not sidecar.is_file():
+        pytest.fail("no day_night.json in the data root (the 6.03 sidecar)", pytrace=False)
+    flags = load_night_flags(sidecar)
+    per_file: dict[str, tuple[int, int]] = {}
+    per_hour = {hour: [0, 0] for hour in range(24)}
+    missing = 0
+    for split, path in find_annotation_files(root).items():
+        night = images = 0
+        for image in json.loads(path.read_text())["images"]:
+            flag = flags.get(image["id"])
+            missing += flag is None
+            counts = per_hour[capture_hour(image["date_captured"])]
+            counts[0] += bool(flag)
+            counts[1] += 1
+            night += bool(flag)
+            images += 1
+        per_file[split] = (night, images)
+    assert missing == 0
+    assert per_file == dict(CACHE_BUILD_NIGHT_BY_FILE)
+    assert tuple((n, t) for n, t in per_hour.values()) == CACHE_BUILD_NIGHT_BY_HOUR
 
 
 # The look-at-the-data notebook (runs on Kaggle only; its shape is checked here)
@@ -369,6 +398,22 @@ def test_the_look_notebook_shows_train_photos_only() -> None:
         assert f'records["{name}"]' not in every
     assert 'split.records["train"]' in every
     assert every.count(".records[") == 1
+
+
+def test_the_look_notebook_s_photo_titles_name_no_file_or_id() -> None:
+    """R03's exception for the photo grid: its titles show the class and day or night only."""
+    _, code, _ = _notebook()
+    titles = [
+        ast.unparse(node)
+        for tree in (ast.parse(source) for source in code)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr in ("set_title", "suptitle", "title")
+    ]
+    assert titles
+    for title in titles:
+        assert not any(key in title for key in ("file_name", "image_id", "seq_id", "location"))
 
 
 def test_the_look_notebook_s_trailcam_names_exist() -> None:
