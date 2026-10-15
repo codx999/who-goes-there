@@ -251,8 +251,9 @@ def test_the_unpack_cell_sets_data_root_or_keeps_the_loose_dataset(
     assert _run_unpack_cell(None, tmp_path / "other", loose)["DATA_ROOT"] == loose
     assert not (tmp_path / "other").exists()
 
-    with pytest.raises(FileNotFoundError, match="is not a file"):
+    with pytest.raises(FileNotFoundError, match="is not a file") as absent:
         _run_unpack_cell(tmp_path / "absent.tar", tmp_path / "third", loose)
+    assert "is the output of the packing notebook attached?" in str(absent.value)  # not a dataset
 
 
 def test_the_unpack_cell_refuses_the_loose_dataset_only_in_an_interactive_session(

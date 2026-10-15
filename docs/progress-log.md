@@ -2652,3 +2652,36 @@ For the learning journal (`docs/learning-journal.md` is not on main yet; testing
 
 **Next.** Review tier 2. After the merge, the user flips 6.04; the next GPU run uses the
 notebook's new `CACHE_ARCHIVE` default at the commit the coordinator gives.
+
+## 2026-10-15: review 6.09: one low fixed, main merged (Opus 5.5)
+
+Tier 2 (`/review-session` on f414912..6f53b6c): code-reviewer (Opus 5.5 xhigh) on the range,
+risk-reviewer (Fable 5.1 high) on the notebook, `scripts/kaggle_pack_cache.py`,
+`trailcam/data/cache.py`, `tests/test_notebook.py` and `tests/test_train.py`. Scenarios R01, R03,
+R06, R07, R16, R17, R25, R27, R37, R38, R40, R41 and R42 hold for both. Between them they
+confirmed the row's config hash (`config_hash(load_config("small_cnn"))` at HEAD) and split hash
+(`REAL_HASH` of `tests/test_split.py`). Risk-reviewer found nothing.
+
+Code-reviewer, low: `docs/plan.md` section 2 still said the archive is "saved as a second
+private dataset, `cct20-512-tar`", the route the notebook and the packing script now say fails,
+and the notebook's missing-archive message asked "is the archive dataset attached?". The user's
+decision (via the coordinator): fix it here; the plan.md edit is approved.
+
+**Done.**
+
+- Main merged (3a4fcf3: 8.02, 8.07 and the 6.03 flip) with the app's sync. Two conflicts, both
+  sides kept: `docs/progress-log.md` (main's 8.02 and 8.07 entries, then 6.09) and R40/R41 of
+  `docs/review/invariants.md` (6.09's R40 test cell, 8.07's R41 test cell).
+- `docs/plan.md` section 2: the tar is attached as the packing notebook's output (Add Input >
+  Notebook, at `/kaggle/input/notebooks/<user>/<notebook>/cct20_512.tar`), not as a dataset,
+  since Kaggle extracts a `.tar` that becomes a dataset. Spec changed: plan section 2.
+- Notebook, unpacking cell: a missing archive now says "is the output of the packing notebook
+  attached?". The first wording, with "notebook's", broke the cell (an apostrophe inside the
+  f-string's single-quoted literal); `tests/test_notebook.py` caught it when it parsed the cells.
+  `test_the_unpack_cell_sets_data_root_or_keeps_the_loose_dataset` now pins the message.
+- Outputs cleared; nbconvert `--clear-output` leaves the notebook unchanged. `check.sh` green.
+
+The fix touches `docs/plan.md` and the notebook (high-stakes), so one fix round runs on the fix
+range; the user starts it.
+
+**Next.** The fix round, then merge; the user flips 6.04 after the merge.
