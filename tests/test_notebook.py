@@ -13,6 +13,7 @@ import importlib
 import importlib.util
 import io
 import json
+import os
 import re
 import subprocess
 import sys
@@ -212,6 +213,8 @@ def _run_unpack_cell(
         attached.mkdir(exist_ok=True)
     names: dict[str, object] = {
         "Path": Path,
+        "os": os,
+        "sys": sys,
         "INPUT": attached,
         "DAY_NIGHT_SIDECAR": DAY_NIGHT_SIDECAR,
         "sidecar_folders": sidecar_folders,
@@ -251,12 +254,13 @@ def test_the_unpack_cell_sets_data_root_or_keeps_the_loose_dataset(
         _run_unpack_cell(tmp_path / "absent.tar", tmp_path / "third", loose)
 
 
-def test_the_unpack_cell_refuses_the_loose_dataset_attached_next_to_the_archive(
-    tmp_path: Path,
+def test_the_unpack_cell_refuses_the_loose_dataset_only_in_an_interactive_session(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Review 6.08: with the loose cct20-512 dataset still attached, a committed run copies its
-    57,864 files before the first cell; the cell refuses with a count, before unpacking. With
-    `CACHE_ARCHIVE = None` the loose dataset is the one read, so nothing is refused."""
+    """Review 6.08: with the loose cct20-512 dataset still attached next to the archive, a
+    rehearsal (run type Interactive) is refused with a count, before unpacking. A committed run
+    (Batch, or any other value) has already paid for its start, so it warns on stderr and
+    unpacks (fix round). With `CACHE_ARCHIVE = None` the loose dataset is the one read."""
     attached = tmp_path / "input"
     mount = attached / "datasets" / "codx888" / "cct20-512" / "cct20_512"
     mount.mkdir(parents=True)
@@ -266,11 +270,26 @@ def test_the_unpack_cell_refuses_the_loose_dataset_attached_next_to_the_archive(
         top = tarfile.TarInfo(CACHE_TOP)
         top.type = tarfile.DIRTYPE
         tar.addfile(top)
+
+    monkeypatch.setenv("KAGGLE_KERNEL_RUN_TYPE", "Interactive")
     with pytest.raises(RuntimeError, match="1 folder\\(s\\) under .* still attached") as refused:
         _run_unpack_cell(archive, tmp_path / "local", mount, attached)
     assert "Remove it from the inputs" in str(refused.value)
     assert not (tmp_path / "local").exists()
-    assert _run_unpack_cell(None, tmp_path / "local", mount, attached)["DATA_ROOT"] == mount
+
+    for run_type, local in (("Batch", "batch"), (None, "unset")):
+        if run_type is None:
+            monkeypatch.delenv("KAGGLE_KERNEL_RUN_TYPE")
+        else:
+            monkeypatch.setenv("KAGGLE_KERNEL_RUN_TYPE", run_type)
+        capsys.readouterr()
+        names = _run_unpack_cell(archive, tmp_path / local, mount, attached)
+        assert names["DATA_ROOT"] == tmp_path / local / CACHE_TOP
+        err = capsys.readouterr().err
+        assert f"{run_type or 'unknown'} run, continuing" in err and "still attached" in err
+
+    monkeypatch.setenv("KAGGLE_KERNEL_RUN_TYPE", "Interactive")
+    assert _run_unpack_cell(None, tmp_path / "none", mount, attached)["DATA_ROOT"] == mount
 
 
 def test_the_cache_cell_searches_any_depth_and_checks_every_image() -> None:
