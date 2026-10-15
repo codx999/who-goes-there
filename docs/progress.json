@@ -89,7 +89,7 @@
     {"id": "6.04", "session": 6, "owner": "user", "due": "2026-10-15",
      "description": "Run the small CNN on Kaggle with the full small-CNN config",
      "steps": "manual: the ledger row is pasted into docs/ledger.md (header from 5.03) with seeds, split hash, epochs run, best epoch, val accuracy and macro-F1, trans_val accuracy and the checkpoint hash; the checkpoint is kept as a Kaggle output",
-     "passes": true},
+     "passes": false},
     {"id": "6.05", "session": 6, "owner": "user", "due": "2026-10-15",
      "description": "Run resnet18 arm A (control) seed 0 on Kaggle",
      "steps": "manual: ledger row pasted into docs/ledger.md; the checkpoint is kept as a Kaggle output",
