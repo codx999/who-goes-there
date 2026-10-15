@@ -34,6 +34,7 @@ from trailcam.evaluate.gradcam import (
     ASSETS_DIR,
     OVERLAY_ALPHA,
     OVERLAY_COLOUR,
+    ZeroMapError,
     assets_image,
     blend,
     denormalise,
@@ -250,6 +251,30 @@ def test_the_overlay_refuses_a_photo_outside_assets(tmp_path: Path) -> None:
     with pytest.raises(ValueError):
         write_overlay(model, photo, tmp_path / "o.png", assets_root=tmp_path / "assets")
     assert not (tmp_path / "o.png").exists()
+
+
+def test_a_zero_map_is_refused_and_no_png_is_written(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review 8.02's fix round: a map that is zero everywhere would leave the photo unblended,
+    so the PNG would be the raw photo; it is refused, with a message that names no path."""
+    assets = tmp_path / "assets"
+    photo = _photo(assets / "a.jpg")
+    model = build_model("small_cnn")
+    real = gradcam.gradcam
+
+    def zero(
+        model: nn.Module, images: Tensor, layer: nn.Module | None = None
+    ) -> tuple[Tensor, Tensor]:
+        maps, logits = real(model, images, layer)
+        return torch.zeros_like(maps), logits
+
+    monkeypatch.setattr(gradcam, "gradcam", zero)
+    out = tmp_path / "out" / "overlay.png"
+    with pytest.raises(ZeroMapError) as raised:
+        write_overlay(model, photo, out, assets_root=assets)
+    assert "a.jpg" not in str(raised.value) and str(tmp_path) not in str(raised.value)
+    assert not out.exists() and not out.parent.exists()
 
 
 # evaluate.py

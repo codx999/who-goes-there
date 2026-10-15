@@ -30,7 +30,9 @@ maximum (attention-in-box divides by its sum; the two differ by a constant facto
 shown is the shape scored) and blended in one colour whose opacity grows with the map, up to
 `OVERLAY_ALPHA`; where the map is zero the photo is untouched. The PNG holds the blended image
 only, never the unblended photo: generated figures go to `docs/figures/`, which must never hold a
-raw dataset image (`.claude/rules/data.md`; the user's decision, review 8.02).
+raw dataset image (`.claude/rules/data.md`; the user's decision, review 8.02). A map that is zero
+everywhere would leave the photo unblended, so it is refused (`ZeroMapError`, review 8.02's fix
+round).
 """
 
 from __future__ import annotations
@@ -149,6 +151,11 @@ def blend(frame: Image.Image, cam: Tensor) -> Image.Image:
     return Image.fromarray(mixed.round().clip(0, 255).astype(np.uint8), "RGB")
 
 
+class ZeroMapError(ValueError):
+    """The top-1 Grad-CAM map is zero everywhere, so an overlay would be the unblended photo. The
+    message names no path (R03)."""
+
+
 @dataclass(frozen=True)
 class Overlay:
     """One photo's overlay: the eval frame with the top-1 class's Grad-CAM map blended in, and
@@ -162,7 +169,8 @@ class Overlay:
 
 def overlay(model: nn.Module, path: Path, assets_root: Path = ASSETS_DIR) -> Overlay:
     """The Grad-CAM overlay of the photo at `path`, which must lie under `assets_root`
-    (`assets_image`). Puts `model` in eval mode, as `gradcam` needs."""
+    (`assets_image`). Puts `model` in eval mode, as `gradcam` needs. Raises `ZeroMapError` when
+    the map is zero everywhere: `blend` would return the photo as it is."""
     source = assets_image(path, assets_root)
     with Image.open(source) as opened:
         photo = opened.convert("RGB")
@@ -171,6 +179,8 @@ def overlay(model: nn.Module, path: Path, assets_root: Path = ASSETS_DIR) -> Ove
     batch = EvalTransform()(photo).unsqueeze(0)
     model.eval()
     maps, logits = gradcam(model, batch.to(device))
+    if float(maps[0].max()) <= 0.0:
+        raise ZeroMapError("the Grad-CAM map of this photo is zero everywhere: no overlay drawn")
     confidence, prediction = logits[0].float().softmax(dim=0).max(dim=0)
     image = blend(denormalise(batch[0]), maps[0])
     return Overlay(image, int(prediction), float(confidence))
