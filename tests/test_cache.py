@@ -1,16 +1,31 @@
-"""trailcam/data/cache.py: the cache's sidecar search and image completeness check (item 6.07).
+"""trailcam/data/cache.py: the cache's sidecar search and image completeness check (item 6.07),
+and the archive finder and safe unpacking (item 6.08).
 
 Run on the synthetic fixture, which writes one JPEG per image of its five annotation files, the
-way the 512 px cache of item 6.01 holds one per image of CCT20.
+way the 512 px cache of item 6.01 holds one per image of CCT20. The unpacking tests build tiny
+tars in memory: a normal one, and ones with a traversal, an absolute name, a link or a member
+outside the top folder, each refused before anything is written.
 """
 
+import io
+import tarfile
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+from trailcam.data import cache as cache_module
 from trailcam.data import synthetic
-from trailcam.data.cache import MAX_DEPTH, check_images, missing_images, sidecar_folders
+from trailcam.data.cache import (
+    CACHE_TOP,
+    MAX_DEPTH,
+    ArchiveError,
+    archive_files,
+    check_images,
+    missing_images,
+    sidecar_folders,
+    unpack_cache,
+)
 from trailcam.data.metadata import DAY_NIGHT_SIDECAR, SPLITS, Metadata, load_metadata
 from trailcam.train import train
 from trailcam.train.config import load_config
@@ -124,3 +139,103 @@ def test_the_sidecar_search_follows_a_linked_folder(tmp_path: Path) -> None:
     (tmp_path / "input").mkdir()
     (tmp_path / "input" / "cct20-512").symlink_to(tmp_path / "real")
     assert sidecar_folders(tmp_path / "input") == [tmp_path / "input" / "cct20-512" / "cct20_512"]
+
+
+def _tar(path: Path, members: list[tuple[str, bytes | str | None]]) -> Path:
+    """An uncompressed tar of (name, content): bytes a file, None a folder, a str a symlink to
+    it, "hard:<name>" a hard link to it."""
+    with tarfile.open(path, "w:") as tar:
+        for name, content in members:
+            info = tarfile.TarInfo(name)
+            if content is None:
+                info.type = tarfile.DIRTYPE
+                tar.addfile(info)
+            elif isinstance(content, str):
+                hard = content.startswith("hard:")
+                info.type = tarfile.LNKTYPE if hard else tarfile.SYMTYPE
+                info.linkname = content.removeprefix("hard:")
+                tar.addfile(info)
+            else:
+                info.size = len(content)
+                tar.addfile(info, io.BytesIO(content))
+    return path
+
+
+NORMAL: list[tuple[str, bytes | str | None]] = [
+    (CACHE_TOP, None),
+    (f"{CACHE_TOP}/annotations", None),
+    (f"{CACHE_TOP}/annotations/train_annotations.json", b"{}"),
+    (f"{CACHE_TOP}/images", None),
+    (f"{CACHE_TOP}/images/a.jpg", b"\xff\xd8jpeg"),
+    (f"{CACHE_TOP}/{DAY_NIGHT_SIDECAR}", b"{}"),
+]
+
+
+def test_a_normal_archive_is_unpacked_with_counts_and_seconds(tmp_path: Path) -> None:
+    archive = _tar(tmp_path / "cache.tar", NORMAL)
+    unpacked = unpack_cache(archive, tmp_path / "local")
+    assert unpacked.root == tmp_path / "local" / CACHE_TOP
+    assert (unpacked.files, unpacked.size) == (3, 2 + 6 + 2)
+    assert (unpacked.root / "images" / "a.jpg").read_bytes() == b"\xff\xd8jpeg"
+    assert (unpacked.root / DAY_NIGHT_SIDECAR).is_file()
+    assert unpacked.seconds >= 0
+    assert str(unpacked).startswith(f"unpacked 3 files (0.00 GiB) into {unpacked.root} in ")
+
+
+@pytest.mark.parametrize(
+    ("member", "reason"),
+    [
+        ((f"{CACHE_TOP}/../escape.jpg", b"x"), "names with .."),
+        ((f"{CACHE_TOP}/images/../../escape.jpg", b"x"), "names with .."),
+        (("/tmp/escape.jpg", b"x"), "absolute names"),
+        (("elsewhere/escape.jpg", b"x"), f"names outside {CACHE_TOP}/"),
+        ((f"{CACHE_TOP}/images/link.jpg", "a.jpg"), "links or special files"),
+        ((f"{CACHE_TOP}/images/out.jpg", "/etc/passwd"), "links or special files"),
+        ((f"{CACHE_TOP}/images/hard.jpg", f"hard:{CACHE_TOP}/images/a.jpg"), "links or special"),
+    ],
+)
+def test_a_traversal_an_absolute_name_or_a_link_is_refused_before_writing(
+    tmp_path: Path, member: tuple[str, bytes | str | None], reason: str
+) -> None:
+    archive = _tar(tmp_path / "bad.tar", [*NORMAL, member])
+    dest = tmp_path / "local"
+    with pytest.raises(ArchiveError, match=reason) as refused:
+        unpack_cache(archive, dest)
+    assert "nothing was extracted" in str(refused.value)
+    assert "escape" not in str(refused.value) and "link.jpg" not in str(refused.value)  # R03
+    assert not dest.exists()
+    assert not (tmp_path / "escape.jpg").exists()
+
+
+def test_a_destination_under_kaggle_working_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The copy would be saved as the version's output."""
+    monkeypatch.setattr(cache_module, "KAGGLE_WORKING", tmp_path / "working")
+    archive = _tar(tmp_path / "cache.tar", NORMAL)
+    with pytest.raises(ValueError, match="saved as output"):
+        unpack_cache(archive, tmp_path / "working" / "cache")
+    assert not (tmp_path / "working").exists()
+
+
+def test_an_existing_tree_is_refused(tmp_path: Path) -> None:
+    archive = _tar(tmp_path / "cache.tar", NORMAL)
+    unpack_cache(archive, tmp_path / "local")
+    with pytest.raises(FileExistsError, match="already exists"):
+        unpack_cache(archive, tmp_path / "local")
+
+
+def test_an_archive_without_the_top_folder_is_refused(tmp_path: Path) -> None:
+    archive = _tar(tmp_path / "empty.tar", [])
+    with pytest.raises(ArchiveError, match=f"no {CACHE_TOP}/ folder"):
+        unpack_cache(archive, tmp_path / "local")
+
+
+def test_the_archive_search_finds_kaggles_dataset_mount(tmp_path: Path) -> None:
+    mount = tmp_path / "datasets" / "codx888" / "cct20-512-tar"
+    mount.mkdir(parents=True)
+    (mount / f"{CACHE_TOP}.tar").write_bytes(b"")
+    (mount / "notes.json").write_text("{}")
+    assert archive_files(tmp_path) == [mount / f"{CACHE_TOP}.tar"]
+    assert archive_files(tmp_path, max_depth=2) == []
+    assert archive_files(tmp_path / "absent") == []
