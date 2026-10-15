@@ -1,10 +1,10 @@
 # Data card: CCT20 as used by Who Goes There
 
 Written 2026-10-11 (item 3.04) from `python -m trailcam.data.metadata` and
-`python -m trailcam.data.split --seed 42` run on the released annotation files. Counts, shapes and
-class distributions only: no image, sequence or file name appears here. Design and the reasons
-behind each rule: `docs/plan.md` sections 2 and 3. Raw facts before filtering:
-`docs/data-inspection.md`.
+`python -m trailcam.data.split --seed 42` run on the released annotation files; the day and night
+numbers and the figures were added 2026-10-15 (item 8.07). Counts, shapes and class distributions
+only: no image, sequence or file name appears here. Design and the reasons behind each rule:
+`docs/plan.md` sections 2 and 3. Raw facts before filtering: `docs/data-inspection.md`.
 
 ## Source, licence and citation
 
@@ -127,21 +127,91 @@ file).
 
 ## Day and night
 
-**Day/night share: pending item 6.03.** The flag is computed from the pixels during the Kaggle
-resize (item 6.01, `scripts/kaggle_prepare_cct20.py`: infrared frames are grayscale JPEGs with
-near-identical channels) and written to the `day_night.json` sidecar; the user records the share
-here when the cache is built (item 6.03). No sidecar exists yet, so no number is given.
+The flag is computed from the pixels during the Kaggle resize (item 6.01,
+`scripts/kaggle_prepare_cct20.py`: infrared frames are grayscale, saved single-band or with
+near-identical channels) and written to the `day_night.json` sidecar of the item 6.03 cache. A
+copy sits in the main checkout's `data/` (gitignored, never committed). Added 2026-10-15, item
+8.07.
 
-The capture clock is not a substitute: hour 12 holds 4,525 kept images against 1,769 at hour 11
-and 1,124 at hour 13. Kept images per capture hour, all splits:
+**Kept images per split** (the sidecar's flags, after the drop rules, split seed 42):
+
+| split | night | images | night share |
+| --- | --- | --- | --- |
+| train | 8246 | 13587 | 0.607 |
+| val | 1436 | 2394 | 0.600 |
+| trans_val | 1014 | 1603 | 0.633 |
+| cis_test | 9066 | 14478 | 0.626 |
+| trans_test | 15384 | 21473 | 0.716 |
+| all kept | 35146 | 53535 | 0.657 |
+
+**All annotated images per official file** (the numbers the 6.03 cache build printed, over all
+57,864 images, before the drop rules; not our split):
+
+| official file | night | images | night share |
+| --- | --- | --- | --- |
+| train | 8110 | 13553 | 0.598 |
+| cis_val | 2048 | 3484 | 0.588 |
+| trans_val | 1050 | 1725 | 0.609 |
+| cis_test | 9562 | 15827 | 0.604 |
+| trans_test | 16006 | 23275 | 0.688 |
+| all | 36776 | 57864 | 0.636 |
+
+- About two in three kept images (0.657) are infrared night frames, and trans_test is the most
+  night-heavy split (0.716 against 0.600 to 0.626 for the cis splits): the trans cameras are
+  judged more on night frames than the model trains on (the day/night slices, item 8.04, measure
+  the effect).
+- The drop rules raise the night share (0.636 to 0.657): of the 4,329 dropped images only 1,630
+  (0.377) are night frames.
+- The gap is clean: over all annotated images 36,776 have a channel spread in [0, 0.5), none in
+  [0.5, 2) and 4 in [2, 4), against the threshold 2.0. 551 source images were single-band (mode L).
+
+Kept images per capture hour, all splits, with the night frames among them:
 
 | hours | 00 | 01 | 02 | 03 | 04 | 05 | 06 | 07 | 08 | 09 | 10 | 11 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | images | 197 | 3097 | 3329 | 3401 | 3288 | 2824 | 1978 | 2375 | 2631 | 2398 | 1958 | 1769 |
+| night | 32 | 2970 | 3217 | 3281 | 3205 | 2729 | 1347 | 897 | 318 | 117 | 57 | 99 |
 
 | hours | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22 | 23 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | images | 4525 | 1124 | 1119 | 903 | 965 | 981 | 1162 | 1919 | 2773 | 3135 | 2664 | 3020 |
+| night | 2990 | 52 | 84 | 78 | 60 | 239 | 596 | 1673 | 2624 | 3013 | 2550 | 2918 |
+
+All annotated images per capture hour, before the drop rules (the 6.03 build's printout):
+
+| hours | 00 | 01 | 02 | 03 | 04 | 05 | 06 | 07 | 08 | 09 | 10 | 11 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| images | 203 | 3247 | 3485 | 3497 | 3420 | 2958 | 2162 | 2615 | 2810 | 2590 | 2168 | 2038 |
+| night | 37 | 3087 | 3360 | 3370 | 3333 | 2850 | 1450 | 959 | 341 | 124 | 58 | 105 |
+
+| hours | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22 | 23 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| images | 5077 | 1492 | 1399 | 1103 | 1088 | 1086 | 1227 | 2030 | 2913 | 3272 | 2800 | 3184 |
+| night | 3120 | 58 | 87 | 78 | 69 | 263 | 618 | 1758 | 2762 | 3144 | 2671 | 3074 |
+
+**The hour-12 anomaly.** Hour 12 holds 4,525 kept images, 2,990 of them night frames, against
+1,769 (99 night) at hour 11 and 1,124 (52 night) at hour 13; over all annotated images, 5,077 with
+3,120 night. About 3,000 infrared frames carry a noon timestamp, so some camera clocks are wrong
+and the clock cannot stand in for the light. The flag comes from the pixels.
+
+## Figures
+
+Five charts of this card's data, drawn from the metadata alone (no photo) by
+`trailcam/data/datavis.py` (item 8.07), each with the citation above, in `docs/figures/`:
+
+- `class_counts.png`: each class's share of each split, with its count.
+- `camera_locations.png`: images per camera, cis vs trans, cameras ranked by image count (location
+  ids are not shown).
+- `day_night.png`: the night share of the kept images per split and the kept images per capture
+  hour by day and night, with hour 12 marked (drawn with the sidecar).
+- `box_fill.png`: the share of the image each box covers, log scale, cis vs trans, with arm B's 20%
+  to 100% fill range shaded.
+- `burst_length.png`: sequences and kept images by burst length, and the 222 bursts the official
+  train and cis_val files share.
+
+Regenerate: `uv run python -m trailcam.data.datavis --root <data dir> --seed 42 --out docs/figures`
+with `--sidecar <data dir>/day_night.json` for the night shares; without it the day/night chart
+falls back to the 6.03 build's numbers over all annotated images, and says so.
 
 ## Split seed and hash
 
