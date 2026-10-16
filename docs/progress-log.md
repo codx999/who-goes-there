@@ -3269,3 +3269,20 @@ hosting needing PRO); check them before the switch around 11-15. The imports tes
 `import trailcam.data.metadata` form (not used today). R03 and R35's test cells name the new
 tests. Per the playbook this round's findings are fixed and listed, with no third round unless the
 user asks. `check.sh` green.
+
+## 2026-10-16: 10.02 follow-up: the import check parses `sort.py` (Opus 5.5)
+
+The fix round noted the import test missed `import trailcam.data.metadata`. Checked at the user's
+request: it was a text search, so it also missed `from json import loads` and imports by string
+name; and the sort's process loads `metadata`, `split`, `json` and `train` anyway, through the
+dataset and predict imports, so the test could only ever guard `sort.py`'s own source. A planted
+`from json import load` read of the fixture's JSON passed it, and the open spy caught it.
+
+At the user's go (option 2: a stricter test, `sort.py` unchanged, no third round):
+`test_sort_py_names_no_metadata_split_json_ledger_or_metrics_module` parses `sort.py` with `ast`,
+collects every dotted part of every import and every name imported from one, and refuses
+`metadata`, `split`, `json`, `ledger`, `metrics` and `importlib`, and any `__import__`; a
+parametrised test checks the collector sees eight import forms. Planting `import
+trailcam.data.metadata`, `from json import load as ...`, `import importlib` or `__import__('json')`
+into `sort.py` fails it. R17's test cell now says the check guards the file, and the open spy the
+behaviour. `check.sh` green.

@@ -4,6 +4,7 @@ The model is the small CNN with random weights, saved as `train.py` saves a chec
 photos are the synthetic fixture's JPEGs: no trained run and no dataset image is needed.
 """
 
+import ast
 import builtins
 import io
 import shutil
@@ -147,10 +148,45 @@ def test_only_photos_are_opened_never_labels_or_metadata(
     assert all(path.suffix.lower() in PHOTO_SUFFIXES for path in opened)
 
 
-def test_the_module_imports_no_metadata_or_split_code() -> None:
-    source = Path(sort.__file__).read_text()
-    for name in ("metadata", "split", "json", "ledger", "metrics", "labels"):
-        assert f"import {name}" not in source and f".{name} import" not in source
+def _imported_names(tree: ast.Module) -> set[str]:
+    """Every dotted part of every module `tree` imports, and every name it imports from one."""
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                names.update(alias.name.split("."))
+        elif isinstance(node, ast.ImportFrom):
+            names.update((node.module or "").split("."))
+            names.update(alias.name for alias in node.names)
+    return names
+
+
+def test_sort_py_names_no_metadata_split_json_ledger_or_metrics_module() -> None:
+    """`sort.py`'s own imports, in any form, name none of them, and it imports nothing by a
+    string name. The package loads these modules anyway (the dataset and predict imports bring
+    them in), so this guards the file, not the process; the open spy above checks behaviour."""
+    tree = ast.parse(Path(sort.__file__).read_text())
+    forbidden = {"metadata", "split", "json", "ledger", "metrics", "importlib"}
+    assert not _imported_names(tree) & forbidden
+    called = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
+    assert "__import__" not in called
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "from trailcam.data import metadata",
+        "from trailcam.data.metadata import load",
+        "import json as anything",
+        "import trailcam.data.metadata",
+        "from json import loads",
+        "from trailcam.evaluate import metrics as m",
+        "import importlib",
+        "from importlib import import_module",
+    ],
+)
+def test_the_import_check_sees_every_form(line: str) -> None:
+    assert _imported_names(ast.parse(line)) & {"metadata", "json", "metrics", "importlib"}
 
 
 def test_a_source_inside_the_repo_or_any_git_repository_is_refused(tmp_path: Path) -> None:
