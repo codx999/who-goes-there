@@ -3145,3 +3145,21 @@ topic 13 of `docs/learning-journal.md`.
 
 `check.sh` green. The fix touches `trailcam/demo/app.py` and `tests/test_demo.py` (high-stakes,
 test lines modified), so one fix round runs on the fix range.
+
+Fix round (`/review-session d3e8cf1..HEAD 10.01`, the user's start): code-reviewer (Opus 5.5
+xhigh) on the range, risk-reviewer (Fable 5.1 high) on `.claude/rules/data.md`,
+`tests/test_demo.py` and `trailcam/demo/app.py`. Scenarios R01, R03, R04, R05, R20, R21, R23,
+R33, R34, R35 and R42 to R45 hold (Space and sort-script parts skipped as known gaps). Spec
+changed: `.claude/rules/data.md` (its paths only; R03, R20, R23, R24 cite it) and plan.md section
+10 (no row cites it). Two lows, both from `--share`, fixed at the user's go:
+
+- Both reviewers: `app.py`'s docstring said no launch calls `api.gradio.app`; with `--share`,
+  Gradio asks it for a tunnel server (`gradio/networking.py`). The docstring now says a local
+  build or launch never calls it and `--share` does, by design. Analytics stay off in every mode.
+  The 5c03add commit message carries the old claim; commits are not rewritten.
+- Code-reviewer: `--share` writes `.gradio/certificate.pem` (Gradio's public root CA, not a
+  secret) into the working directory, which nothing ignored. `.gradio/` is now in `.gitignore`,
+  and a test checks `git check-ignore` covers it. The guard is not changed: the file is no secret
+  and `tests/test_guard_data.py` only requires the guard's patterns to be in `.gitignore`.
+
+No third round (the user's request would be needed). `check.sh` green.

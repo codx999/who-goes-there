@@ -4,8 +4,10 @@ Upload a camera-trap photo and the app shows the top class with its confidence a
 runners-up (`predict`), the forward pass's seconds, and, when the Grad-CAM box is ticked, the
 top class's Grad-CAM overlay on the 224 x 224 frame the model saw. The overlay of an upload is
 drawn in memory (`overlay_photo`) and never written to a file.
-The app is built with Gradio's analytics off, so neither a build nor a launch calls
-`api.gradio.app` (no version check, no telemetry).
+The app is built with Gradio's analytics off: no version check and no telemetry, so a local
+build or launch never calls `api.gradio.app`. `--share` does, by design: Gradio asks it once for a
+tunnel server (and may download its tunnel client), and writes `.gradio/certificate.pem` into the
+working directory, which `.gitignore` covers.
 
 Examples come from the repo's `assets/` folder only (`example_photos`), the trans-test photos the
 user picks (item 8.05); each goes through `assets_image`, so a link out of the folder is refused.

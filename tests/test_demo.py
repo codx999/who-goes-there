@@ -271,6 +271,14 @@ def test_share_launches_with_a_public_link_and_check_never_launches(
     assert len(launches) == 2
 
 
+def test_the_share_certificate_folder_is_ignored() -> None:
+    """`--share` writes Gradio's .gradio/certificate.pem into the working directory."""
+    ignored = subprocess.run(
+        ["git", "check-ignore", "-q", ".gradio/certificate.pem"], cwd=ROOT, check=False
+    )
+    assert ignored.returncode == 0
+
+
 def test_the_module_check_exits_zero() -> None:
     """The item's step: `python -m trailcam.demo.app --check` builds the interface and exits 0."""
     done = subprocess.run(
