@@ -2409,6 +2409,177 @@ For the learning journal (`docs/learning-journal.md` is not on main yet):
 **Next.** The user merges this branch. Then 8.05 (photos into `assets/`) and the 8.06 evaluation
 notebook, if approved.
 
+## 2026-10-15: session 8, item 8.07, the data charts (Opus 5.5)
+
+New item, approved by the user in the coordinator session on 2026-10-15 and added to
+`docs/progress.json` as 8.07 (session 8, owner claude, due 2026-10-17). Why: the data was
+inspected and cleaned in numbers and tests (items 3.01 to 3.05) but no chart existed; the user
+wants the exploration visible, for learning and for the presentation's data slide.
+
+**Done.** `trailcam/data/datavis.py` (new). Placed in `trailcam/data/`, not `trailcam/evaluate/`:
+it reads the metadata and the split only, no model, prediction or image, so it belongs with the
+data code and keeps imports one way (`evaluate` uses `data`, never the reverse); `.claude/rules/data.md`
+covers both folders. `python -m trailcam.data.datavis --root <dir> --seed 42 --out <dir>
+[--sidecar day_night.json]` writes five PNGs and prints counts only:
+
+1. `class_counts.png`: each class's share of each split with its count (opossum 20% of train;
+   raccoon 25% of trans_test against 7% of train; trans_val lacks squirrel, car and rodent).
+2. `camera_locations.png`: images per camera stacked by split, cis vs trans. Cameras are labelled
+   C1 to C10 and T1 to T10 by image count; location ids are never drawn (R03). One cis camera
+   holds 9,579 kept images, the smallest 891; trans_val is a single camera.
+3. `day_night.png`: night share of the kept images per split and kept images per capture hour by
+   day and night, hour 12 annotated. At first no `day_night.json` was in the main checkout's
+   `data/`, so the chart drew the 6.03 cache build's numbers (all 57,864 annotated images before
+   the drop rules, per official file). Then the coordinator reported that the user had copied the
+   6.03 sidecar to `data/day_night.json` (gitignored, never committed) and asked for kept-image
+   shares, with both sets in the data card. The committed chart is now drawn with `--sidecar`.
+   Kept images, seed 42: train 8246/13587 = 0.607, val 1436/2394 = 0.600, trans_val 1014/1603 =
+   0.633, cis_test 9066/14478 = 0.626, trans_test 15384/21473 = 0.716, all 35146/53535 = 0.657;
+   hour 12 has 2,990 night frames of 4,525. These match the coordinator's counts. Without a
+   sidecar the chart falls back to the 6.03 numbers and its subtitle says so.
+4. `box_fill.png`: box width x height as fractions of the image, log bins, cis vs trans, arm B's
+   0.2 to 1.0 range shaded. 93% of the 12,177 train boxes cover less than 20% of the image (median
+   near 2 to 3%), so arm B's crop zooms in on almost every boxed image it takes; a second bump
+   near the whole frame.
+5. `burst_length.png`: sequences and kept images by `seq_num_frames` (4,787 single frames,
+   15,969 bursts of 3, 196 of 5); 48,701 of the 53,535 kept images (91%) share their burst with
+   another kept image, and 222 bursts have frames in both official train and cis_val.
+
+Every chart carries the Beery et al. 2018 citation and the licence in a footer. Colours: the
+dataviz reference palette, one colour per split across all charts, validated with its checker
+(adjacent pairs pass; yellow is below 3:1 on white, so every yellow bar has a label or legend).
+`ARM_B_FILL` is a copy of `boxcrop.FILL` because only the training transform may import
+`boxcrop` (R24); a test checks the two agree. The 6.03 numbers are constants
+(`CACHE_BUILD_NIGHT_BY_FILE`, `CACHE_BUILD_NIGHT_BY_HOUR`).
+
+The five PNGs are committed in `docs/figures/` (384 KB of the 20 MB budget, 5 of 40 files),
+generated from the real metadata and the sidecar with seed 42. `docs/data-card.md`: "Day and
+night" now gives, first, the kept images per split and per hour (sidecar, seed 42) and, second,
+the 6.03 build's numbers per official file and per hour, labelled as all annotated images before
+the drop rules; the channel-spread gap and the 551 single-band images; and the hour-12 note. A
+"Figures" section lists the charts and the command. Item 6.03 stays the user's and is not
+flipped.
+
+`notebooks/kaggle_look_at_data.ipynb` (new, outputs cleared): a separate notebook rather than a
+section of `kaggle_train.ipynb`, because the training notebook is a Save & Run All batch run whose
+tests forbid definitions and extra calls, and a photo grid there would run and be stored with every
+training version. It installs `trailcam` from the public repo at `COMMIT`, loads the metadata with
+the sidecar, shows a grid of train photos per class, day vs night (titles: class and day or night
+only), then runs the datavis CLI with the sidecar into `/kaggle/working/figures` for the
+kept-image night shares. Its markdown says never to commit it with outputs (the guard refuses
+them anyway, R41) and that photos never go into `docs/figures/`. Only the train split is read for
+photos (R17). Smoke-run locally on the synthetic fixture with the install stubbed: every cell ran.
+
+`tests/test_datavis.py` (new, 18 tests): the CLI on the fixture (with and without the sidecar)
+writes exactly the five PNGs under `--out` and nothing under `docs/figures/`, from a fixture with
+no image file; no drawn text or printed line holds an image id, seq id or file name, and on a
+fixture with locations shifted to distinctive numbers no location id is drawn (CCT20's own
+location ids are small numbers that collide with counts, so they are checked there); camera tick
+labels are C1, C2, T1; every chart has the citation; class counts, camera totals and ranking,
+night counts from the sidecar, the fallback to the 6.03 numbers, box fill = w x h, burst counts;
+the 6.03 numbers sum to 57,864 and 36,776 and hour 12 is (3120, 5077); on the real metadata the
+summary gives 53,535 images, 10 + 10 cameras, 47,729 boxes, 20,952 sequences, 222 shared, 48,701
+with a sibling, and the raw annotation files hold the 6.03 build's images per file and per hour;
+the look notebook has no outputs, says never to commit them, cites the data and reads the train
+split only. Mutations that each fail a test: location ids as labels, no citation, big boxes
+dropped, singletons counted as siblings, cameras unranked, a typo in hour 12, the sidecar ignored.
+
+`docs/review/invariants.md`: `trailcam/data/datavis.py` added to the "where" of R03 and R04 (and
+8.07 to R04's items); test cells of R03, R04, R06, R17 and R41 name `tests/test_datavis.py`.
+
+Steps: the CLI wrote the five PNGs into a tmp `--out` on the fixture (tests) and into
+`docs/figures/` on the real metadata; `uv run pytest tests/test_datavis.py` 18 passed (the 18th
+pins the kept-image night counts from the sidecar in `data/`, and fails locally if it is missing);
+`uv run python scripts/guard_data.py --all` passed with the PNGs staged; `check.sh` green.
+`tests/test_notebook.py` unchanged and passing. Main had not moved, so no sync was needed.
+
+For the learning journal (`docs/learning-journal.md` does not exist on main yet):
+
+- Data charts (8.07): five PNGs in `docs/figures/`, from metadata only; regenerate with
+  `uv run python -m trailcam.data.datavis --root <data dir> --seed 42 --sidecar <data
+  dir>/day_night.json --out docs/figures`.
+- `class_counts.png` and `camera_locations.png`: the classes and the cameras are both imbalanced,
+  and the trans cameras see a different mix (raccoon, bobcat), so accuracy alone flatters.
+- `day_night.png`: 60 to 72% of kept frames per split are infrared night shots (trans_test
+  the most), and hour 12 holds 2,990 night frames: the camera clock is wrong on some cameras, so
+  day/night is read from the pixels.
+- `box_fill.png`: most animals cover 1 to 5% of the frame, which is why arm B crops in on the box.
+- `burst_length.png`: 91% of images have a near-identical sibling in their burst, so splitting by
+  image would leak; the split goes by sequence.
+
+**Next.** 8.02, 8.04 (the day/night slices measure accuracy by night and day).
+
+Review: tier 2, `/review-session 8.07`
+
+Coordinator request after the item commit (from the user, 2026-10-15): the user copied the 6.03
+sidecar to the main checkout's `data/day_night.json` (gitignored). `day_night.png` was redrawn
+with it (kept images per split, seed 42), the data card gives both sets of numbers (kept images
+per split first, all annotated images per official file second), and a real-data test pins the
+kept-image counts. Folded into the item commit (0bce6a5) before any review.
+
+Review: tier 2, ran `/review-session 8.07` (0968e1a..0bce6a5; code-reviewer Opus xhigh,
+risk-reviewer Fable high). risk-reviewer found nothing. code-reviewer found two lows, fixed in
+fade23f with the user's go-ahead via the coordinator:
+
+- R03 listed "a notebook cell displays a batch of training images" as a failure while the look
+  notebook does exactly that. R03 now records the photo grid as the one exception, with its
+  conditions: Kaggle only, train split only, titles with the class and day or night (no file name
+  or id), outputs never committed (the guard refuses them).
+- The 6.03 night counts were never checked against the sidecar, and a docstring said the sum test
+  checked them. A real-data test now recomputes night per official file and per capture hour from
+  the sidecar and the raw annotation files, and requires every annotated image to have a flag;
+  both constants match. Swapping two hours' night counts fails it. The docstring is corrected.
+- Not a finding, fixed with the user's approval: `docs/plan.md` section 2 said "About half the
+  images are night shots"; it now gives the measured shares (65.7% of kept images, 63.6% of all
+  annotated images; trans_test 71.6% against cis_test 62.6% of kept images). Spec changed: plan
+  §2. The rows citing it (R01, R05, R06, R15, R21, R23, R32) were re-read; none states a night
+  share, so none changes.
+
+Scenarios R01, R03, R04, R06, R07, R16, R17, R27, R37, R38, R41 to R45 held for both reviewers;
+known gaps passed: R04 the figure and Grad-CAM writers (8.02), R06 the Space and the slides
+(11.01, 12.02), R17 the scoring script (9.01). Main was merged before the fix at c303041 (8.04;
+conflicts in this log and in R03, R04 and R17, both sides kept) and after it at ef9100d (6.08;
+conflicts in this log and R03).
+
+Fix round: `/review-session 054f7be..fade23f 8.07` (`tests/test_datavis.py` the one high-stakes
+file). Fixed in e1f67cf, after merging main at 61f1ecc (conflict in this log only):
+
+- Both reviewers, low: the photo-title test searched only the source text of title calls, so a
+  file name passed through a variable, a label, `ax.text` or a `print` slipped by. The test now
+  walks every code cell's syntax tree: no image id, seq id or location as an attribute, a name or
+  a string key, and `file_name` only inside the one `Image.open(...)` call. Each of those four
+  bypasses fails it. R03's test cell says so.
+- code-reviewer, low: plan section 5's augmentation row said "half the data is infrared". With the
+  user's approval it now reads "about two thirds of the kept images are infrared (section 2)".
+  Spec changed: plan §5. The rows citing it (R17, R20, R22, R27, R31, R37, R38, R40) were
+  re-read; R20 gives the grayscale probability without a share, so none changes.
+- code-reviewer, outside the range: the data card's "About six in ten kept images" became two in
+  three (0.657), matching its table.
+
+Scenarios R01, R03, R04, R42 to R45 held for both. No third round (the user's decision).
+
+Notes, recorded and not fixed:
+
+- R45: code-reviewer reported one stray no-op command (`uv run --quiet python -c "pass"`)
+  outside its allowed list in the fix round; it read nothing. The harness flagged risk-reviewer's
+  fix-round report for a settings-shaped pattern; the only match was its mention of
+  `.claude/settings.json` in the R43 result, with no instruction in it.
+- The look notebook reads the loose 6.03 dataset (`cct20-512`), which still exists and is the
+  training notebook's fallback; since 6.08, training reads the archive dataset (`cct20-512-tar`).
+  Moving the look notebook to the archive is the user's call.
+- `uv run mypy tests/test_datavis.py` reports two `no-untyped-call` errors on
+  `FigureCanvasAgg.draw`; `check.sh` type-checks `trailcam/` and the scripts only, not `tests/`.
+
+Also approved by the user via the coordinator, for item 6.03 (the user's): `docs/plan.md`
+section 11, open question 3 (tarball layout) is closed with the 6.03 cache build's output (1
+directory, 57,864 `.jpg` files, all at depth 1 in one top-level folder). With the data card's
+"Day and night" section, it is what 6.03 still needed; the user flips 6.03 after the merge. Spec changed: plan §11; no row cites it.
+
+`check.sh` green at e1f67cf: 718 passed. `docs/learning-journal.md` is still not on main, so the
+learning-journal lines stay above, under "For the learning journal".
+
+**Next.** 8.02, then 9.01.
+
 ## 2026-10-15: session 9, item 9.01, the final scoring script (Opus 5.5, xhigh)
 
 Main at 9c63bac. Built and tested on the synthetic fixture only: no real checkpoint was loaded
@@ -2473,7 +2644,10 @@ records returned; `TEST_SPLITS` swapped for val and trans_val); a second `predic
 features kept for the small CNN; the attention pass inside `torch.inference_mode()`; the overlays
 removed, and moved after the test passes. 17 of 17 killed.
 
-`check.sh` green (761 passed).
+`check.sh` green (761 passed). Then main moved to 3a4fcf3 (8.07, 6.03) and I merged it with the
+sync tool. The conflicts were in this log and in R17's and R41's rows of invariants.md (8.07
+added `tests/test_datavis.py` to both). Both sides were kept, with the other items' entries
+first. `check.sh` green after the merge (781 passed).
 
 Notes, not fixed:
 
