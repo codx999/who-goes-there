@@ -8,10 +8,16 @@ checks below, on the records of cis_test and trans_test and of no other split.
 **Refusals (exit 1, before any checkpoint is loaded or any test image read).**
 
 - No `--approved-by`, or an empty one: the user's go-ahead is recorded by name in every row.
+- A ledger that is not complete (`check_complete`, the user's decision on review 9.01): no small
+  CNN row, or ResNet-18 arm A and arm B rows whose run seeds differ (every seed is trained and
+  reported for both arms, plan.md section 6). A run still training has no row yet, so this is
+  how a scoring that would leave it out is refused; the message names what is missing.
+- Two ledger rows with one checkpoint sha256, or with one config and run seed (a rerun: the user
+  picks one row and removes the other before scoring).
 - A checkpoint with no row in `docs/ledger.md` (looked up by its sha256), or one that already has
   a row in `docs/test-ledger.md`: each checkpoint is scored once.
-- A ledger row whose checkpoint is not given: every run in the ledger, the small CNN and every arm
-  and seed, is scored in the one run, so no test score is seen while another is still to come.
+- A ledger row whose checkpoint is neither given nor already scored: every run in the ledger is
+  scored, in one run unless a run stopped part way (below).
 - A config in `config.yaml` that no longer matches its row (config hash, model, arm, split seed),
   checkpoints of more than one split hash, a cache whose split hash differs from theirs, a ledger
   or test ledger that fails its check, a non-empty `--out`, or an overlay photo outside `assets/`.
@@ -47,8 +53,16 @@ Counts, scores, camera location numbers, run ids and hashes only, never an image
 model, arm and config of its training row, the split hash, the checkpoint sha256, the four test
 scores, both gaps, the UTC time of the scoring and who approved it (the user's decision of
 session 9.01: a file of its own, so `docs/ledger.md` and its 16 columns stay as they are). Like
-`train.py`, the rows and alarms are printed before they are appended, so a failing append loses
-nothing; the exit code is `ALARM_EXIT` when an alarm fired, else 0.
+`train.py`, each row and its alarms are printed before the row is appended, so a failing append
+loses nothing; the exit code is `ALARM_EXIT` when an alarm fired, else 0.
+
+Each checkpoint's row is printed and appended as soon as that checkpoint is scored, before its
+tables and figures, the next checkpoint, the slice tables, the feature maps and `headline.md`
+(the user's decision on review 9.01). A run that stops part way has therefore logged every
+checkpoint it scored. To finish, run again with a new `--out` and the checkpoints that have no
+test row yet: the ones already scored are refused if given, and count as present for the
+completeness check. The slice tables, feature maps and headline of that second run hold its own
+checkpoints only.
 
 On Kaggle (item 9.02), from a clone at the commit of the installed package:
 
@@ -269,6 +283,51 @@ def _config_of(row: Row, config_file: Path) -> Config:
     return config
 
 
+def check_complete(ledger: Sequence[Row]) -> None:
+    """Refuses a training ledger that does not hold every reported run (R17; the user's decision
+    on review 9.01): a small CNN row, and ResNet-18 arm A and arm B rows with one non-empty set
+    of run seeds. The message names what is missing."""
+    missing = []
+    if not any(row["model"] == "small_cnn" for row in ledger):
+        missing.append("no small_cnn row")
+    seeds = {
+        arm: {
+            int(row["run seed"])
+            for row in ledger
+            if (row["model"], row["arm"]) == ("resnet18", arm)
+        }
+        for arm in ("A", "B")
+    }
+    if not seeds["A"] | seeds["B"]:
+        missing.append("no resnet18 row")
+    for arm, other in (("A", "B"), ("B", "A")):
+        for seed in sorted(seeds[other] - seeds[arm]):
+            missing.append(f"no resnet18 arm {arm} row for run seed {seed} (arm {other} has one)")
+    if missing:
+        raise Refusal(
+            "the ledger does not hold every reported run, so a run may still be training: "
+            + "; ".join(missing)
+        )
+
+
+def check_unique(ledger: Sequence[Row]) -> None:
+    """Refuses two ledger rows with one checkpoint sha256, or with one config and run seed."""
+    by_hash: dict[str, list[str]] = {}
+    by_seed: dict[tuple[str, str], list[str]] = {}
+    for row in ledger:
+        by_hash.setdefault(row["checkpoint sha256"], []).append(row["run id"])
+        by_seed.setdefault((row["config"], row["run seed"]), []).append(row["run id"])
+    for digest, runs in by_hash.items():
+        if len(runs) > 1:
+            raise Refusal(f"ledger rows {', '.join(runs)} name one checkpoint (sha256 {digest})")
+    for (config, seed), runs in by_seed.items():
+        if len(runs) > 1:
+            raise Refusal(
+                f"ledger rows {', '.join(runs)} are runs of config {config} with run seed {seed}; "
+                "the user must pick one and remove the other rows before the scoring"
+            )
+
+
 def resolve_checkpoints(
     paths: Sequence[Path],
     ledger: Sequence[Row],
@@ -276,10 +335,18 @@ def resolve_checkpoints(
     config_file: Path,
 ) -> list[Checkpoint]:
     """The checkpoints given, each with its ledger row and config, in ledger order. Refuses an
-    unknown checkpoint, one given twice, one already scored, a ledger row whose checkpoint is not
-    given, more than one split hash, and two checkpoints with one label."""
+    incomplete ledger, two rows of one checkpoint or of one config and run seed, more than one
+    split hash, an unknown checkpoint, one given twice, one already scored, a ledger row whose
+    checkpoint is neither given nor already scored, and two checkpoints with one label."""
     if not paths:
         raise Refusal("no --checkpoint given")
+    check_unique(ledger)
+    check_complete(ledger)
+    split_hashes = {row["split hash"] for row in ledger}
+    if len(split_hashes) != 1:
+        raise Refusal(
+            f"the ledger's runs were trained on {len(split_hashes)} split hashes, not one"
+        )
     by_hash = {row["checkpoint sha256"]: row for row in ledger}
     done = {row["checkpoint sha256"]: row["run id"] for row in scored}
     given: dict[str, Path] = {}
@@ -301,10 +368,14 @@ def resolve_checkpoints(
                 "each checkpoint is scored once"
             )
         given[digest] = path
-    missing = [row["run id"] for row in ledger if row["checkpoint sha256"] not in given]
+    missing = [
+        row["run id"]
+        for row in ledger
+        if row["checkpoint sha256"] not in given and row["checkpoint sha256"] not in done
+    ]
     if missing:
         raise Refusal(
-            "every run in the ledger is scored in one run; no checkpoint given for "
+            "every run in the ledger is scored; no checkpoint given, and no test row, for "
             + ", ".join(missing)
         )
     checkpoints = [
@@ -315,10 +386,8 @@ def resolve_checkpoints(
             _config_of(row, config_file),
         )
         for row in ledger
+        if row["checkpoint sha256"] in given
     ]
-    split_hashes = {c.row["split hash"] for c in checkpoints}
-    if len(split_hashes) != 1:
-        raise Refusal(f"the checkpoints were trained on {len(split_hashes)} split hashes, not one")
     labels = [c.label for c in checkpoints]
     if len(set(labels)) != len(labels):
         raise Refusal(f"two checkpoints share a model, arm and seed: {labels}")
@@ -546,6 +615,21 @@ def append_rows(path: Path, lines: Sequence[str]) -> None:
     )
 
 
+def log_row(scored: Scored, stamp: str, approver: str, test_ledger: Path) -> str:
+    """Print one checkpoint's test ledger row and its alarms, then append the row: right after
+    the checkpoint is scored, before anything else is written (R40)."""
+    line = ledger_line(ledger_values(scored, stamp, approver))
+    print(f"test ledger row of {scored.checkpoint.label}:")
+    print(scoring_header())
+    print(line)
+    sys.stdout.flush()
+    for alarm in scoring_alarms(headline(scored)):  # before the append, as in train.py
+        print(f"LEAKAGE ALARM: {alarm}", file=sys.stderr)
+    sys.stderr.flush()
+    append_rows(test_ledger, [line])
+    return line
+
+
 def write_checkpoint_outputs(scored: Scored, out_dir: Path, header: Sequence[str]) -> list[Path]:
     """`metrics.md` with three PNGs per split and `attention.md` with its histogram of one
     checkpoint under `out_dir`, from its one pass."""
@@ -633,6 +717,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     for model, checkpoint in zip(models, checkpoints, strict=True):
         result = score_checkpoint(model, checkpoint, records, args.data_root / CACHE_IMAGES, device)
         model.to("cpu")
+        log_row(result, stamp, approver, args.test_ledger)
         header = [
             f"Final scoring of {checkpoint.label}: run {checkpoint.run_id}, config "
             f"{checkpoint.row['config']}, checkpoint sha256 {checkpoint.sha256}.",
@@ -643,6 +728,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     rows = [headline(s) for s in scored]
     alarms = [alarm for row in rows for alarm in scoring_alarms(row)]
+    table = out / HEADLINE_NAME
+    table.write_text(render_headline([*rows, *seed_means(scored)], alarms, [common]), "utf-8")
     lines = [f"- {c.label}: run {c.run_id}, checkpoint sha256 {c.sha256}" for c in checkpoints]
     slices.write_report({s.checkpoint.label: s.runs for s in scored}, out, [common, "", *lines])
     projections = {
@@ -652,20 +739,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     }
     if projections:
         write_feature_maps(projections, out)
-    table = out / HEADLINE_NAME
-    table.write_text(render_headline([*rows, *seed_means(scored)], alarms, [common]), "utf-8")
-
-    ledger_lines = [ledger_line(ledger_values(s, stamp, approver)) for s in scored]
     print(table.read_text(encoding="utf-8"))
-    print("test ledger rows:")
-    print(scoring_header())
-    print("\n".join(ledger_lines))
-    sys.stdout.flush()
-    for alarm in alarms:  # before the append, so a failing append cannot hide them
-        print(f"LEAKAGE ALARM: {alarm}", file=sys.stderr)
-    sys.stderr.flush()
-    append_rows(args.test_ledger, ledger_lines)
-    print(f"appended {len(ledger_lines)} rows to {args.test_ledger}; outputs under {out}")
+    print(f"appended {len(scored)} rows to {args.test_ledger}; outputs under {out}")
     return ALARM_EXIT if alarms else 0
 
 

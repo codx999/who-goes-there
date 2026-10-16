@@ -392,7 +392,8 @@ def test_test_ledger_rows_carry_the_checkpoint_hashes_and_the_approver(
         scores = [row[c] for c in TEST_LEDGER_COLUMNS[6:12]]
         assert f"| {' | '.join(scores)} |" in headline
     assert world.ledger.read_text(encoding="utf-8") == scoring.ledger_before
-    assert "test ledger rows:" in scoring.stdout
+    for name in world.rows:
+        assert f"test ledger row of {_label(name)}:" in scoring.stdout
     assert score_test.scoring_header() in scoring.stdout
 
 
@@ -688,6 +689,131 @@ def test_a_file_of_another_model_is_refused(world: World) -> None:
     wrong = Checkpoint(world.checkpoints["arm_a"], "0" * 64, row, small)
     with pytest.raises(Refusal, match="holds a resnet18"):
         score_test.load_models([wrong])
+
+
+# The ledger must hold every reported run, once (the user's decisions on review 9.01).
+
+
+def _row(world: World, name: str, seed: int, **changes: str) -> dict[str, str]:
+    """A well-formed ledger row of config `name` and run seed `seed`, with its own checkpoint
+    hash unless `changes` give one."""
+    values = _ledger_values(name, seed, sha(f"{name} {seed}"), world.config_file, world.split_hash)
+    values["run id"] = f"{name}-seed{seed}-{STARTED}"
+    return {**values, **changes}
+
+
+def _refused_ledger(
+    world: World,
+    tmp_path: Path,
+    rows: Sequence[dict[str, str]],
+    why: str,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    ledger = _write_ledger(tmp_path / "ledger.md", rows)
+    assert check_ledger(ledger)[1] == []  # the rows pass ledger.py; the scoring refuses them
+    _forbid_reading(monkeypatch)
+    _refused(world, world.argv(tmp_path / "out", ledger=ledger), capsys, why)
+
+
+@pytest.mark.parametrize(
+    ("runs", "why"),
+    [
+        ([("small", 0), ("arm_a", 0)], "no resnet18 arm B row for run seed 0"),
+        (
+            [("small", 0), ("arm_a", 0), ("arm_a", 1), ("arm_b", 0)],
+            "no resnet18 arm B row for run seed 1",
+        ),
+        ([("small", 0), ("arm_b", 0)], "no resnet18 arm A row for run seed 0"),
+        ([("arm_a", 0), ("arm_b", 0)], "no small_cnn row"),
+        ([("small", 0)], "no resnet18 row"),
+    ],
+)
+def test_an_incomplete_ledger_exits_1(
+    fresh: World,
+    tmp_path: Path,
+    runs: list[tuple[str, int]],
+    why: str,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """R17: a run still training has no row, so the ledger must hold a small CNN row and arm A
+    and arm B rows with one set of run seeds; the message names what is missing."""
+    rows = [_row(fresh, name, seed) for name, seed in runs]
+    _refused_ledger(fresh, tmp_path, rows, why, monkeypatch, capsys)
+
+
+def test_a_complete_paired_ledger_passes(world: World) -> None:
+    rows = [
+        Row(n, _row(world, name, seed))
+        for n, (name, seed) in enumerate(
+            [("small", 0), ("arm_a", 0), ("arm_b", 0), ("arm_a", 1), ("arm_b", 1)]
+        )
+    ]
+    score_test.check_complete(rows)
+    score_test.check_unique(rows)
+
+
+def test_two_rows_of_one_checkpoint_exit_1(
+    fresh: World,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    rows = [
+        *fresh.rows.values(),
+        _row(fresh, "arm_a", 1, **{"checkpoint sha256": fresh.rows["arm_a"]["checkpoint sha256"]}),
+        _row(fresh, "arm_b", 1),
+    ]
+    _refused_ledger(fresh, tmp_path, rows, "name one checkpoint", monkeypatch, capsys)
+
+
+def test_two_runs_of_one_config_and_seed_exit_1(
+    fresh: World,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A rerun of arm A seed 0 (another start time, another checkpoint): the user picks one."""
+    rerun = _row(fresh, "arm_a", 0, **{"run id": "arm_a-seed0-20261017T120000Z"})
+    rows = [*fresh.rows.values(), rerun]
+    _refused_ledger(fresh, tmp_path, rows, "the user must pick one", monkeypatch, capsys)
+
+
+def test_a_run_that_stops_part_way_has_logged_what_it_scored(
+    fresh: World,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """R40: the second checkpoint's pass fails; the first checkpoint's row is already printed and
+    appended. A second run with the other two checkpoints finishes the scoring; giving the first
+    again is refused."""
+    real = score_test.score_checkpoint
+    calls = []
+
+    def second_fails(*args: Any, **kwargs: Any) -> Scored:
+        calls.append(1)
+        if len(calls) == 2:
+            raise RuntimeError("the session died")
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(score_test, "score_checkpoint", second_fails)
+    with pytest.raises(RuntimeError):
+        score_test.main(fresh.argv(tmp_path / "first"))
+    printed = capsys.readouterr().out
+    [row] = score_test.read_test_ledger(fresh.test_ledger)
+    assert row["checkpoint sha256"] == fresh.rows["small"]["checkpoint sha256"]
+    assert f"| {row['run id']} |" in printed and "test ledger row of small_cnn seed 0:" in printed
+    assert not (tmp_path / "first" / "headline.md").exists()
+
+    monkeypatch.setattr(score_test, "score_checkpoint", real)
+    assert score_test.main(fresh.argv(tmp_path / "again")) == REFUSED_EXIT
+    assert "already scored" in capsys.readouterr().err
+    rest = [fresh.checkpoints["arm_a"], fresh.checkpoints["arm_b"]]
+    assert score_test.main(fresh.argv(tmp_path / "rest", checkpoints=rest)) in (0, ALARM_EXIT)
+    rows = score_test.read_test_ledger(fresh.test_ledger)
+    assert [r["run id"] for r in rows] == [r["run id"] for r in fresh.rows.values()]
 
 
 # The test splits have one route.
