@@ -159,7 +159,7 @@
      "passes": true},
     {"id": "9.02", "session": 9, "owner": "user", "due": "2026-10-19",
      "description": "The single final scoring on cis test and trans test on Kaggle, for the small CNN and every reported resnet18 arm and seed, after all of them have finished training; then decide open question 7 (which arm the Space serves)",
-     "steps": "manual: ledger rows with --approved-by pasted into docs/ledger.md; the headline table, the experiment tables and the slice tables pasted into docs/plan.md section 7 and README.md; the trans-test confusion matrix, attention histogram, per-camera chart and feature maps copied into docs/figures/ within the budget; plan.md open question 7 records the arm",
+     "steps": "manual: test-ledger rows with --approved-by pasted into docs/test-ledger.md; the headline table, the experiment tables and the slice tables pasted into docs/plan.md section 7 and README.md; the trans-test confusion matrix, attention histogram, per-camera chart and feature maps copied into docs/figures/ within the budget; plan.md open question 7 records the arm",
      "passes": false},
 
     {"id": "10.01", "session": 10, "owner": "claude", "due": "2026-10-20",
