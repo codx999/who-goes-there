@@ -288,6 +288,20 @@ methods. Mixed outcomes are reported as mixed. A negative result is a result.
 - **Protocol**: cis test and trans test are scored **once**, at the end, with the user's go-ahead,
   by a script that writes the ledger rows and the results tables. That scoring is tier 3. No
   test score is looked at before every arm and seed that will be reported has finished training.
+  The script (`trailcam/evaluate/score_test.py`, item 9.01) writes one row per checkpoint to
+  `docs/test-ledger.md`, with the test scores, the gaps, the checkpoint hash and who approved;
+  `docs/ledger.md` keeps its 16 training columns (user's decision, session 9.01). It refuses to
+  run without `--approved-by`, refuses a checkpoint with no training row or one already scored,
+  and requires every run in the ledger to be given (user's decision, session 9.01). A run still
+  training has no row, so the ledger alone cannot show it is missing: the user states the
+  reported run seeds (`--run-seeds`, required), and the script refuses a ledger without a small
+  CNN row, without an arm A and an arm B row for each of those seeds, or with a row of another
+  seed (user's decisions, review 9.01 and its ultra review). It also refuses two rows of one
+  checkpoint or of one config and run seed (a rerun: the user picks one; review 9.01). It runs
+  once: a test ledger that already holds a row is refused, so no run added after test scores
+  were seen can be scored. Each checkpoint's row is printed as soon as it is scored, and the rows
+  are appended together after every output is written, so a run that stops part way appends
+  nothing and is run again from the start (user's decisions, review 9.01 and its fix round).
 
 ## 8. Demo and deployment
 

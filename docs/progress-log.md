@@ -2696,3 +2696,239 @@ annotations or the sidecar, which `kaggle_pack_cache.py` refuses to write; the w
 6.09.
 
 **Next.** The user merges and pushes; then the user flips 6.04.
+
+## 2026-10-15: session 9, item 9.01, the final scoring script (Opus 5.5, xhigh)
+
+Main at 9c63bac. Built and tested on the synthetic fixture only: no real checkpoint was loaded
+and no real cis_test or trans_test was read (that is 9.02, the user's run on Kaggle).
+
+**Decisions (the user's, asked mid-session).** The item wants one ledger row per checkpoint with
+the test scores and who approved, but `LEDGER_COLUMNS` has 16 training columns and `ledger.py`
+requires that table to end `docs/ledger.md`. The user chose: (1) a separate
+`docs/test-ledger.md` with its own columns, so `docs/ledger.md`, `train.py` and `ledger.py` are
+unchanged; (2) a checkpoint that already has a test row is refused, so each is scored once.
+Recorded in plan.md section 7 (Protocol) and in R40's rule.
+
+**Done.** `trailcam/evaluate/score_test.py`, `docs/test-ledger.md` (header, no rows),
+`tests/test_score_test.py` (37 tests).
+
+- `python -m trailcam.evaluate.score_test --approved-by <name> --checkpoint <run>.pt ...
+  --data-root <cache> --out <new dir> [--config --ledger --test-ledger --overlay --assets]`.
+  The config of each checkpoint is the one its ledger row names, with the row's run seed, so a
+  checkpoint cannot be scored under another recipe.
+- Refusals, exit 1, all before any checkpoint is loaded or any test image read: no or empty
+  `--approved-by` (or one holding `|`); a non-empty `--out`; an overlay outside `assets/`; a
+  ledger that fails `ledger.py`'s check or a malformed test ledger; a missing checkpoint file, one
+  given twice, one with no ledger row ("unknown checkpoint"), one already in the test ledger; a
+  ledger row whose checkpoint is not given; a config that no longer hashes to its row; more than
+  one split hash; a file of another model (`load_checkpoint`). After the metadata is read: a
+  cache whose split hash is not the checkpoints' (still before any prediction).
+- One pass: `predict_split` once per checkpoint and test split; its predictions feed the
+  headline, `evaluate.write_report` (per-class, per-camera, confusion matrix, three PNGs per
+  split) and `slices.write_report`. `keep_features` only for the ResNet-18 (`FEATURE_MODELS`).
+  `attention_pass` once per checkpoint and split, and `write_overlays`, outside inference mode.
+  The overlays are drawn first, from `assets/` alone, so a failing one stops the run before any
+  test split is scored.
+- Output under `--out`: `headline.md` (per checkpoint: cis_test and trans_test accuracy and
+  macro-F1, both gaps, cis minus trans; a mean row per model and arm with more than one seed;
+  rows in ledger order, never by score; the leakage alarms of `train.py` applied to the test
+  scores; the Beery et al. citation), `slices.md`, the two feature maps (ResNet-18 only), and per
+  run id `metrics.md`, six PNGs, `attention.md`, `attention_in_box.png` and the overlays.
+- Test ledger rows: run id, model, arm, config, split hash, checkpoint sha256, the four scores,
+  both gaps, scored at (UTC), approved by. Printed with the alarms before the append, as
+  `train.py` does; exit `ALARM_EXIT` (3) when an alarm fired, else 0.
+- `evaluate.py`'s docstring now says 9.01 uses `predict_split`'s pass, not `predict`.
+- invariants.md: R17, R26 and R32 test cells name `tests/test_score_test.py`; R32's "where" adds
+  `score_test.py` and item 9.01; R40's rule says where the final scoring's rows go, and its test
+  cell names the new tests.
+
+Decision to review: every run in `docs/ledger.md` must be given in the one run (a row whose
+checkpoint is missing exits 1). With the re-scoring refusal this makes the scoring all at once and
+once only, and it is R17's "a listed checkpoint is missing" gap. If a ledger run should not be
+reported, this blocks 9.02 until the user decides; dropping the check is one `if`.
+
+Steps: `uv run pytest tests/test_score_test.py` 37 passed: the headline has both splits, both
+metrics and both gaps per checkpoint (by hand from the spied predictions); the test ledger rows
+have the files' sha256 and the approver; without `--approved-by` exits 1 (also via `python -m`);
+an unknown checkpoint exits 1. One run on the fixture (scratchpad) printed the table and rows and
+exited 3: random weights put trans within two points of cis, so the alarm fired, as intended.
+
+Mutation checks, each restored by copying the file back, each failing a test: the approver check
+removed (2 ways), the unknown-checkpoint check, the missing-ledger-row check, the already-scored
+check, the non-empty `--out` check, the config-hash check, the split-hash check; a test split by
+another route (`CLI_SPLITS` widened to cis_test and trans_test in `attention.py`; val added to the
+records returned; `TEST_SPLITS` swapped for val and trans_val); a second `predict_split` pass;
+features kept for the small CNN; the attention pass inside `torch.inference_mode()`; the overlays
+removed, and moved after the test passes. 17 of 17 killed.
+
+`check.sh` green (761 passed). Then main moved to 3a4fcf3 (8.07, 6.03) and I merged it with the
+sync tool. The conflicts were in this log and in R17's and R41's rows of invariants.md (8.07
+added `tests/test_datavis.py` to both). Both sides were kept, with the other items' entries
+first. `check.sh` green after the merge (781 passed).
+
+Notes, not fixed:
+
+- 9.02's steps say "ledger rows ... pasted into docs/ledger.md"; with the user's decision they go
+  into `docs/test-ledger.md`. Items are not edited by Claude; the user may want to reword 9.02.
+- On Kaggle, pass `--config`, `--ledger`, `--test-ledger` and `--assets` from the clone (the wheel
+  ships no `docs/`), and a new `--out` under `/kaggle/working`. The clone's `docs/ledger.md` must
+  hold every training row (6.09 adds the small CNN's).
+- One mutation run took 11 minutes of wall time while pytest reported 42 s; the unmutated file
+  runs in 45 s and exits cleanly. Not reproduced.
+
+For the learning journal (`docs/learning-journal.md` is not on main yet), evaluation:
+
+- A test set is a one-shot measurement: once you have seen its score, every later choice is
+  tuned on it a little, so `score_test.py` scores every checkpoint together and refuses one that
+  already has a row in `docs/test-ledger.md`.
+- The script refuses to run without `--approved-by` because "the user's go-ahead" is a rule only
+  if it leaves a trace; the approver's name goes into every row.
+- Refusals are checked before anything is loaded, and the tests prove it by replacing the
+  loaders with functions that fail: a refusal after the first prediction would already be a look.
+- Where to look: `trailcam/evaluate/score_test.py` (docstring), `docs/test-ledger.md`,
+  `tests/test_score_test.py`, plan.md section 7 (Protocol).
+
+**Next.** Review 9.01 (tier 3). Then 9.02, the user's single run on Kaggle once every arm and
+seed has finished training.
+
+Review: tier 3, ran `/review-session 9.01` (3a4fcf3..bc61d94; code-reviewer Opus xhigh,
+risk-reviewer Fable high). Both found the same low independently. Findings:
+
+- High (code-reviewer): R17's "scored while a run is still training" was open. A run in training
+  has no ledger row, so a ledger with the small CNN and arm A seed 0 passed while arm B seed 0
+  trained. After arm B's row was added, nothing could be scored without a second test ledger.
+- Low (both): the test rows were printed only after the slice tables, feature maps and headline.
+  A crash there, or in a later checkpoint's pass, left test scores on disk with no row.
+- Low (risk-reviewer; a hardening note from code-reviewer): two training rows with one checkpoint
+  sha256 were not refused. One file would be scored as two rows, and the test ledger would then
+  refuse itself.
+- Low (code-reviewer): 9.02's steps still say the rows go into `docs/ledger.md`. This is the
+  user's edit after the merge; items are not touched here.
+- Risk-reviewer's design question: two rows of one config and run seed (a rerun) could never be
+  scored.
+
+Scenarios R01, R03, R05, R26, R32, R42 to R45 held for both. R40 held for the row content and
+order. R17 broke on scenario 2 (the high).
+
+Fix 5612c2d (the user's decisions, via the coordinator):
+
+- `check_complete`: refuses a ledger with no small CNN row, with no ResNet-18 row, or whose arm A
+  and arm B rows differ in run seeds. The message names each missing arm and seed.
+- `check_unique`: refuses two rows of one checkpoint sha256, and two rows of one config and run
+  seed (the message says the user must pick one).
+- `log_row`: each checkpoint's test row and alarms are printed, then the row is appended, right
+  after that checkpoint is scored. This comes before its tables, the next checkpoint, the slices,
+  the feature maps and the headline.
+- Decision to review: with rows appended per checkpoint, a run that stops part way would have
+  left the rest unscoreable. The "already scored" refusal and the "every row given" check
+  together refuse every rerun. So a ledger row now counts as present if it is given or already
+  in the test ledger, and a second run with the checkpoints left finishes the scoring. Given
+  again, the scored ones are still refused. That second run's slices, feature maps and headline
+  hold its own checkpoints only.
+- Plan section 7, the docstring, and R17's and R40's test cells state the rules.
+- Tests (46 in the file, 9 new): five incomplete ledgers, including the reviewer's two-row case
+  and arm A {0, 1} with arm B {0}; a complete paired ledger with seeds 0 and 1 passes; one
+  checkpoint in two rows; a rerun of arm A seed 0; a run whose second checkpoint fails has
+  printed and appended the first row, a full rerun is refused, and a run with the other two
+  finishes the ledger.
+- Mutation checks, each restored by copying and each failing a test, 8 of 8: the small CNN
+  check, the seed pairing, the no-ResNet-18 check, `check_complete` not called, the duplicate
+  hash, the duplicate config and seed, the rows logged at the end, and no resume.
+
+`check.sh` green (790 passed).
+
+**Next.** Fix round: `/review-session bc61d94..5612c2d 9.01` (`score_test.py` and its tests are
+high-stakes files). Then the user's tier-3 option, `/code-review ultra`. The user rewords 9.02's
+steps after the merge.
+
+Fix round: `/review-session bc61d94..5612c2d 9.01` (code-reviewer Opus xhigh, risk-reviewer
+Fable high). Findings:
+
+- High (code-reviewer; risk-reviewer found a narrower version, low): the resume path counted an
+  already-scored row as present. So runs trained after the test scores were seen could be scored
+  later: arm A and arm B seed 1, or a rerun of arm B seed 0 after its old row was removed. Before
+  the fix this was impossible. The resume was my decision, flagged in the fix entry above.
+- Low (both): a failure between a row's append and its tables (or the slices and feature maps)
+  lost those outputs for good, since the checkpoint was then "already scored". A resumed run's
+  headline and alarms covered only its own checkpoints.
+
+Scenarios R01, R03, R05, R26, R32, R42 to R45 held for both. R17's named scenario held
+(`check_complete`); the high is another route around it. R40 held, with these findings left over.
+Code-reviewer also noted that plan section 7 credited the resume rule to the user; it was mine.
+
+Fix 60b2185 (the user's decision: drop the resume):
+
+- A test ledger that already holds a row is refused, whichever checkpoints are given: the final
+  scoring runs once, for every checkpoint together. Runs added after it can never be scored.
+- `print_row` prints each checkpoint's row and alarms as soon as it is scored; the rows are
+  appended together after every checkpoint's tables, the headline, the slices and the feature
+  maps. A run that stops part way appends nothing and is run again from the start with a new
+  `--out` (the checkpoints are pinned by sha256, so the scores are the same).
+- `read_test_ledger` also refuses one run id in two rows.
+- Plan section 7 credits each rule to the decision it came from; R17's and R40's test cells
+  updated.
+- Tests (48 in the file): the part-way test now fails the second checkpoint and, in a second run,
+  the feature maps; both print the rows scored and append none, then a full run appends all
+  three. The rescoring test also gives seeds 1 of both arms added to the ledger later: refused.
+  The malformed test ledger cases check each reason on the reader, including one run id in two
+  rows.
+- Mutation checks, each restored by copying and each failing a test, 7 of 7: the run-once
+  refusal, the rows appended per checkpoint, the rows appended before the figures, the run-id
+  check, the sha256 check, and the rows not printed. The run-id mutation first survived, because
+  `main` refuses any test ledger with rows before the reader's check is reached. The test now
+  checks the reader's message.
+
+`check.sh` green (792 passed). No third round unless the user asks.
+
+**Next.** The user's tier-3 option, `/code-review ultra` on the branch, with time for one fix
+round before 9.02. The user rewords 9.02's steps after the merge, then merges this branch.
+
+Ultra review (2026-10-16): `/code-review ultra` on the branch (the user's tier-3 option; a
+first attempt was stopped before it finished). Four findings, all graded nit, all verified real:
+
+- `check_complete` saw a missing arm only when the other arm already had that seed. With seed 0
+  of both arms in the ledger and seed 1 still training it passed, and the run-once rule would
+  then lock seed 1 out. The docstring and plan section 7 claimed more than the code did. The
+  ledger cannot see a run with no row, so completeness has to be stated.
+- `append_rows` re-read the test ledger but did not re-apply the run-once check. A second
+  scoring, or rows pasted in during the run, would leave duplicate rows that every later read
+  refuses.
+- `docs/test-ledger.md` still described the first version (refuses "a checkpoint that already
+  has a row"; "pastes the printed rows here" without saying which copy).
+- `--approved-by` with U+2028, U+0085 or another line break `splitlines()` splits on passed the
+  `\n` and `\r` check and would be written as a broken row.
+
+Fix f5b23e4 (the user's decisions):
+
+- `--run-seeds` is required (exit 1 without it). `check_complete` refuses a ledger without a
+  small CNN row, without an arm A and an arm B row for each seed given, or with a ResNet-18 row
+  of another seed. The headline records the seeds.
+- `append_rows` refuses a test ledger that gained a row during the run; `main` exits 1 and the
+  rows are already printed.
+- `breaks_table`: a `|` or any non-printable character, which covers every `splitlines()`
+  boundary. Used by `check_approver` and `ledger_line`.
+- `docs/test-ledger.md` rewritten: the script appends to the clone's copy, the user pastes the
+  printed rows once into the repo's file, and every refusal is listed. Plan section 7 and R17's
+  test cell state `--run-seeds`.
+- Tests (57 in the file): the ultra case (seed 0 of both arms, `--run-seeds 0 1`) and a ledger
+  seed not given are refused; no `--run-seeds` exits 1; approvers with U+2028, U+0085, a
+  vertical tab and a tab are refused, and a cell with U+2028 or U+001C is refused by
+  `ledger_line` while accented names pass; an append to a test ledger that gained a row is
+  refused and leaves it unchanged.
+- Mutation checks, 5 of 5 killed, each restored by copying: no `--run-seeds` check, a missing
+  seed not seen, an extra seed not seen, the cell check back to `\n` and `\r` only, and no
+  re-check at the append.
+- Not tested through `main`: the `except Refusal` around the append (exit 1, not a traceback).
+  It is covered by reading only; a test would need another full scoring run.
+
+`check.sh` green (801 passed). Reviewing these fixes would be a third round, which needs the
+user's request.
+
+Merged main at 914e5fe (6.09 and the 6.04 flip; the small CNN row is now in `docs/ledger.md`) with
+the sync tool. The conflicts were in this log and in R40's test cell (6.09 rewrote "holds the
+header and no rows"); both sides were kept, the other item's entries first. `check.sh` green
+after the merge (802 passed).
+
+**Next.** On Kaggle, 9.02 now needs `--run-seeds` (for example `--run-seeds 0 1 2`, or `0` if
+seeds 1 and 2 are not trained). The user rewords 9.02's steps after the merge, then merges this
+branch.
