@@ -2765,3 +2765,48 @@ Fix 60b2185 (the user's decision: drop the resume):
 
 **Next.** The user's tier-3 option, `/code-review ultra` on the branch, with time for one fix
 round before 9.02. The user rewords 9.02's steps after the merge, then merges this branch.
+
+Ultra review (2026-10-16): `/code-review ultra` on the branch (the user's tier-3 option; a
+first attempt was stopped before it finished). Four findings, all graded nit, all verified real:
+
+- `check_complete` saw a missing arm only when the other arm already had that seed. With seed 0
+  of both arms in the ledger and seed 1 still training it passed, and the run-once rule would
+  then lock seed 1 out. The docstring and plan section 7 claimed more than the code did. The
+  ledger cannot see a run with no row, so completeness has to be stated.
+- `append_rows` re-read the test ledger but did not re-apply the run-once check. A second
+  scoring, or rows pasted in during the run, would leave duplicate rows that every later read
+  refuses.
+- `docs/test-ledger.md` still described the first version (refuses "a checkpoint that already
+  has a row"; "pastes the printed rows here" without saying which copy).
+- `--approved-by` with U+2028, U+0085 or another line break `splitlines()` splits on passed the
+  `\n` and `\r` check and would be written as a broken row.
+
+Fix f5b23e4 (the user's decisions):
+
+- `--run-seeds` is required (exit 1 without it). `check_complete` refuses a ledger without a
+  small CNN row, without an arm A and an arm B row for each seed given, or with a ResNet-18 row
+  of another seed. The headline records the seeds.
+- `append_rows` refuses a test ledger that gained a row during the run; `main` exits 1 and the
+  rows are already printed.
+- `breaks_table`: a `|` or any non-printable character, which covers every `splitlines()`
+  boundary. Used by `check_approver` and `ledger_line`.
+- `docs/test-ledger.md` rewritten: the script appends to the clone's copy, the user pastes the
+  printed rows once into the repo's file, and every refusal is listed. Plan section 7 and R17's
+  test cell state `--run-seeds`.
+- Tests (57 in the file): the ultra case (seed 0 of both arms, `--run-seeds 0 1`) and a ledger
+  seed not given are refused; no `--run-seeds` exits 1; approvers with U+2028, U+0085, a
+  vertical tab and a tab are refused, and a cell with U+2028 or U+001C is refused by
+  `ledger_line` while accented names pass; an append to a test ledger that gained a row is
+  refused and leaves it unchanged.
+- Mutation checks, 5 of 5 killed, each restored by copying: no `--run-seeds` check, a missing
+  seed not seen, an extra seed not seen, the cell check back to `\n` and `\r` only, and no
+  re-check at the append.
+- Not tested through `main`: the `except Refusal` around the append (exit 1, not a traceback).
+  It is covered by reading only; a test would need another full scoring run.
+
+`check.sh` green (801 passed). Reviewing these fixes would be a third round, which needs the
+user's request.
+
+**Next.** On Kaggle, 9.02 now needs `--run-seeds` (for example `--run-seeds 0 1 2`, or `0` if
+seeds 1 and 2 are not trained). The user rewords 9.02's steps after the merge, then merges this
+branch.
