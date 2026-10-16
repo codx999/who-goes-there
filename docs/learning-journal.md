@@ -109,6 +109,18 @@ prints counts only, never an id):
 uv run python -m trailcam.data.metadata --root "$(bash scripts/data_root.sh)"
 ```
 
+**Added by 8.07, the data charts.** Five charts in `docs/figures/`, drawn from the metadata only
+(no photo): class counts, camera locations, day/night, box fill and burst length. They show what
+the tables said: classes and cameras are imbalanced; 60 to 72% of kept frames per split are night
+(hour 12 holds 2,990 night frames, so the clock is wrong); most animals cover 1 to 5% of the frame,
+which is why arm B crops in; 91% of photos have a near-twin in their burst, which is why the split
+goes by burst. Look at [datavis.py](../trailcam/data/datavis.py),
+[day_night.png](figures/day_night.png), [test_datavis.py](../tests/test_datavis.py). Try:
+
+```bash
+TRAILCAM_DATA_ROOT="$(bash scripts/data_root.sh)" uv run pytest -q tests/test_datavis.py -k night
+```
+
 ## 3. Splitting without leakage
 
 **What we did.** Camera traps fire in bursts, usually three frames a second apart, sharing a
@@ -368,6 +380,20 @@ notebook's "no test split" rule:
 uv run pytest -q tests/test_train.py tests/test_attention.py tests/test_notebook.py -k "score_alarms or refuses_every_split or no_test_split"
 ```
 
+**Added by 9.01, the final scoring script.** A test set is a one-shot measurement: once you have
+seen its score, every later choice is tuned on it a little. So `score_test.py` scores every
+checkpoint together and refuses a test ledger that already holds a row. It refuses to run without
+`--approved-by` (the go-ahead is a rule only if it leaves a trace; the name goes into every row)
+and without `--run-seeds`, which states the seeds reported, since the ledger cannot see a run still
+training. Every refusal comes before anything is loaded: a refusal after the first prediction
+would already be a look. Rows go to [test-ledger.md](test-ledger.md); look at
+[score_test.py](../trailcam/evaluate/score_test.py) (docstring),
+[test_score_test.py](../tests/test_score_test.py), [plan.md](plan.md) section 7. Try:
+
+```bash
+uv run pytest -q tests/test_score_test.py -k "approver or scored_again or run_seeds"
+```
+
 ## 10. Evaluation pieces built so far
 
 **What we did.** By 2026-10-15 these are built and tested (none run on real checkpoints yet):
@@ -402,7 +428,10 @@ uv run pytest -q tests/test_train.py tests/test_attention.py tests/test_notebook
   two dimensions with PCA and plotted, once coloured by species and once by camera, arm A beside
   arm B. If photos cluster by camera more than by species, the model has learned the scenery.
 
-Still to come: the figures and Grad-CAM overlays (item 8.02).
+- **Figures and overlays** (item 8.02): the confusion matrix, per-class bars and per-camera bars
+  as PNGs, and Grad-CAM overlays drawn with the same `gradcam` function attention-in-box scores,
+  from `assets/` photos only. `evaluate.py` is the one entry point that scores a checkpoint on val
+  or trans_val and writes `metrics.md` and the PNGs.
 
 **Why it mattered here.** Accuracy says how often the model is right, not why. Attention-in-box
 and the animal-removed test are the measurements that answer the research question (topic 5): does
@@ -432,6 +461,17 @@ feature-map PNGs in a temporary folder:
 
 ```bash
 uv run python -m trailcam.evaluate.slices --dry-run=True --out "$(mktemp -d)"
+```
+
+**Added by 8.02.** Two lessons from the overlays. A figure can leak data through the panel beside
+the one you look at: a raw left panel would have put a dataset photo into `docs/figures/` with
+every test green. And a zero heat map blends to the raw photo, so the guard refuses it. Restore a
+mutation test by copying the file back, never with `git checkout` (it once reset uncommitted
+work). Look at [figures.py](../trailcam/evaluate/figures.py),
+[evaluate.py](../trailcam/evaluate/evaluate.py), [test_figures.py](../tests/test_figures.py). Try:
+
+```bash
+uv run pytest -q tests/test_figures.py -k assets
 ```
 
 ## 11. Running on Kaggle
@@ -534,8 +574,8 @@ uv run pytest -q tests/test_kaggle_pack.py tests/test_cache.py -k "same or trave
   Work is cut into items in `docs/progress.json`, one item per session, each with steps that must
   pass before it is marked done.
 - **Tests and mutation checks.** Each item comes with tests, and the important ones are checked by
-  planting bugs on purpose (a "mutation") and confirming a test fails. By 2026-10-15 the suite has
-  698 tests. `bash scripts/check.sh` runs them all plus strict type checking (mypy), linting and
+  planting bugs on purpose (a "mutation") and confirming a test fails. By 2026-10-16 the suite has
+  802 tests. `bash scripts/check.sh` runs them all plus strict type checking (mypy), linting and
   formatting (ruff) and the data guard; it must be green before every commit.
 - **The data guard.** `scripts/guard_data.py` runs in the git hooks and in CI and refuses images,
   metadata dumps, weights and keys, so no dataset photo or secret can reach the public repo.
@@ -568,6 +608,16 @@ decided its review tier:
 
 ```bash
 bash scripts/risk_files.sh 532a74f~1..532a74f
+```
+
+**Added by 6.09.** The test that broke on the first ledger row pinned a moment (an empty ledger),
+not the rule. It now checks what holds for the file's whole life, by reusing the ledger checker
+instead of a second copy of its rules, and the small CNN's row is in [ledger.md](ledger.md). Run
+`check.sh` before every commit, docs-only ones too: the tests read the docs. Look at
+[test_train.py](../tests/test_train.py), [ledger.py](../trailcam/train/ledger.py). Try:
+
+```bash
+uv run python -m trailcam.train.ledger --check docs/ledger.md
 ```
 
 ---
@@ -684,8 +734,9 @@ In order:
    `pip install` it and run `scripts/kaggle_pack_cache.py` with Save & Run All (about 17 minutes;
    it prints the file counts, the size and the SHA-256).
 9. **Attach the packing notebook's output** to the training notebook (not a dataset made from it,
-   which Kaggle unpacks), remove the loose `cct20-512` input, and set `CACHE_ARCHIVE` to the
-   archive's path under `/kaggle/input/notebooks/<user>/<slug>/`.
+   which Kaggle unpacks) and remove the loose `cct20-512` input. `CACHE_ARCHIVE` must be the
+   archive's path under `/kaggle/input/notebooks/<user>/<slug>/`; since 6.09 that is the
+   notebook's default.
 10. **Set `COMMIT`** to `61f1eccf24a3e33cf876e4ceb9dd5e5af8aed020`, the training commit for 6.04
     and the runs after it, so every run and both arms train on identical code.
 11. **Save & Run All**, check the Logs tab after about 10 minutes, then paste the printed ledger

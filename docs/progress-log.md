@@ -3015,3 +3015,19 @@ and is not touched here. This branch was never on 93b9769 (it sits on 61f1ecc, w
 f414912's), so no sync. Links (96) and all 15 commands re-checked; `check.sh` green.
 
 Review: tier 0 (docs only), nothing to run.
+
+## 2026-10-16: item 12.07, journal entries for 8.02, 8.07, 6.09 and 9.01 (Opus 5.5)
+
+Requested by the coordinator session. Main at f706326 merged in through the sync tool; one
+conflict, in this log (the new 2026-10-15 entries first, as merged, then 12.07's). The journal
+gains a short entry per item, folding in the "For the learning journal" lines of each log entry:
+8.07 under data cleaning (the five charts and what each shows), 8.02 under evaluation (figures,
+overlays from `assets/` only, `evaluate.py`; the raw-panel and zero-map lessons; restore
+mutations by copying), 9.01 under test-set isolation (scored once, `--approved-by`,
+`--run-seeds`, refusals before loading, `docs/test-ledger.md`), 6.09 under how the project was
+run (test the rule, not the moment; check.sh before every commit). Topic 10 no longer lists 8.02
+as still to come, the Kaggle step 9 says `CACHE_ARCHIVE` now defaults to the notebook output,
+and the test count is 802. Steps re-run: 109 links resolve, all 19 commands exit 0, `check.sh`
+green (802 passed).
+
+Review: tier 0 (docs only), nothing to run.
