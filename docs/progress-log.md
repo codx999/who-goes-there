@@ -3240,3 +3240,32 @@ R35 broke on one clause. No spec changed. Four lows, all fixed at the user's go:
 Spec changed in this fix: plan.md section 8 (R36 cites it, updated in the same commit) and
 `docs/review/invariants.md`. `check.sh` green. The fix touches `trailcam/demo/sort.py` and
 modifies lines of `tests/test_sort.py`, so one fix round runs on the fix range.
+
+## 2026-10-16: fix round 10.02: four lows fixed, no third round (Opus 5.5)
+
+Fix round (`/review-session 46434c2..HEAD 10.02`, the user's start): code-reviewer (Opus 5.5
+xhigh) on the range, risk-reviewer (Fable 5.1 high) on `tests/test_sort.py` and
+`trailcam/demo/sort.py`. Scenarios R01 to R05, R07, R17, R20, R21, R23, R33 to R35, R42 to R45
+hold (Space parts skipped); R36's scenario conflicted with the new section 8. Spec changed: plan.md
+section 8 (rows R02, R04, R07, R33 to R36 cite it; all agree after this fix). Four lows, fixed at
+the user's go:
+
+- Code-reviewer: `check_source` checked `--src` and its parents only, so a folder above the repo
+  (or a link into `data/`) reached the dataset. It now also refuses a `--src` holding any photo
+  that, links followed, lies inside a git repository, before the model loads. Two new tests;
+  turning the check off fails two, not following links fails one.
+- Both reviewers (code from the first commit): a failed `shutil.copy2` (full disk, permission)
+  raised an `OSError` whose traceback names the photo's path (R03). The copy is now caught, the
+  photo counted as `not copied` without its name, and the sort goes on. New test with a copy that
+  raises an `OSError` carrying the path; catching the wrong error or keeping the class label fails
+  it.
+- Code-reviewer: R36 called a CUDA torch a defect, but the ZeroGPU phase needs one. Section 8 and
+  R36 now say the CPU Basic phase uses the lock's CPU torch and the ZeroGPU phase a CUDA torch
+  and `spaces`, settled in 11.01.
+- Code-reviewer: plan.md sections 4 and 9 still said "free" CPU Space; both now say CPU Basic.
+
+Not fixed, noted: the reviewer could not confirm the Hugging Face tier facts (it recalled ZeroGPU
+hosting needing PRO); check them before the switch around 11-15. The imports test would miss the
+`import trailcam.data.metadata` form (not used today). R03 and R35's test cells name the new
+tests. Per the playbook this round's findings are fixed and listed, with no third round unless the
+user asks. `check.sh` green.

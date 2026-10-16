@@ -15,8 +15,11 @@ script reads no labels and no metadata, only the photos, so it cannot score anyt
 sets are scored once, by items 9.01 and 9.02 (R17). A photo Pillow cannot read is counted as
 unreadable and skipped.
 
-`--src` is refused when it is inside a git repository, this one and its `data/` included: the
-sort reads a folder of demo photos gathered outside the repo, never the dataset itself (R35).
+`--src` is refused when it is inside a git repository, this one and its `data/` included, or
+when any photo under it, links followed, lies inside one (a folder above the repo, a link into
+`data/`): the sort reads a folder of demo photos gathered outside the repo, never the dataset
+itself (R35). A photo that cannot be copied (a full disk, no permission) is counted as not copied,
+without its name, and the sort goes on.
 `--dst` is refused when it is inside a git repository, so sorted photos can never be committed
 (R01); when it is `--src` or inside it, so the sort cannot feed itself; and when it exists and is
 not empty, so a rehearsal cannot mix with the run before.
@@ -49,10 +52,11 @@ from trailcam.train.config import CONFIG_PATH, load_config
 
 REPO_ROOT: Final = Path(__file__).resolve().parents[2]
 UNREADABLE: Final = "unreadable"
+NOT_COPIED: Final = "not copied"
 
 
 class SourceError(ValueError):
-    """`--src` is inside a git repository."""
+    """`--src` is inside a git repository, or holds a photo that is."""
 
 
 class DestinationError(ValueError):
@@ -67,9 +71,12 @@ def _in_git_repository(path: Path) -> bool:
 
 
 def check_source(src: Path) -> None:
-    """Raise `SourceError` when `src` is inside a git repository (R35)."""
+    """Raise `SourceError` when `src`, or any photo under it with links followed, is inside a git
+    repository (R35)."""
     if _in_git_repository(src.resolve()):
         raise SourceError("--src is inside a git repository; gather the photos outside it")
+    if any(_in_git_repository(photo.resolve()) for photo in find_photos(src)):
+        raise SourceError("--src holds photos inside a git repository; gather them outside it")
 
 
 def check_destination(src: Path, dst: Path) -> None:
@@ -121,7 +128,7 @@ def _free_name(folder: Path, name: str) -> Path:
 
 def sort_photos(model: nn.Module, src: Path, dst: Path) -> Counter[str]:
     """Copy each photo under `src` into `dst/<class>/`, printing a line per photo; return the
-    count per class (and of unreadable photos)."""
+    count per class (and of unreadable and not-copied photos)."""
     check_source(src)
     check_destination(src, dst)
     photos = find_photos(src)
@@ -137,7 +144,10 @@ def sort_photos(model: nn.Module, src: Path, dst: Path) -> Counter[str]:
         except (UnidentifiedImageError, OSError):
             label = UNREADABLE
         else:
-            shutil.copy2(path, _free_name(dst / label, path.name))
+            try:
+                shutil.copy2(path, _free_name(dst / label, path.name))
+            except OSError:  # its message names the photo: counted, never printed (R03)
+                label = NOT_COPIED
         counts[label] += 1
         seconds = time.perf_counter() - start
         print(f"{number:>{width}}/{len(photos)}  {seconds:7.2f} s  {label}: {counts[label]}")
@@ -147,11 +157,13 @@ def sort_photos(model: nn.Module, src: Path, dst: Path) -> Counter[str]:
 
 
 def summary(counts: Counter[str], seconds: float) -> str:
-    """The count per class, the unreadable photos if any, the total and the seconds."""
-    width = max(len(name) for name in (*CLASSES, UNREADABLE))
+    """The count per class, the unreadable and not-copied photos if any, the total and the
+    seconds."""
+    width = max(len(name) for name in (*CLASSES, UNREADABLE, NOT_COPIED))
     lines = [f"{name:<{width}}  {counts[name]:>5}" for name in CLASSES]
-    if counts[UNREADABLE]:
-        lines.append(f"{UNREADABLE:<{width}}  {counts[UNREADABLE]:>5}")
+    lines += [
+        f"{name:<{width}}  {counts[name]:>5}" for name in (UNREADABLE, NOT_COPIED) if counts[name]
+    ]
     total = sum(counts.values())
     rate = total / seconds if seconds > 0 else 0.0
     lines.append(f"{total} photos in {seconds:.2f} s ({rate:.1f} photos per second)")

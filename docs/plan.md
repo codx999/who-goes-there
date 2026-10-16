@@ -156,8 +156,8 @@ Two models, trained and scored the same way, so the slides can show what pretrai
 2. **Fine-tuned pretrained backbone** (`trailcam/model/backbone.py`): **ResNet-18** with
    ImageNet-1k weights (torchvision), final linear layer replaced by a 12-way head, all layers
    fine-tuned with a lower learning rate on the body than on the head. 11.7M parameters, about
-   1.8 GFLOPs per image, about 45 MB of weights; well under a second per image on the CPU-only
-   free tier of Hugging Face Spaces, and the standard Grad-CAM subject (target layer `layer4`).
+   1.8 GFLOPs per image, about 45 MB of weights; well under a second per image on the CPU Basic
+   hardware of Hugging Face Spaces (section 8), and the standard Grad-CAM subject (target layer `layer4`).
    ImageNet contains no CCT images, so pretraining is not leakage. Fallback if a Space prediction
    takes over about one second: EfficientNet-B0 (timm), 5.3M parameters, about 21 MB.
 
@@ -323,7 +323,9 @@ exported from uv (`uv export --no-dev --no-hashes`, trimmed to what the app impo
 `huggingface_hub`, reading the token from the environment. Since mid-2026 a free account cannot
 host a Gradio Space on CPU Basic (decided 2026-10-16): the Space runs on CPU Basic under PRO ($9 a
 month) for one month from about 2026-10-20, then moves to free ZeroGPU, open to accounts older
-than 30 days, around 2026-11-15; `space/app.py` is made ZeroGPU-ready in item 11.01. Item 11.02's
+than 30 days, around 2026-11-15; `space/app.py` is made ZeroGPU-ready in item 11.01. The CPU Basic phase uses the lock's CPU
+torch; the ZeroGPU phase needs a CUDA torch and the `spaces` package, and 11.01 settles how its
+requirements file differs. Item 11.02's
 text ("the free CPU tier") predates this; this section wins. The local app's `--share` link is
 the free, temporary backup.
 Account and Space creation are the user's steps. The Space serves arm B if it wins, else arm A.
@@ -333,7 +335,7 @@ Account and Space creation are the user's steps. The Space serves arm B if it wi
 **Architecture.** A pretrained ResNet-18, fine-tuned end to end, against a small CNN trained from
 scratch. The dataset has about 13,600 training images across 12 imbalanced classes; that is too
 few to learn good low-level features from zero, which is exactly what ImageNet pretraining
-supplies. ResNet-18 is small enough for CPU inference on a free Space, trains in about an hour on
+supplies. ResNet-18 is small enough for CPU inference on a basic Space, trains in about an hour on
 a T4, and is the best-understood Grad-CAM subject. The scratch CNN is kept as the baseline that
 shows what pretraining buys.
 

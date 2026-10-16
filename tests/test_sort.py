@@ -19,6 +19,7 @@ from trailcam.data.classes import CLASSES
 from trailcam.demo import sort
 from trailcam.demo.predict import PHOTO_SUFFIXES, load_model
 from trailcam.demo.sort import (
+    NOT_COPIED,
     UNREADABLE,
     DestinationError,
     SourceError,
@@ -159,6 +160,73 @@ def test_a_source_inside_the_repo_or_any_git_repository_is_refused(tmp_path: Pat
         with pytest.raises(SourceError, match="git repository"):
             check_source(src)
     check_source(tmp_path)
+
+
+def test_a_source_above_a_repository_or_linking_into_one_is_refused(
+    fixture_dir: Path, tmp_path: Path
+) -> None:
+    """A folder above a repository, or a link to a photo inside one, would reach `data/`."""
+    photo = _photos(fixture_dir)[0]
+    (tmp_path / "outer" / "repo" / ".git").mkdir(parents=True)
+    (tmp_path / "outer" / "repo" / "data").mkdir()
+    shutil.copy2(photo, tmp_path / "outer" / "repo" / "data" / "x.jpg")
+    (tmp_path / "linked").mkdir()
+    (tmp_path / "linked" / "x.jpg").symlink_to(tmp_path / "outer" / "repo" / "data" / "x.jpg")
+    for src in (tmp_path / "outer", tmp_path / "linked"):
+        with pytest.raises(SourceError, match="holds photos inside a git repository"):
+            check_source(src)
+    (tmp_path / "plain").mkdir()
+    shutil.copy2(photo, tmp_path / "plain" / "x.jpg")
+    check_source(tmp_path / "plain")
+
+
+def test_the_cli_refuses_a_source_above_a_repository_before_loading_the_model(
+    fixture_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def no_model(*_: object) -> None:
+        raise AssertionError("the model was loaded")
+
+    monkeypatch.setattr(sort, "load_model", no_model)
+    monkeypatch.setattr(sort, "build_model", no_model)
+    (tmp_path / "outer" / "repo" / ".git").mkdir(parents=True)
+    shutil.copy2(_photos(fixture_dir)[0], tmp_path / "outer" / "repo" / "x.jpg")
+    with pytest.raises(SystemExit) as exit_info:
+        main(
+            [
+                "--src",
+                str(tmp_path / "outer"),
+                "--dst",
+                str(tmp_path / "sorted"),
+                "--checkpoint",
+                "x",
+            ]
+        )
+    assert exit_info.value.code == 2
+    assert not (tmp_path / "sorted").exists()
+
+
+def test_a_photo_that_cannot_be_copied_is_counted_without_its_name(
+    fixture_dir: Path,
+    model: nn.Module,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A full disk raises an `OSError` whose message holds the photo's path; it is never shown."""
+    src = tmp_path / "src"
+    src.mkdir()
+    for name in ("first_photo.jpg", "second_photo.jpg"):
+        shutil.copy2(_photos(fixture_dir)[0], src / name)
+
+    def full_disk(source: Path, target: Path) -> None:
+        raise OSError(28, "No space left on device", str(source))
+
+    monkeypatch.setattr(sort.shutil, "copy2", full_disk)
+    counts = sort_photos(model, src, tmp_path / "sorted")
+    assert counts[NOT_COPIED] == 2 and sum(counts.values()) == 2
+    out = capsys.readouterr().out
+    assert f"{NOT_COPIED}: 2" in out and "2 photos in " in out
+    assert "_photo" not in out and str(src) not in out and "No space" not in out
 
 
 def test_the_cli_refuses_a_source_in_the_repo_before_loading_the_model(
