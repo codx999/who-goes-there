@@ -649,8 +649,8 @@ uv run python -m trailcam.demo.app --check
 prints a running timer and the count per class, to show throughput on about 200 unseen-camera
 photos. The model is loaded and warmed up once, then each photo costs one forward pass. It prints
 counts and seconds only, never a file name, and reads no labels, so it cannot score anything: the
-test sets are scored once, in 9.01 and 9.02. It refuses a destination inside a git repository, so
-sorted photos can never be committed. Look at [sort.py](../trailcam/demo/sort.py),
+test sets are scored once, in 9.01 and 9.02. It refuses a source or a destination inside a git
+repository, so it never reads the dataset folder and sorted photos can never be committed. Look at [sort.py](../trailcam/demo/sort.py),
 [test_sort.py](../tests/test_sort.py). Try (sorts the synthetic fixture with random weights):
 
 ```bash

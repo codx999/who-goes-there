@@ -15,9 +15,11 @@ script reads no labels and no metadata, only the photos, so it cannot score anyt
 sets are scored once, by items 9.01 and 9.02 (R17). A photo Pillow cannot read is counted as
 unreadable and skipped.
 
-`--dst` is refused when it is inside a git repository, this one included, so sorted photos can
-never be committed (R01); when it is `--src` or inside it, so the sort cannot feed itself; and
-when it exists and is not empty, so a rehearsal cannot mix with the run before.
+`--src` is refused when it is inside a git repository, this one and its `data/` included: the
+sort reads a folder of demo photos gathered outside the repo, never the dataset itself (R35).
+`--dst` is refused when it is inside a git repository, so sorted photos can never be committed
+(R01); when it is `--src` or inside it, so the sort cannot feed itself; and when it exists and is
+not empty, so a rehearsal cannot mix with the run before.
 
     python -m trailcam.demo.sort --src <photos> --dst <outside the repo> --checkpoint <run>.pt
 
@@ -49,16 +51,32 @@ REPO_ROOT: Final = Path(__file__).resolve().parents[2]
 UNREADABLE: Final = "unreadable"
 
 
+class SourceError(ValueError):
+    """`--src` is inside a git repository."""
+
+
 class DestinationError(ValueError):
     """`--dst` is inside a git repository, is `--src` or inside it, or is not empty."""
+
+
+def _in_git_repository(path: Path) -> bool:
+    """True when `path`, already resolved, is this repo or any git repository, or inside one."""
+    return any(
+        folder == REPO_ROOT or (folder / ".git").exists() for folder in (path, *path.parents)
+    )
+
+
+def check_source(src: Path) -> None:
+    """Raise `SourceError` when `src` is inside a git repository (R35)."""
+    if _in_git_repository(src.resolve()):
+        raise SourceError("--src is inside a git repository; gather the photos outside it")
 
 
 def check_destination(src: Path, dst: Path) -> None:
     """Raise `DestinationError` unless `dst` is a safe place for the sorted copies."""
     src, dst = src.resolve(), dst.resolve()
-    for folder in (dst, *dst.parents):
-        if folder == REPO_ROOT or (folder / ".git").exists():
-            raise DestinationError("--dst is inside a git repository; choose a folder outside it")
+    if _in_git_repository(dst):
+        raise DestinationError("--dst is inside a git repository; choose a folder outside it")
     if dst == src or src in dst.parents:
         raise DestinationError("--dst is --src or inside it")
     if dst.exists() and (not dst.is_dir() or any(dst.iterdir())):
@@ -104,6 +122,7 @@ def _free_name(folder: Path, name: str) -> Path:
 def sort_photos(model: nn.Module, src: Path, dst: Path) -> Counter[str]:
     """Copy each photo under `src` into `dst/<class>/`, printing a line per photo; return the
     count per class (and of unreadable photos)."""
+    check_source(src)
     check_destination(src, dst)
     photos = find_photos(src)
     for name in CLASSES:
@@ -155,8 +174,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not args.src.is_dir():
         parser.error("--src is not a folder")
     try:
+        check_source(args.src)
         check_destination(args.src, args.dst)
-    except DestinationError as error:
+    except (SourceError, DestinationError) as error:
         parser.error(str(error))
     start = time.perf_counter()
     if args.checkpoint is None:

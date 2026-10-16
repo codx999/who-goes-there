@@ -5,6 +5,7 @@ photos are the synthetic fixture's JPEGs: no trained run and no dataset image is
 """
 
 import builtins
+import io
 import shutil
 from pathlib import Path
 from typing import Any
@@ -20,7 +21,9 @@ from trailcam.demo.predict import PHOTO_SUFFIXES, load_model
 from trailcam.demo.sort import (
     UNREADABLE,
     DestinationError,
+    SourceError,
     check_destination,
+    check_source,
     find_photos,
     main,
     sort_photos,
@@ -124,7 +127,8 @@ def test_the_model_is_warmed_up_once_then_one_forward_per_photo(
 def test_only_photos_are_opened_never_labels_or_metadata(
     fixture_dir: Path, model: nn.Module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The fixture's metadata sits beside its photos in `--src`; the sort opens none of it."""
+    """The fixture's metadata sits beside its photos in `--src`; the sort opens none of it, through
+    `open` or through `Path.open`, `read_text` and `read_bytes`, which call `io.open`."""
     assert any(p.is_file() and p.suffix == ".json" for p in fixture_dir.rglob("*"))
     opened: list[Path] = []
     real_open = builtins.open
@@ -135,6 +139,7 @@ def test_only_photos_are_opened_never_labels_or_metadata(
         return real_open(file, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "open", spy)
+    monkeypatch.setattr(io, "open", spy)
     sort_photos(model, fixture_dir, tmp_path / "sorted")
     monkeypatch.undo()
     assert opened
@@ -145,6 +150,35 @@ def test_the_module_imports_no_metadata_or_split_code() -> None:
     source = Path(sort.__file__).read_text()
     for name in ("metadata", "split", "json", "ledger", "metrics", "labels"):
         assert f"import {name}" not in source and f".{name} import" not in source
+
+
+def test_a_source_inside_the_repo_or_any_git_repository_is_refused(tmp_path: Path) -> None:
+    (tmp_path / "other" / ".git").mkdir(parents=True)
+    (tmp_path / "other" / "photos").mkdir()
+    for src in (ROOT, ROOT / "data", ROOT / "assets", tmp_path / "other" / "photos"):
+        with pytest.raises(SourceError, match="git repository"):
+            check_source(src)
+    check_source(tmp_path)
+
+
+def test_the_cli_refuses_a_source_in_the_repo_before_loading_the_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def no_model(*_: object) -> None:
+        raise AssertionError("the model was loaded")
+
+    monkeypatch.setattr(sort, "load_model", no_model)
+    monkeypatch.setattr(sort, "build_model", no_model)
+    with pytest.raises(SystemExit) as exit_info:
+        main(["--src", str(ROOT / "tests"), "--dst", str(tmp_path / "sorted"), "--checkpoint", "x"])
+    assert exit_info.value.code == 2
+    assert not (tmp_path / "sorted").exists()
+
+
+def test_sort_photos_refuses_a_source_in_the_repo_too(model: nn.Module, tmp_path: Path) -> None:
+    with pytest.raises(SourceError):
+        sort_photos(model, ROOT / "tests", tmp_path / "sorted")
+    assert not (tmp_path / "sorted").exists()
 
 
 def test_a_destination_inside_the_repo_is_refused(fixture_dir: Path) -> None:

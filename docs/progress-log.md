@@ -3213,3 +3213,30 @@ No third round (the user's request would be needed). `check.sh` green.
 
 **Next.** Review: tier 2 (`trailcam/demo/**` is high-stakes). Then 11.01 (the Space's `app.py`,
 ZeroGPU-ready).
+
+## 2026-10-16: review 10.02: four lows fixed, a fix round next (Opus 5.5)
+
+Review (`/review-session 6de1b54..HEAD 10.02`, the user's start), tier 2: code-reviewer (Opus 5.5
+xhigh) on the range, risk-reviewer (Fable 5.1 high) on `tests/test_sort.py`,
+`trailcam/demo/app.py`, `trailcam/demo/predict.py` and `trailcam/demo/sort.py`. Scenarios R01,
+R03 to R05, R17, R20, R21, R23, R33, R34, R42 to R45 hold (Space parts skipped as known gaps);
+R35 broke on one clause. No spec changed. Four lows, all fixed at the user's go:
+
+- Both reviewers: R35 says the sort reads a folder outside the repo, but only `--dst` was
+  checked, so `--src` could be the dataset folder. `check_source` now refuses a `--src` inside this
+  repo or any git repository (the same parent walk as `--dst`, `_in_git_repository`), in `main`
+  before the model loads and again in `sort_photos`; `SourceError` beside `DestinationError`.
+  Three new tests; turning the check off fails three, skipping it in `main` fails one.
+- Code-reviewer: R35's test cell still said "none yet for the sort script". It now names
+  `tests/test_sort.py`, and so do R03 (no names printed) and R17 (no labels read).
+- Code-reviewer: the journal recorded the hosting decision (PRO, then ZeroGPU) that plan.md did
+  not. plan.md section 8 now records it, dated, and says item 11.02's "free CPU tier" text predates
+  it and the section wins; item 11.02 itself is not edited (items are never edited). Row R36,
+  which repeated "free CPU tier", now cites the hardware section 8 names.
+- Risk-reviewer: the no-labels test spied on `builtins.open` only, while `Path.read_text` and
+  friends call `io.open`. The spy now covers both; a planted `read_text` of the fixture's JSON
+  passes the old test and fails the new one.
+
+Spec changed in this fix: plan.md section 8 (R36 cites it, updated in the same commit) and
+`docs/review/invariants.md`. `check.sh` green. The fix touches `trailcam/demo/sort.py` and
+modifies lines of `tests/test_sort.py`, so one fix round runs on the fix range.

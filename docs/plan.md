@@ -320,7 +320,12 @@ the model answers.
 exported from uv (`uv export --no-dev --no-hashes`, trimmed to what the app imports) and
 `README.md` with the Space header. The weights are **not** in this repo (the guard blocks `.pt`):
 `scripts/deploy_space.py` uploads `app.py`, the requirements, the examples and the weights with
-`huggingface_hub`, reading the token from the environment. The Space runs on the free CPU tier.
+`huggingface_hub`, reading the token from the environment. Since mid-2026 a free account cannot
+host a Gradio Space on CPU Basic (decided 2026-10-16): the Space runs on CPU Basic under PRO ($9 a
+month) for one month from about 2026-10-20, then moves to free ZeroGPU, open to accounts older
+than 30 days, around 2026-11-15; `space/app.py` is made ZeroGPU-ready in item 11.01. Item 11.02's
+text ("the free CPU tier") predates this; this section wins. The local app's `--share` link is
+the free, temporary backup.
 Account and Space creation are the user's steps. The Space serves arm B if it wins, else arm A.
 
 ## 9. Decisions and why (quotable)
