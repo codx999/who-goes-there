@@ -3134,5 +3134,9 @@ a time set by Gradio) and is served from the Mac, so it works only while the lap
 awake and online, with the app running. Test: `--share` passes `share=True` to a mocked
 `launch`, the default `share=False`, `--check --share` never launches.
 
+Main merged twice through the sync tool (9.01/9.02, then 12.07), both sides of each log
+conflict kept. With 12.07 on main, the demo lines of "For the learning journal" above are now
+topic 13 of `docs/learning-journal.md`.
+
 `check.sh` green. The fix touches `trailcam/demo/app.py` and `tests/test_demo.py` (high-stakes,
 test lines modified), so one fix round runs on the fix range.

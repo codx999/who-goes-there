@@ -36,6 +36,7 @@ name or data row.
 10. [Evaluation pieces built so far](#10-evaluation-pieces-built-so-far)
 11. [Running on Kaggle](#11-running-on-kaggle)
 12. [How the project was run](#12-how-the-project-was-run)
+13. [The demo](#13-the-demo)
 
 ---
 
@@ -618,6 +619,22 @@ instead of a second copy of its rules, and the small CNN's row is in [ledger.md]
 
 ```bash
 uv run python -m trailcam.train.ledger --check docs/ledger.md
+```
+
+## 13. The demo
+
+**Added by 10.01.** The model outputs a probability for each of the 12 classes (softmax), and they
+sum to 1. The demo shows the three largest, so those sum to at most 1; a low top value means the
+model is unsure. The time shown is the model's forward pass alone: decoding the JPEG and resizing
+depend on the photo, not the model. The timed pass's own scores are reused, so each request runs
+the model twice (warm-up and timed), not three times. Grad-CAM shows which part of the 224 x 224
+frame pushed the top class up: on the animal is good, on the background means the model learned the
+scene. Look at [predict.py](../trailcam/demo/predict.py), [app.py](../trailcam/demo/app.py),
+`timed_forward` in [metrics.py](../trailcam/evaluate/metrics.py), `overlay_photo` in
+[gradcam.py](../trailcam/evaluate/gradcam.py). Try (builds the app with random weights, no launch):
+
+```bash
+uv run python -m trailcam.demo.app --check
 ```
 
 ---
