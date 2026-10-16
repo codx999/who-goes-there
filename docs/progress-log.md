@@ -2933,6 +2933,105 @@ after the merge (802 passed).
 seeds 1 and 2 are not trained). The user rewords 9.02's steps after the merge, then merges this
 branch.
 
+## 2026-10-15: session 12, item 12.07, the learning journal (Opus 5.5)
+
+New item, approved by the user in the coordinator session on 2026-10-15 and added to
+`docs/progress.json` as 12.07 (session 12, owner claude, due 2026-10-17). Why: the user wants a
+record written for them, to go back and learn what was done and why; this log is written for
+reviewers and later sessions. The journal also feeds the slides (12.06, the presentation plan,
+comes next).
+
+**Done.** `docs/learning-journal.md`, in plain language, by topic: the problem and the dataset
+choice; inspecting and cleaning the data; splitting without leakage; Dataset, DataLoader and
+transforms; arm A vs arm B; the models; the training loop and the ledger; macro-F1 next to
+accuracy; test-set isolation and leakage alarms; the evaluation pieces built so far (8.02 and 8.04
+named as still to come); running on Kaggle; how the project was run. Each topic has What we did,
+Why it mattered here, Where to look and Try it yourself. Then a dated "Surprises and lessons"
+timeline (eight entries, from the paper vs files counts to the partial file count settled by
+`check_images`), "Kaggle steps you did" (seven steps, training commit 21faa79b0aed), and "How to keep
+this journal". Sources: this log, the plan, the data card, the data inspection, the research
+report, the code and tests, and the Kaggle facts the user gave in the item (6.03's 22-minute build,
+night share 63.6% overall and 68.8% in trans_test, hour 12 at 61.5% night, the quota and phone
+verification, the dataset page error). Counts only: no image id, file name or data row (R03); the
+Beery et al. 2018 citation sits in the introduction.
+
+Steps: the file exists; a scratch script checked all 92 links (relative file links and the
+in-page topic anchors): every file link resolves to a tracked file and every anchor to a heading.
+All 13 "Try it yourself" commands, extracted from the file and run as written, exit 0 on the Mac
+(0 to 10 s each, the dry run 22 s; the dry run printed its row and left `docs/ledger.md`
+unchanged). `check.sh` green (645 passed). `passes` is flipped.
+
+Noted, not changed (outside this item): `docs/data-card.md` still says the day/night share is
+pending 6.03, and plan section 2 says about half the images are night shots; the measured share
+(63.6%) is in the journal only. Recording it in the data card is 6.03's step (owner user).
+
+**Next.** 12.06, the presentation plan, which can draw on the journal; each later item appends 3 to
+5 lines to the journal under its topic.
+
+Review: tier 0 (docs only), nothing to run; no invariant row's spec document changed.
+
+Update after main moved (requested by the coordinator session): main at c303041 (8.04) merged in
+through the sync tool. One conflict, in this log: 8.04's entry kept first (it merged first), then
+this one; `docs/progress.json`, `docs/review/invariants.md` and 8.04's files merged cleanly. The
+journal's evaluation topic now covers 8.04 as merged: the day/night and common/rare slices (the
+under-4% rare rule fixed on train counts), the trans scores re-weighted to the cis night share,
+and the feature map, with `slices.py` and `tests/test_slices.py` linked and a second command (the
+slices dry run). Night shares over the kept, re-split images, given by the coordinator and checked
+here with `load_metadata` and `make_split` on the sidecar copy the user downloaded into `data/`
+(counts only): train 0.607, val 0.600, trans_val 0.633, cis_test 0.626, trans_test 0.716, all kept
+0.657 (35,146 of 53,535). The timeline now says which photos each share is over: 63.6% and 68.8%
+are over all 57,864 by official file (6.03), the shares above over the 53,535 kept. The test count
+in topic 12 is now 669. Steps re-run: 94 links resolve; all 14 commands exit 0 (the slices dry run
+8 s); `check.sh` green (669 passed).
+
+Review: tier 0 (docs only), nothing to run.
+
+Second update after main moved (requested by the coordinator session): main at 61f1ecc (6.08)
+merged in through the sync tool, one conflict in this log (6.08's entry kept first, then this
+one). The journal's Kaggle topic and timeline now cover, from 6.08's entry and the coordinator's
+message: the cache as one tar packed on a CPU notebook and unpacked to `/tmp` (about 35 s, with
+`unpack_cache`'s member checks); the 48-minute "Starting..." stall of the first 6.04 version,
+with its cause not known, and the 10-minute check-and-resubmit practice; Kaggle extracting a
+`.tar` when a notebook output becomes a dataset, so the packing notebook's output is attached
+instead (`/kaggle/input/notebooks/<user>/<slug>/cct20_512.tar`, 3,213,506,560 bytes); and the
+first real run (6.04, small CNN, commit 61f1ecc): 15 epochs at about 44 s, about 350 train
+images/s, 12.8 minutes, about 13 minutes of quota, val accuracy 0.6625 and macro-F1 0.6216
+against trans_val 0.1965 and 0.0775, still improving at the 15-epoch cap, recipe not tuned on it.
+"Kaggle steps you did" now runs to 11 steps, with the training COMMIT 61f1ecc after the first
+21faa79 attempt. New links: `scripts/kaggle_pack_cache.py`, `tests/test_kaggle_pack.py`; a
+second command for the archive tests. Steps re-run: 96 links resolve; all 15 commands exit 0;
+`check.sh` green (698 passed).
+
+Noted for the coordinator, not changed here (outside a docs item): the notebook's
+`CACHE_ARCHIVE` default on main still points at the `cct20-512-tar` dataset path, which Kaggle
+unpacks; runs set it by hand to the notebook-output path, as the journal's step 9 says.
+
+Review: tier 0 (docs only), nothing to run.
+
+Third update (requested by the coordinator session): a timeline entry for the 6.04 ledger row
+that turned main red at 93b9769 (`tests/test_train.py::test_the_ledger_file_holds_the_header_and_no_rows`,
+committed without running `check.sh`), reverted by f414912; the test change belongs to item 6.09
+and is not touched here. This branch was never on 93b9769 (it sits on 61f1ecc, whose files equal
+f414912's), so no sync. Links (96) and all 15 commands re-checked; `check.sh` green.
+
+Review: tier 0 (docs only), nothing to run.
+
+## 2026-10-16: item 12.07, journal entries for 8.02, 8.07, 6.09 and 9.01 (Opus 5.5)
+
+Requested by the coordinator session. Main at f706326 merged in through the sync tool; one
+conflict, in this log (the new 2026-10-15 entries first, as merged, then 12.07's). The journal
+gains a short entry per item, folding in the "For the learning journal" lines of each log entry:
+8.07 under data cleaning (the five charts and what each shows), 8.02 under evaluation (figures,
+overlays from `assets/` only, `evaluate.py`; the raw-panel and zero-map lessons; restore
+mutations by copying), 9.01 under test-set isolation (scored once, `--approved-by`,
+`--run-seeds`, refusals before loading, `docs/test-ledger.md`), 6.09 under how the project was
+run (test the rule, not the moment; check.sh before every commit). Topic 10 no longer lists 8.02
+as still to come, the Kaggle step 9 says `CACHE_ARCHIVE` now defaults to the notebook output,
+and the test count is 802. Steps re-run: 109 links resolve, all 19 commands exit 0, `check.sh`
+green (802 passed).
+
+Review: tier 0 (docs only), nothing to run.
+
 ## 2026-10-16: session 10, item 10.01, the demo's prediction and its Gradio app (Opus 5.5)
 
 **Done.**

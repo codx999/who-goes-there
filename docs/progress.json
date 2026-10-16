@@ -203,6 +203,10 @@
     {"id": "12.05", "session": 12, "owner": "user", "due": "2026-10-23",
      "description": "Rehearse the live sort of about 200 trans-test photos with trailcam/demo/sort.py from a local folder outside the repo, and decide whether the talk includes the 20-photo human baseline",
      "steps": "manual: the sort runs end to end on the Mac in under a few minutes; counts per class are noted in docs/progress-log.md; the human-baseline decision is noted there too",
-     "passes": false}
+     "passes": false},
+    {"id": "12.07", "session": 12, "owner": "claude", "due": "2026-10-17",
+     "description": "docs/learning-journal.md, a plain-language learning record of sessions 0 to 6 and the Kaggle work so far, organised by topic, not by date. Each entry has four parts: What we did (plain words); Why it mattered here (the reasoning); Where to look (files, tests, docs, plan sections, with relative links); Try it yourself (one command that is safe and fast on the Mac). Topics (adapted as the material warrants): the problem and the dataset choice; inspecting and cleaning the data; splitting without leakage; the Dataset/DataLoader pattern and the transforms; arm A vs arm B and the box-guided crop sampler; the models and parameter groups; the training loop and the ledger; why macro-F1 next to accuracy; test-set isolation and leakage alarms; the evaluation pieces built so far; running on Kaggle; how the project was run. Also a dated 'Surprises and lessons' timeline (what happened, how it was caught, the lesson), a short 'Kaggle steps you did' section in order with the training commit 21faa79b0aed9ff4bb776bc5aa85f65ba73bfbe6, and a closing 'How to keep this journal' note (every later item appends 3 to 5 lines under its topic). Sources: docs/progress-log.md, docs/plan.md, docs/data-card.md, docs/data-inspection.md, docs/research-report.md, the code and tests. Counts and shapes only, never an image id, file name or data row (R03); cite Beery et al. 2018 where the data is described",
+     "steps": "the file exists; every 'Where to look' link resolves to a file in the repo; every 'Try it yourself' command runs green on the Mac (run each); `bash scripts/check.sh` green",
+     "passes": true}
   ]
 }
