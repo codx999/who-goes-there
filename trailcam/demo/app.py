@@ -4,6 +4,8 @@ Upload a camera-trap photo and the app shows the top class with its confidence a
 runners-up (`predict`), the forward pass's seconds, and, when the Grad-CAM box is ticked, the
 top class's Grad-CAM overlay on the 224 x 224 frame the model saw. The overlay of an upload is
 drawn in memory (`overlay_photo`) and never written to a file.
+The app is built with Gradio's analytics off, so neither a build nor a launch calls
+`api.gradio.app` (no version check, no telemetry).
 
 Examples come from the repo's `assets/` folder only (`example_photos`), the trans-test photos the
 user picks (item 8.05); each goes through `assets_image`, so a link out of the folder is refused.
@@ -76,7 +78,8 @@ def classify(
 
 def build_app(model: nn.Module, examples: Sequence[Path] = ()) -> gr.Blocks:
     """The interface around `model`; `examples` are `assets/` photos, and may be empty."""
-    app = gr.Blocks(title="Who Goes There")
+    # No telemetry: with analytics off, Gradio skips its version check and analytics calls too.
+    app = gr.Blocks(title="Who Goes There", analytics_enabled=False)
     with app:
         gr.Markdown(
             "# Who Goes There\nA camera-trap species classifier: 11 animals and `car`, trained "

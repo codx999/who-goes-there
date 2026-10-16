@@ -3120,12 +3120,17 @@ Risk-reviewer found nothing. Code-reviewer, three lows:
   photo, and the handler and `predict` take the photo (and the Grad-CAM switch) only. Another
   checks that the UI says "model confidence" and never "accuracy"; the label now reads "Top class
   and two runners-up (model confidence)". The four test cells are filled.
-- Open, the user's decision: plan.md (lines 408 to 410) leaves to sessions 10 and 11 whether
-  `trailcam/demo/**` joins the paths of `.claude/rules/data.md`. Not decided here.
+- Decided, the user's go via the coordinator, confirmed by the user in this session:
+  `trailcam/demo/**` and `space/**` join the paths of `.claude/rules/data.md`; plan.md's open line
+  for sessions 10 and 11 (section 10, "Sessions 10 and 11") now records the decision. Spec
+  changed: plan.md, that line only.
 
-Outside the criteria, open for the user: every `gr.Blocks` build makes Gradio's version check and
-analytics request to `api.gradio.app` (tests, CI, the live demo); no data goes with it.
-`analytics_enabled=False` would turn it off.
+Outside the criteria, the user's go via the coordinator: every `gr.Blocks` build made Gradio's
+version check and an analytics request to `api.gradio.app` (tests, CI, the live demo). The app
+is now built with `analytics_enabled=False`. In gradio 6.30 the version check runs only when the
+Blocks has analytics on (`blocks.py`, the `analytics_enabled` branch), so no environment variable
+is needed; the inner Blocks of `gr.Examples` is built only when caching examples, which the app
+does not. Test: the built Blocks has analytics off and the version check is never called.
 
 Added at the user's go-ahead, via the coordinator: `--share` launches with Gradio's
 `share=True`, the demo-day backup if the Space is down. The default stays local only, and

@@ -2,6 +2,8 @@
 paths:
   - "trailcam/data/**"
   - "trailcam/evaluate/**"
+  - "trailcam/demo/**"
+  - "space/**"
   - "data/**"
 ---
 # Data and Dataset Rules

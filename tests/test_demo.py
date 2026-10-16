@@ -12,6 +12,7 @@ import time
 from pathlib import Path
 
 import gradio as gr
+import gradio.analytics as gradio_analytics
 import pytest
 import torch
 from matplotlib.figure import Figure
@@ -199,6 +200,17 @@ def test_the_app_builds_with_and_without_examples(model: nn.Module, tmp_path: Pa
     assets.mkdir()
     Image.new("RGB", (8, 8)).save(assets / "a.jpg")
     assert isinstance(build_app(model, example_photos(assets)), gr.Blocks)
+
+
+def test_the_app_is_built_with_analytics_off(
+    model: nn.Module, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No build calls api.gradio.app: analytics off, so the version check never starts."""
+    calls: list[str] = []
+    monkeypatch.setattr(gradio_analytics, "version_check", lambda: calls.append("version"))
+    built = build_app(model, [])
+    assert built.analytics_enabled is False
+    assert calls == []
 
 
 def test_classify_returns_the_top_three_the_seconds_and_the_overlay_on_request(
