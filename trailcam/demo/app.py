@@ -36,13 +36,11 @@ import gradio as gr
 from PIL import Image
 from torch import nn
 
-from trailcam.demo.predict import TOP_K, load_model, predict
+from trailcam.demo.predict import DEFAULT_CONFIG, PHOTO_SUFFIXES, TOP_K, load_model, predict
 from trailcam.evaluate.gradcam import ASSETS_DIR, ZeroMapError, assets_image, overlay_photo
 from trailcam.model.factory import build_model
 from trailcam.train.config import CONFIG_PATH, load_config
 
-DEFAULT_CONFIG: Final = "resnet18_arm_b"  # both arms are a ResNet-18; open question 7 picks one
-PHOTO_SUFFIXES: Final = (".jpg", ".jpeg", ".png")
 CITATION: Final = (
     "Photos: Caltech Camera Traps (CCT20). Sara Beery, Grant Van Horn, Pietro Perona, "
     '"Recognition in Terra Incognita", ECCV 2018. Data licence CDLA-Permissive 1.0.'

@@ -35,6 +35,8 @@ from trailcam.evaluate.metrics import timed_forward
 from trailcam.train.config import CONFIG_PATH, load_config
 
 TOP_K: Final = 3  # the top class and two runners-up
+DEFAULT_CONFIG: Final = "resnet18_arm_b"  # both arms are a ResNet-18; open question 7 picks one
+PHOTO_SUFFIXES: Final = (".jpg", ".jpeg", ".png")  # the app's examples and the live sort
 
 
 @dataclass(frozen=True)

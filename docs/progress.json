@@ -169,7 +169,7 @@
     {"id": "10.02", "session": 10, "owner": "claude", "due": "2026-10-20",
      "description": "trailcam/demo/sort.py: sorts a local folder of photos into per-class folders (copy, not move), printing a running timer and counts per class as it goes, for the live demo of about 200 trans-test photos",
      "steps": "`uv run python -m trailcam.demo.sort --src <fixture dir> --dst <tmp dir>` sorts every fixture image into a class folder and prints only counts and the elapsed seconds; uv run pytest tests/test_sort.py passes",
-     "passes": false},
+     "passes": true},
 
     {"id": "11.01", "session": 11, "owner": "claude", "due": "2026-10-21",
      "description": "space/app.py (imports the predict function, same UI as 10.01), space/README.md with the Spaces header (sdk gradio, CPU), space/requirements.txt exported with `uv export --no-dev --no-hashes` and trimmed to the app's imports, and scripts/deploy_space.py that uploads app.py, requirements.txt, README.md, assets examples and the weights file of the arm chosen in open question 7 with huggingface_hub, token from HF_TOKEN; --dry-run lists what it would upload",

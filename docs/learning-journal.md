@@ -37,6 +37,7 @@ name or data row.
 11. [Running on Kaggle](#11-running-on-kaggle)
 12. [How the project was run](#12-how-the-project-was-run)
 13. [The demo](#13-the-demo)
+14. [Deployment](#14-deployment)
 
 ---
 
@@ -621,6 +622,13 @@ instead of a second copy of its rules, and the small CNN's row is in [ledger.md]
 uv run python -m trailcam.train.ledger --check docs/ledger.md
 ```
 
+**Added by 10.02 (budgets).** Weekly Claude usage is one budget shared across all your
+projects. On 2026-10-16 it was 72% used with 5 days to the reset, so the must-have items ran first
+and the rest waited; "lean" meant no waste (no extra agents, no whole-file rereads), never fewer
+checks. Treat it like the Kaggle GPU quota: know the balance before you plan the week. And
+`git merge` without `--no-edit` opens vim for the message (Esc, then `:wq`, then Enter); merges now
+use `--no-edit`. Look at [setup-playbook.md](setup-playbook.md) ("Session protocol").
+
 ## 13. The demo
 
 **Added by 10.01.** The model outputs a probability for each of the 12 classes (softmax), and they
@@ -635,6 +643,61 @@ scene. Look at [predict.py](../trailcam/demo/predict.py), [app.py](../trailcam/d
 
 ```bash
 uv run python -m trailcam.demo.app --check
+```
+
+**Added by 10.02.** The live sort copies a folder of photos into one folder per class and
+prints a running timer and the count per class, to show throughput on about 200 unseen-camera
+photos. The model is loaded and warmed up once, then each photo costs one forward pass. It prints
+counts and seconds only, never a file name, and reads no labels, so it cannot score anything: the
+test sets are scored once, in 9.01 and 9.02. It refuses a destination inside a git repository, so
+sorted photos can never be committed. Look at [sort.py](../trailcam/demo/sort.py),
+[test_sort.py](../tests/test_sort.py). Try (sorts the synthetic fixture with random weights):
+
+```bash
+uv run python -c "from pathlib import Path; from trailcam.data import synthetic; synthetic.write_synthetic_fixture(Path('/tmp/wgt-fixture'))"
+uv run python -m trailcam.demo.sort --src /tmp/wgt-fixture --dst /tmp/wgt-sorted
+```
+
+**Why Gradio.** The course requires it ([course-guideline.md](course-guideline.md) section 5).
+The alternatives: Streamlit is built for dashboards and reruns the whole script on every click;
+FastAPI or Flask give full control but mean writing the page, the upload and the server yourself;
+notebook widgets cannot be shared as a link; an on-device app is out of scope. Gradio fits the
+shape of this demo exactly, one image in and the top 3 out, and one `predict` function serves the
+app, the Space and the inference timer. The live sort is a command-line script on purpose: a web
+page shows one photo at a time, a terminal shows photos per second.
+
+## 14. Deployment
+
+**What we did.** Chose Hugging Face Spaces to host the Gradio demo (items 11.01 to 11.03): a
+Space is a git repository holding `app.py`, `requirements.txt` and the weights, and Hugging Face
+builds it and serves it at a public link. Since mid-2026 a free account cannot create a Gradio
+Space on the free CPU Basic hardware; that needs PRO, $9 a month. Free ZeroGPU hosting needs an
+account older than 30 days, and yours was created on 2026-10-16. The plan: PRO for one month from
+about 2026-10-20, then move to free ZeroGPU around 2026-11-15, with `app.py` made ZeroGPU-ready
+in 11.01. The `--share` link of 10.01 is the free, temporary backup.
+
+**Why it mattered here.**
+
+- **Why people share models at all.** For researchers: reputation, the field's norm of
+  publishing work others can check, feedback, and a portfolio. Companies share for adoption: a
+  model people try is a model people build on. Hugging Face pays for the free hosting to grow the
+  community that uses its hub.
+- **Spaces vs AWS and the free clouds.** The layers run from IaaS (AWS EC2: a bare machine, you
+  manage everything), to PaaS (Google Cloud Run, Render: a Dockerfile in, a URL out), to ML
+  platforms (SageMaker, Modal: training and serving jobs), to demo hosting (Spaces: push `app.py`,
+  `requirements.txt` and the weights). Spaces fits a graded demo; AWS fits a real product, with
+  scaling, monitoring and a bill to match.
+- **Check the platform's rules before the schedule depends on them.** The free tier changed under
+  the plan; finding out on 10-16 left four days to the due date, enough to pay for one month.
+
+**Where to look.** [course-guideline.md](course-guideline.md) section 5;
+[plan.md](plan.md) section 8; items 11.01 to 11.03 in [progress.json](progress.json);
+[app.py](../trailcam/demo/app.py) for `--share`.
+
+**Try it yourself.** The packages the Space would need, as `requirements.txt` lists them:
+
+```bash
+uv export --no-dev --no-hashes
 ```
 
 ---
@@ -726,6 +789,19 @@ Dated, oldest first. Each: what happened, how it was caught, the lesson.
   touched docs only. *Caught by* main going red after the commit; the commit was reverted, and a
   later item (6.09) changes the test. *Lesson:* run `check.sh` before every commit, docs-only ones
   included, as CLAUDE.md says. A test can depend on a file that looks like plain documentation.
+
+- **2026-10-16. Free accounts can no longer host a Gradio Space on CPU.** Since mid-2026 the
+  free CPU Basic Space needs PRO ($9 a month), and free ZeroGPU needs an account older than 30
+  days; the account was created that day. *Caught by* trying to plan item 11.02 against the
+  current Hugging Face rules, four days before the due date. *Lesson:* free tiers change; check
+  them before the schedule leans on them. Decision: PRO for one month from about 10-20, free
+  ZeroGPU from about 11-15, and `--share` as the free backup (topic 14).
+- **2026-10-16. `git merge` opened vim.** A merge without `--no-edit` stopped in vim to ask for
+  the message. *Caught by* the terminal waiting. *Lesson:* Esc, `:wq`, Enter gets out; merges now
+  pass `--no-edit`.
+- **2026-10-16. The weekly Claude budget ran low.** 72% used with 5 days left, shared with other
+  projects. *Caught by* the usage page. *Lesson:* budget it like the Kaggle GPU quota: must-have
+  items first, the rest after the reset, and cut waste, not checks.
 
 ---
 

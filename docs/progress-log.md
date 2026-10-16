@@ -3163,3 +3163,53 @@ changed: `.claude/rules/data.md` (its paths only; R03, R20, R23, R24 cite it) an
   and `tests/test_guard_data.py` only requires the guard's patterns to be in `.gitignore`.
 
 No third round (the user's request would be needed). `check.sh` green.
+
+## 2026-10-16: session 10, item 10.02, the live sort (Opus 5.5)
+
+**Done.**
+
+- `trailcam/demo/sort.py`: `python -m trailcam.demo.sort --src <photos> --dst <new folder>
+  [--checkpoint <run>.pt]` copies (`shutil.copy2`, never a move) every `.jpg`, `.jpeg` or `.png`
+  under `--src`, at any depth and skipping hidden files, into `--dst/<class>/`, one folder per
+  class of `CLASSES`, all twelve made up front. The model comes from 10.01's `load_model` (8.03's
+  `load_checkpoint`), loaded once and warmed up once on a blank 224 x 224 input; then each photo
+  is one forward pass through `EvalTransform`, its argmax the class (the class `predict` ranks
+  first). `predict` itself is not called per photo: it warms up on every call, two forwards per
+  photo. Without `--checkpoint` the config's model is built with random weights and the script
+  says so (the item's step command has no checkpoint).
+- Output: counts and seconds only. One line per photo (its number, the running seconds, the class
+  and that class's count so far), then the count per class, the total, the seconds and photos per
+  second. No file name or path (R03), no accuracy: the script reads no labels or metadata, so it
+  cannot score anything (R17); the docstring says so. An unreadable photo is counted as
+  `unreadable` and skipped; two photos with the same name get `_1`, `_2` suffixes.
+- Refusals, checked before the model loads and again in `sort_photos`: `--dst` inside a git
+  repository, this one included (`REPO_ROOT` or any ancestor holding `.git`, so a worktree and
+  the main checkout are both covered; R01); `--dst` equal to or inside `--src`; an existing
+  `--dst` that is a file or a non-empty folder (no override flag: a rehearsal deletes its folder);
+  a `--src` that is not a folder.
+- `DEFAULT_CONFIG` and `PHOTO_SUFFIXES` moved from `app.py` to `predict.py`, so the sort imports
+  them without importing gradio; `app.py` imports them back, unchanged in value.
+- `tests/test_sort.py` (14 tests, small CNN with random weights, synthetic fixture photos): the
+  CLI sorts every fixture photo into a class folder with the same bytes and leaves `--src`
+  unchanged; the no-checkpoint path says random weights; the output holds no photo stem, no
+  folder path and no "accuracy", one line per photo; one warm-up plus one forward per photo; with
+  the fixture's metadata beside the photos in `--src`, `open` is only ever called on photos; the
+  module imports no metadata, split, json, ledger or metrics code; each refusal; the CLI refuses
+  before loading a model; unreadable photos, hidden files and name clashes.
+- Mutation checks, each caught by `tests/test_sort.py`: a file name printed; the git refusal off;
+  only `REPO_ROOT` refused; the `--src` refusal off; only `--dst == --src` refused; the non-empty
+  refusal off; the metadata JSON opened; a move instead of a copy; a warm-up per photo.
+- Step: `uv run python -m trailcam.demo.sort --src <fixture> --dst <scratch>` sorted all 684
+  synthetic fixture photos (ResNet-18 arm B config, random weights, CPU) in 6.1 s, printing counts
+  and seconds only (no `.jpg` or scratch path in the output); a `--dst` in the worktree and a
+  rerun into the full `--dst` both exited 2 with the refusal.
+- Learning journal: topic 13 gains the live sort and why Gradio; a new topic 14 "Deployment"
+  (what Spaces is, why people share models, Spaces vs AWS and the free clouds, the PRO and
+  ZeroGPU decision); topic 12 gains the shared usage budget and `git merge --no-edit`; three dated
+  lines in "Surprises and lessons" (the Spaces free tier, vim on merge, the usage budget), from
+  the coordinator's notes.
+
+`check.sh` green.
+
+**Next.** Review: tier 2 (`trailcam/demo/**` is high-stakes). Then 11.01 (the Space's `app.py`,
+ZeroGPU-ready).
