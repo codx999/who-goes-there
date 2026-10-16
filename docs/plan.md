@@ -291,12 +291,14 @@ methods. Mixed outcomes are reported as mixed. A negative result is a result.
   `docs/test-ledger.md`, with the test scores, the gaps, the checkpoint hash and who approved;
   `docs/ledger.md` keeps its 16 training columns (user's decision, session 9.01). It refuses to
   run without `--approved-by`, refuses a checkpoint with no training row or one already scored,
-  and requires every run in the ledger to be given or already scored (user's decision, session
-  9.01). Since a run still training has no row, it also refuses a ledger without a small CNN row
-  or whose ResNet-18 arm A and arm B rows differ in run seeds, and one with two rows of one
-  checkpoint or of one config and run seed (a rerun: the user picks one). Each checkpoint's row
-  is printed and appended as soon as it is scored, so a run that stops part way can be finished
-  with the checkpoints left (user's decisions, review 9.01).
+  and requires every run in the ledger to be given (user's decision, session 9.01). Since a run
+  still training has no row, it also refuses a ledger without a small CNN row or whose ResNet-18
+  arm A and arm B rows differ in run seeds, and one with two rows of one checkpoint or of one
+  config and run seed (a rerun: the user picks one) (user's decisions, review 9.01). It runs
+  once: a test ledger that already holds a row is refused, so no run added after test scores
+  were seen can be scored. Each checkpoint's row is printed as soon as it is scored, and the rows
+  are appended together after every output is written, so a run that stops part way appends
+  nothing and is run again from the start (user's decisions, review 9.01 and its fix round).
 
 ## 8. Demo and deployment
 

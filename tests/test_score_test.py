@@ -464,15 +464,28 @@ def test_outputs_hold_no_image_id_or_file_name(world: World, scoring: Scoring) -
 
 
 def test_a_scored_checkpoint_is_not_scored_again(
-    world: World, scoring: Scoring, monkeypatch: pytest.MonkeyPatch
+    world: World,
+    scoring: Scoring,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Every checkpoint now has a row in the test ledger: a second run exits 1 before reading
-    anything, and the test ledger keeps its rows."""
+    """The test ledger now holds rows: a second run exits 1 before reading anything, whether it
+    gives the same checkpoints or runs added to the ledger afterwards (seeds 1 of both arms,
+    trained after the test scores were seen), and the test ledger keeps its rows."""
     assert scoring.code in (0, ALARM_EXIT)
     _forbid_reading(monkeypatch)
     before = world.test_ledger.read_text()
     out = world.root / "again"
     assert score_test.main(world.argv(out)) == REFUSED_EXIT
+    assert "the final scoring has run" in capsys.readouterr().err
+    later = [*world.rows.values(), _row(world, "arm_a", 1), _row(world, "arm_b", 1)]
+    ledger = _write_ledger(tmp_path / "ledger.md", later)
+    seeds_1 = [
+        _save_checkpoint(tmp_path / f"{n}.pt", "resnet18", 10 + i) for i, n in enumerate("ab")
+    ]
+    assert score_test.main(world.argv(out, checkpoints=seeds_1, ledger=ledger)) == REFUSED_EXIT
+    assert "the final scoring has run" in capsys.readouterr().err
     assert world.test_ledger.read_text() == before
     assert not out.exists()
 
@@ -616,22 +629,33 @@ def test_a_ledger_that_fails_its_check_exits_1(
 
 
 @pytest.mark.parametrize(
-    "text",
+    ("text", "why"),
     [
-        "# Test ledger\n\nno table\n",
-        "TABLE\n| a | b |\n",
-        "TABLE\nprose after the table\n",
-        "TABLE\nTABLE\n",
+        ("# Test ledger\n\nno table\n", "header of TEST_LEDGER_COLUMNS"),
+        ("TABLE\n| a | b |\n", "not one non-empty cell per column"),
+        ("TABLE\nprose after the table\n", "not a table row"),
+        ("TABLE\nTABLE\n", "header of TEST_LEDGER_COLUMNS"),
+        ("TABLE\nROW a r\nROW a s\n", "two rows have one checkpoint sha256"),
+        ("TABLE\nROW a r\nROW b r\n", "two rows have one run id"),
     ],
 )
 def test_a_malformed_test_ledger_exits_1(
     fresh: World,
     tmp_path: Path,
     text: str,
+    why: str,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    """`read_test_ledger` refuses each with its own reason (a test ledger with rows is refused by
+    `main` anyway, so the reason is checked on the reader); `main` exits 1."""
+    for digest, run_id in (("a", "r"), ("a", "s"), ("b", "r")):
+        row = {column: "x" for column in TEST_LEDGER_COLUMNS}
+        line = score_test.ledger_line(row | {"checkpoint sha256": digest, "run id": run_id})
+        text = text.replace(f"ROW {digest} {run_id}", line)
     fresh.test_ledger.write_text(text.replace("TABLE", score_test.scoring_header()))
+    with pytest.raises(Refusal, match=why):
+        score_test.read_test_ledger(fresh.test_ledger)
     _forbid_reading(monkeypatch)
     assert score_test.main(fresh.argv(tmp_path / "out")) == REFUSED_EXIT
     assert "score_test refused" in capsys.readouterr().err
@@ -780,15 +804,15 @@ def test_two_runs_of_one_config_and_seed_exit_1(
     _refused_ledger(fresh, tmp_path, rows, "the user must pick one", monkeypatch, capsys)
 
 
-def test_a_run_that_stops_part_way_has_logged_what_it_scored(
+def test_a_run_that_stops_part_way_has_printed_its_rows_and_appended_none(
     fresh: World,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """R40: the second checkpoint's pass fails; the first checkpoint's row is already printed and
-    appended. A second run with the other two checkpoints finishes the scoring; giving the first
-    again is refused."""
+    """R40, R17: the second checkpoint's pass fails, then (another run) the feature maps fail
+    after every checkpoint is scored. Each time the rows scored are printed and none is
+    appended, so a full run from the start then scores every checkpoint together, once."""
     real = score_test.score_checkpoint
     calls = []
 
@@ -802,18 +826,28 @@ def test_a_run_that_stops_part_way_has_logged_what_it_scored(
     with pytest.raises(RuntimeError):
         score_test.main(fresh.argv(tmp_path / "first"))
     printed = capsys.readouterr().out
-    [row] = score_test.read_test_ledger(fresh.test_ledger)
-    assert row["checkpoint sha256"] == fresh.rows["small"]["checkpoint sha256"]
-    assert f"| {row['run id']} |" in printed and "test ledger row of small_cnn seed 0:" in printed
+    assert "test ledger row of small_cnn seed 0:" in printed
+    assert f"| {fresh.rows['small']['run id']} |" in printed
+    assert score_test.read_test_ledger(fresh.test_ledger) == []
     assert not (tmp_path / "first" / "headline.md").exists()
-
     monkeypatch.setattr(score_test, "score_checkpoint", real)
-    assert score_test.main(fresh.argv(tmp_path / "again")) == REFUSED_EXIT
-    assert "already scored" in capsys.readouterr().err
-    rest = [fresh.checkpoints["arm_a"], fresh.checkpoints["arm_b"]]
-    assert score_test.main(fresh.argv(tmp_path / "rest", checkpoints=rest)) in (0, ALARM_EXIT)
+
+    def maps_fail(*_: Any, **__: Any) -> None:
+        raise RuntimeError("the figures failed")
+
+    monkeypatch.setattr(score_test, "write_feature_maps", maps_fail)
+    with pytest.raises(RuntimeError):
+        score_test.main(fresh.argv(tmp_path / "second"))
+    printed = capsys.readouterr().out
+    for name in fresh.rows:
+        assert f"test ledger row of {_label(name)}:" in printed
+    assert score_test.read_test_ledger(fresh.test_ledger) == []
+    monkeypatch.undo()
+
+    assert score_test.main(fresh.argv(tmp_path / "third")) in (0, ALARM_EXIT)
     rows = score_test.read_test_ledger(fresh.test_ledger)
     assert [r["run id"] for r in rows] == [r["run id"] for r in fresh.rows.values()]
+    assert (tmp_path / "third" / "features_by_camera.png").is_file()
 
 
 # The test splits have one route.
