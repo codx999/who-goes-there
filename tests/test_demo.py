@@ -4,6 +4,7 @@ The model is the small CNN with random weights, saved as `train.py` saves a chec
 photo is a synthetic-fixture JPEG: no trained run and no dataset image is needed.
 """
 
+import inspect
 import os
 import subprocess
 import sys
@@ -21,10 +22,10 @@ from trailcam.data import synthetic
 from trailcam.data.classes import CLASSES
 from trailcam.data.dataset import INPUT_SIZE, EvalTransform
 from trailcam.demo import app, predict
-from trailcam.demo.app import build_app, classify, example_photos, main
+from trailcam.demo.app import build_app, build_parser, classify, example_photos, main
 from trailcam.demo.predict import TOP_K, Prediction, load_model
 from trailcam.evaluate import gradcam
-from trailcam.evaluate.gradcam import ZeroMapError, overlay_photo
+from trailcam.evaluate.gradcam import ASSETS_DIR, ZeroMapError, overlay_photo
 from trailcam.model.factory import build_model
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -158,8 +159,38 @@ def test_example_photos_come_from_assets_only(tmp_path: Path) -> None:
 
 
 def test_the_default_examples_are_the_repos_assets() -> None:
+    """R35: both defaults name the repo's assets/, which may still be empty (item 8.05)."""
+    default = inspect.signature(example_photos).parameters["assets_root"].default
+    assert default == ASSETS_DIR == ROOT / "assets"
+    assert build_parser().parse_args([]).assets == ROOT / "assets"
     examples = example_photos()
     assert all(path.is_relative_to((ROOT / "assets").resolve()) for path in examples)
+
+
+def test_the_model_receives_the_eval_transform_of_the_photo_alone(
+    checkpoint: Path, photo: Image.Image
+) -> None:
+    """R20, R21, R23: every forward of a request, the prediction's and Grad-CAM's, takes one
+    argument, the eval transform's output for the photo (shorter side 256, centre crop 224,
+    ImageNet normalisation); no box or other input."""
+    model = load_model(checkpoint, "small_cnn")
+    inputs: list[tuple[Tensor, ...]] = []
+    model.register_forward_hook(lambda _, args, __: inputs.append(args))
+    classify(model, photo, show_gradcam=True)
+    expected = EvalTransform()(photo).unsqueeze(0)
+    assert len(inputs) == 3  # warm-up, timed pass, Grad-CAM
+    for args in inputs:
+        assert len(args) == 1
+        assert torch.equal(args[0].detach(), expected)
+    assert list(inspect.signature(classify).parameters) == ["model", "photo", "show_gradcam"]
+    assert list(inspect.signature(predict.predict).parameters) == ["model", "photo"]
+
+
+def test_the_ui_calls_the_probabilities_confidence_never_accuracy() -> None:
+    """R34: the shown probabilities are the model's own estimate."""
+    source = Path(app.__file__).read_text().lower()
+    assert "accuracy" not in source
+    assert "model confidence" in source
 
 
 def test_the_app_builds_with_and_without_examples(model: nn.Module, tmp_path: Path) -> None:
@@ -211,6 +242,21 @@ def test_main_check_builds_without_launching(
     assert "not launched" in capsys.readouterr().out
     with pytest.raises(SystemExit):
         main([])  # a launch needs a checkpoint
+
+
+def test_share_launches_with_a_public_link_and_check_never_launches(
+    checkpoint: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`--share` passes share=True to launch (mocked: no network); the default is local only;
+    `--check --share` builds and opens no tunnel."""
+    launches: list[dict[str, object]] = []
+    monkeypatch.setattr(gr.Blocks, "launch", lambda _, **kwargs: launches.append(kwargs))
+    run = ["--checkpoint", str(checkpoint), "--config-name", "small_cnn"]
+    assert main([*run, "--share"]) == 0
+    assert main(run) == 0
+    assert launches == [{"share": True}, {"share": False}]
+    assert main(["--check", "--share"]) == 0
+    assert len(launches) == 2
 
 
 def test_the_module_check_exits_zero() -> None:

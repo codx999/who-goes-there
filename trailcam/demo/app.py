@@ -11,10 +11,14 @@ The folder may be empty or missing: the app is then built without examples. Exam
 come from `data/`.
 
     python -m trailcam.demo.app --checkpoint <run>.pt --config-name resnet18_arm_b
+    python -m trailcam.demo.app --checkpoint <run>.pt --share
     python -m trailcam.demo.app --check
 
 `--check` builds the interface and exits without launching; without `--checkpoint` it builds the
-config's model with random weights, so it needs no trained run.
+config's model with random weights, so it needs no trained run. `--share` is the demo-day backup
+if the Space is down: Gradio's `share=True`, a temporary public link served from this machine,
+which lasts only while it runs. The default is local only; `--check` accepts `--share` and opens
+no tunnel.
 """
 
 from __future__ import annotations
@@ -84,7 +88,9 @@ def build_app(model: nn.Module, examples: Sequence[Path] = ()) -> gr.Blocks:
                 show_gradcam = gr.Checkbox(label="Show Grad-CAM of the top class", value=False)
                 run = gr.Button("Classify", variant="primary")
             with gr.Column():
-                scores = gr.Label(num_top_classes=TOP_K, label="Top class and two runners-up")
+                scores = gr.Label(
+                    num_top_classes=TOP_K, label="Top class and two runners-up (model confidence)"
+                )
                 seconds = gr.Textbox(label="Inference time", interactive=False)
                 heatmap = gr.Image(type="pil", label="Grad-CAM (224 x 224 frame)")
         if examples:
@@ -107,6 +113,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--config-path", type=Path, default=CONFIG_PATH)
     parser.add_argument("--assets", type=Path, default=ASSETS_DIR, help="the examples' folder")
     parser.add_argument("--check", action="store_true", help="build the interface, then exit")
+    parser.add_argument("--share", action="store_true", help="a temporary public Gradio link")
     return parser
 
 
@@ -125,7 +132,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.check:
         print(f"interface built, not launched: {len(examples)} examples")
         return 0
-    app.launch()
+    app.launch(share=args.share)
     return 0
 
 

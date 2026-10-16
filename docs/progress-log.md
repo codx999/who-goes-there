@@ -3005,3 +3005,35 @@ For the learning journal (docs/learning-journal.md is not on main yet; topic: de
   `trailcam/evaluate/gradcam.py`, `overlay_photo`.
 
 **Next.** 10.02 (the sort script). The user merges and pushes.
+
+## 2026-10-16: review 10.01: two lows fixed, `--share` added, a fix round next (Opus 5.5)
+
+Review (`/review-session 10.01`, the user's start, range f706326..HEAD): code-reviewer (Opus 5.5
+xhigh) on the range, risk-reviewer (Fable 5.1 high) on the nine high-stakes files. Scenarios R01,
+R03, R04, R05, R20, R21, R23, R26, R32 to R35, R38 and R42 to R45 hold; skipped as known gaps:
+the Space parts of R33 and R35 (11.01), the sort script (10.02), the `assets/` photos (8.05).
+Risk-reviewer found nothing. Code-reviewer, three lows:
+
+- Fixed: the default-examples test passed on an empty `assets/` whatever the default was. It now
+  asserts the defaults of `example_photos` and of `--assets` are the repo's `assets/`.
+- Fixed: R20, R21, R23 and R34 still read "none yet (10.01)". New test: every forward of a
+  request (warm-up, timed pass, Grad-CAM) takes one argument, equal to `EvalTransform` of the
+  photo, and the handler and `predict` take the photo (and the Grad-CAM switch) only. Another
+  checks that the UI says "model confidence" and never "accuracy"; the label now reads "Top class
+  and two runners-up (model confidence)". The four test cells are filled.
+- Open, the user's decision: plan.md (lines 408 to 410) leaves to sessions 10 and 11 whether
+  `trailcam/demo/**` joins the paths of `.claude/rules/data.md`. Not decided here.
+
+Outside the criteria, open for the user: every `gr.Blocks` build makes Gradio's version check and
+analytics request to `api.gradio.app` (tests, CI, the live demo); no data goes with it.
+`analytics_enabled=False` would turn it off.
+
+Added at the user's go-ahead, via the coordinator: `--share` launches with Gradio's
+`share=True`, the demo-day backup if the Space is down. The default stays local only, and
+`--check --share` builds without opening a tunnel. A share link is temporary (it expires after
+a time set by Gradio) and is served from the Mac, so it works only while the laptop stays on,
+awake and online, with the app running. Test: `--share` passes `share=True` to a mocked
+`launch`, the default `share=False`, `--check --share` never launches.
+
+`check.sh` green. The fix touches `trailcam/demo/app.py` and `tests/test_demo.py` (high-stakes,
+test lines modified), so one fix round runs on the fix range.
