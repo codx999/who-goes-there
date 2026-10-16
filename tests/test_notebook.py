@@ -34,8 +34,9 @@ PUBLIC_REPO = "https://github.com/codx999/who-goes-there"
 # the main commit that holds trailcam/train/device.py (6.06): the default COMMIT descends from it.
 KAGGLE_DATA_ROOT = "Path('/kaggle/input/datasets/codx888/cct20-512/cct20_512')"
 OLDEST_COMMIT = "17ca508d420cccf10f4ed83d8df849a1dde153cd"
-# Item 6.08: the archive dataset the user makes with scripts/kaggle_pack_cache.py.
-KAGGLE_ARCHIVE = "Path('/kaggle/input/datasets/codx888/cct20-512-tar/cct20_512.tar')"
+# Item 6.09: the archive of item 6.08, attached as the user's packing notebook's output (made a
+# dataset, Kaggle extracted it); verified 2026-10-15, one file of 3,213,506,560 bytes.
+KAGGLE_ARCHIVE = "Path('/kaggle/input/notebooks/codx888/notebook2b5a4bf6ad/cct20_512.tar')"
 PARAMETERS = {"CONFIG_NAME", "RUN_SEED", "COMMIT", "CACHE_ARCHIVE", "DATA_ROOT"}
 
 _spec = importlib.util.spec_from_file_location("guard_data", ROOT / "scripts" / "guard_data.py")
@@ -250,8 +251,9 @@ def test_the_unpack_cell_sets_data_root_or_keeps_the_loose_dataset(
     assert _run_unpack_cell(None, tmp_path / "other", loose)["DATA_ROOT"] == loose
     assert not (tmp_path / "other").exists()
 
-    with pytest.raises(FileNotFoundError, match="is not a file"):
+    with pytest.raises(FileNotFoundError, match="is not a file") as absent:
         _run_unpack_cell(tmp_path / "absent.tar", tmp_path / "third", loose)
+    assert "is the output of the packing notebook attached?" in str(absent.value)  # not a dataset
 
 
 def test_the_unpack_cell_refuses_the_loose_dataset_only_in_an_interactive_session(
@@ -377,14 +379,14 @@ def test_how_to_run_says_import_attach_one_cell_rehearse_then_run() -> None:
     steps = [
         "File > Import Notebook",
         f"{PUBLIC_REPO}/blob/main/notebooks/kaggle_train.ipynb",
-        "Add Input",
-        "cache archive dataset of item 6.08",
-        "/kaggle/input/datasets/<user>/<slug>/<file>",
-        "another\n   account or dataset name changes it",
-        "Remove the `cct20-512` input if the notebook still has it",
+        "Add Input > Notebook: attach the output of the packing notebook of item 6.08",
+        "Not a dataset: when a notebook's output becomes a\n   dataset, Kaggle extracts a `.tar`",
+        "/kaggle/input/notebooks/<user>/<notebook>/<file>",
+        "another account or packing notebook\n   changes it",
+        "Remove the `cct20-512` and `cct20-512-tar` inputs if the notebook still has them",
         "`CACHE_ARCHIVE = None` reads the loose 6.03 dataset",
         "Keep exactly one parameter cell",
-        "Edit only\n   `COMMIT` (and `CACHE_ARCHIVE` for another dataset)",
+        "Edit only\n   `COMMIT` (and `CACHE_ARCHIVE` for another packing notebook)",
         "at or after the merge of item 6.08",
         "Accelerator GPU T4 x2",
         "Internet on",
@@ -392,10 +394,27 @@ def test_how_to_run_says_import_attach_one_cell_rehearse_then_run() -> None:
         "then stop the session",
         "Save Version > Save & Run All",
         "one line per epoch with the epoch's seconds and training images per second",
+        "About 10 minutes after Save & Run All, open the version's Logs tab",
+        'still shows "Starting...", cancel it and submit again',
     ]
     positions = [MARKDOWN.find(step) for step in steps]
     assert -1 not in positions, [s for s, i in zip(steps, positions, strict=True) if i == -1]
     assert positions == sorted(positions)
+
+
+def test_the_2026_10_15_stall_is_not_put_down_to_the_input_copy() -> None:
+    """Item 6.09: why the 6.04 GPU version sat at "Starting..." is not known (a CPU version with
+    the same 57,864-file input logged its first line in about 5 minutes), so neither the notebook
+    nor the docstrings of the cache and packing modules name the input copy as the cause."""
+    texts = {
+        "notebook": "\n".join("".join(c["source"]) for c in NB["cells"]),
+        "cache.py": (ROOT / "trailcam" / "data" / "cache.py").read_text(encoding="utf-8"),
+        "kaggle_pack_cache.py": (ROOT / "scripts" / "kaggle_pack_cache.py").read_text("utf-8"),
+    }
+    for name, text in texts.items():
+        for claim in ("copies every input file before", "copies its 57,864", "Kaggle copied"):
+            assert claim not in text, (name, claim)
+    assert "why is not known" in MARKDOWN
 
 
 def test_no_credentials() -> None:
