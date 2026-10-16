@@ -20,7 +20,8 @@ counts, scores and camera location numbers only, never an image id or file name 
 
 **Test-set isolation (R17).** The command line accepts `val` and `trans_val` only and reads no
 other split's records; cis_test and trans_test are scored once, at the end, by the final scoring
-(item 9.01), which calls `predict`, `write_report` and `write_overlays` directly.
+(`trailcam/evaluate/score_test.py`, item 9.01), which calls `write_report` and `write_overlays`
+directly, on the one pass of `slices.predict_split` rather than a second one through `predict`.
 
 **Other evaluation outputs.** Attention-in-box and the animal-removed test have their own entry
 point (`python -m trailcam.evaluate.attention`, item 8.03), and so do the day/night and
