@@ -2723,3 +2723,45 @@ Fix 5612c2d (the user's decisions, via the coordinator):
 **Next.** Fix round: `/review-session bc61d94..5612c2d 9.01` (`score_test.py` and its tests are
 high-stakes files). Then the user's tier-3 option, `/code-review ultra`. The user rewords 9.02's
 steps after the merge.
+
+Fix round: `/review-session bc61d94..5612c2d 9.01` (code-reviewer Opus xhigh, risk-reviewer
+Fable high). Findings:
+
+- High (code-reviewer; risk-reviewer found a narrower version, low): the resume path counted an
+  already-scored row as present. So runs trained after the test scores were seen could be scored
+  later: arm A and arm B seed 1, or a rerun of arm B seed 0 after its old row was removed. Before
+  the fix this was impossible. The resume was my decision, flagged in the fix entry above.
+- Low (both): a failure between a row's append and its tables (or the slices and feature maps)
+  lost those outputs for good, since the checkpoint was then "already scored". A resumed run's
+  headline and alarms covered only its own checkpoints.
+
+Scenarios R01, R03, R05, R26, R32, R42 to R45 held for both. R17's named scenario held
+(`check_complete`); the high is another route around it. R40 held, with these findings left over.
+Code-reviewer also noted that plan section 7 credited the resume rule to the user; it was mine.
+
+Fix 60b2185 (the user's decision: drop the resume):
+
+- A test ledger that already holds a row is refused, whichever checkpoints are given: the final
+  scoring runs once, for every checkpoint together. Runs added after it can never be scored.
+- `print_row` prints each checkpoint's row and alarms as soon as it is scored; the rows are
+  appended together after every checkpoint's tables, the headline, the slices and the feature
+  maps. A run that stops part way appends nothing and is run again from the start with a new
+  `--out` (the checkpoints are pinned by sha256, so the scores are the same).
+- `read_test_ledger` also refuses one run id in two rows.
+- Plan section 7 credits each rule to the decision it came from; R17's and R40's test cells
+  updated.
+- Tests (48 in the file): the part-way test now fails the second checkpoint and, in a second run,
+  the feature maps; both print the rows scored and append none, then a full run appends all
+  three. The rescoring test also gives seeds 1 of both arms added to the ledger later: refused.
+  The malformed test ledger cases check each reason on the reader, including one run id in two
+  rows.
+- Mutation checks, each restored by copying and each failing a test, 7 of 7: the run-once
+  refusal, the rows appended per checkpoint, the rows appended before the figures, the run-id
+  check, the sha256 check, and the rows not printed. The run-id mutation first survived, because
+  `main` refuses any test ledger with rows before the reader's check is reached. The test now
+  checks the reader's message.
+
+`check.sh` green (792 passed). No third round unless the user asks.
+
+**Next.** The user's tier-3 option, `/code-review ultra` on the branch, with time for one fix
+round before 9.02. The user rewords 9.02's steps after the merge, then merges this branch.
