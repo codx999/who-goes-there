@@ -2681,7 +2681,18 @@ decision (via the coordinator): fix it here; the plan.md edit is approved.
   `test_the_unpack_cell_sets_data_root_or_keeps_the_loose_dataset` now pins the message.
 - Outputs cleared; nbconvert `--clear-output` leaves the notebook unchanged. `check.sh` green.
 
-The fix touches `docs/plan.md` and the notebook (high-stakes), so one fix round runs on the fix
-range; the user starts it.
+The fix (ee80471) touches `docs/plan.md` and the notebook (high-stakes), so one fix round ran on
+the fix range.
 
-**Next.** The fix round, then merge; the user flips 6.04 after the merge.
+Fix round (`/review-session fa72fd9..HEAD 6.09`, the user's start): code-reviewer (Opus 5.5
+xhigh) and risk-reviewer (Fable 5.1 high), nothing found by either. R01, R03, R06, R07, R16, R17,
+R27, R37, R38, R41 and R42 hold; the new assertion makes the test stricter. Spec changed: plan
+section 2, cited by R01, R05, R06, R15, R21, R23 and R32; the edit is only how the archive is
+attached, which none of them concern. `check.sh` green, 745 passed.
+
+Left for a later item (code-reviewer, optional, outside the range): the cache-check cell (cell-11)
+still ends its error with "none (is the dataset attached?)". It shows only for a tar without the
+annotations or the sidecar, which `kaggle_pack_cache.py` refuses to write; the wording predates
+6.09.
+
+**Next.** The user merges and pushes; then the user flips 6.04.
