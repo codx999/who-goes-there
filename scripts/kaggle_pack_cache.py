@@ -1,9 +1,10 @@
 """Pack the attached 512 px cache dataset into one uncompressed tar on Kaggle (item 6.08).
 
 A committed GPU run that attached the 6.03 cache (57,864 small JPEGs) sat at "Starting..." for
-about 48 minutes with an empty log, billed, while Kaggle copied the input files (2026-10-15). One
-2.9 GiB file starts much faster, and `trailcam.data.cache.unpack_cache` extracts it to local disk
-at the start of each run. Run once, in a CPU session with the `cct20-512` dataset attached and
+about 48 minutes with an empty log, billed (2026-10-15). Why is not known: a CPU run with the same
+input logged its first line in about 5 minutes. One 2.9 GiB file is still a lighter input, and
+`trailcam.data.cache.unpack_cache` extracts it to local disk at the start of each run (about
+35 s). Run once, in a CPU session with the `cct20-512` dataset attached and
 `trailcam` installed from a clone (as for 6.03), as its own process:
 
     python scripts/kaggle_pack_cache.py   # defaults: --cache <the 6.03 dataset's folder>
@@ -13,10 +14,11 @@ Packing the dataset, not rebuilding the cache, keeps the exact bytes the sidecar
 flags were measured on and the rehearsals checked: no 6.5 GB download, no re-encode under another
 Pillow. Before anything is written, the cache must be whole: the five annotation files, the
 sidecar with one entry per annotated image, and in `images/` exactly the annotated JPEGs, none
-empty. An interactive session can load the dataset lazily, so run it with Save & Run All, which
-copies every input file before the first cell. The tar holds `annotations/`, `images/` and the
-sidecar under `CACHE_TOP`, in sorted order with zeroed owners and times, so the same cache gives
-the same bytes; it is written to a `.part` name and renamed only when complete.
+empty. An interactive session can load the dataset lazily, so run it with Save & Run All (the
+2026-10-15 packing run found every file); a partial cache is refused either way. The tar holds
+`annotations/`, `images/` and the sidecar under `CACHE_TOP`, in sorted order with zeroed owners
+and times, so the same cache gives the same bytes; it is written to a `.part` name and renamed
+only when complete.
 
 Steps on Kaggle (the user, once):
 
@@ -33,9 +35,10 @@ Steps on Kaggle (the user, once):
 
 4. Save Version > Save & Run All (Commit), and wait for the version to finish. Its log ends with
    the file counts, the size, the seconds and the archive's SHA-256.
-5. The version's Output: New Dataset, slug `cct20-512-tar`, Private, Create. Its Data tab must
-   show one file, `cct20_512.tar`, of about 2.9 GiB; if it shows folders, Kaggle unpacked it:
-   stop and report. Note the SHA-256 and the size in the progress log.
+5. Keep the version: the training notebook attaches its output with Add Input > Notebook, at
+   `/kaggle/input/notebooks/<user>/<notebook>/cct20_512.tar`, one file of about 2.9 GiB. Do not
+   make the output a dataset: Kaggle then extracts the `.tar` (the `cct20-512-tar` dataset came
+   out as folders, 2026-10-15). Note the SHA-256 and the size in the progress log.
 
 Output is counts only (R03): files per folder, bytes, seconds and the archive's SHA-256; never a
 file name or an id. Exits 1 when a check fails. Refuses to start outside Kaggle unless
