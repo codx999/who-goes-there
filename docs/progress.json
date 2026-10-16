@@ -165,7 +165,7 @@
     {"id": "10.01", "session": 10, "owner": "claude", "due": "2026-10-20",
      "description": "trailcam/demo/predict.py (load checkpoint, predict the argmax label with its probability, the two runners-up, and the inference time in seconds) and trailcam/demo/app.py (Gradio: upload, top class with confidence, two runners-up, time in seconds, Grad-CAM toggle, examples from assets/)",
      "steps": "uv run pytest tests/test_demo.py passes: predict on a fixture image returns three (label, probability) pairs summing to at most 1 and a time in seconds; `uv run python -m trailcam.demo.app --check` builds the interface without launching and exits 0",
-     "passes": false},
+     "passes": true},
     {"id": "10.02", "session": 10, "owner": "claude", "due": "2026-10-20",
      "description": "trailcam/demo/sort.py: sorts a local folder of photos into per-class folders (copy, not move), printing a running timer and counts per class as it goes, for the live demo of about 200 trans-test photos",
      "steps": "`uv run python -m trailcam.demo.sort --src <fixture dir> --dst <tmp dir>` sorts every fixture image into a class folder and prints only counts and the elapsed seconds; uv run pytest tests/test_sort.py passes",

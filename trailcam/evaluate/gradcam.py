@@ -33,6 +33,11 @@ only, never the unblended photo: generated figures go to `docs/figures/`, which 
 raw dataset image (`.claude/rules/data.md`; the user's decision, review 8.02). A map that is zero
 everywhere would leave the photo unblended, so it is refused (`ZeroMapError`, review 8.02's fix
 round).
+
+**The demo's overlay (item 10.01).** A photo uploaded to the Gradio demo is not under `assets/`,
+so `overlay_photo` draws the same overlay from a photo already in memory and returns it, writing
+nothing. The containment stays on every path that reads a file: `overlay` and `write_overlay`
+still take a path and refuse one outside `assets/`, and only `write_overlay` writes a PNG.
 """
 
 from __future__ import annotations
@@ -174,6 +179,14 @@ def overlay(model: nn.Module, path: Path, assets_root: Path = ASSETS_DIR) -> Ove
     source = assets_image(path, assets_root)
     with Image.open(source) as opened:
         photo = opened.convert("RGB")
+    return overlay_photo(model, photo)
+
+
+def overlay_photo(model: nn.Module, photo: Image.Image) -> Overlay:
+    """The Grad-CAM overlay of a photo already in memory, such as one uploaded to the demo,
+    returned and never written. Puts `model` in eval mode; raises `ZeroMapError` as `overlay`
+    does. It needs autograd, so call it outside `torch.inference_mode()`."""
+    photo = photo.convert("RGB")
     parameter = next(model.parameters(), None)
     device = parameter.device if parameter is not None else torch.device("cpu")
     batch = EvalTransform()(photo).unsqueeze(0)

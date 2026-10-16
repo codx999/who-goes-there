@@ -27,6 +27,7 @@ from trailcam.evaluate.metrics import (
     per_camera_scores,
     per_class_scores,
     time_one_prediction,
+    timed_forward,
 )
 from trailcam.model.factory import build_model
 
@@ -253,3 +254,29 @@ def test_the_timer_is_the_modules_only_clock() -> None:
     source = Path(metrics.__file__).read_text()
     assert "time.perf_counter()" in source
     assert "time.time(" not in source
+
+
+def test_timed_forward_returns_the_timed_pass_logits(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Item 10.01: the logits come from the timed (second) pass, so no third forward is needed;
+    the clock and the train-mode restore are `time_one_prediction`'s."""
+    events: list[str] = []
+    readings = iter([3.0, 3.5])
+    outputs = iter([torch.zeros(1, 12), torch.ones(1, 12)])
+
+    def clock() -> float:
+        events.append("clock")
+        return next(readings)
+
+    class _Two(_Recorder):
+        def forward(self, x: Tensor) -> Tensor:
+            super().forward(x)
+            return next(outputs)
+
+    monkeypatch.setattr(time, "perf_counter", clock)
+    model = _Two(events)
+    model.train()
+    logits, seconds = timed_forward(model, torch.zeros(3, 8, 8))
+    assert seconds == pytest.approx(0.5)
+    assert torch.equal(logits, torch.ones(1, 12))
+    assert events == ["forward", "clock", "forward", "clock"]
+    assert model.training

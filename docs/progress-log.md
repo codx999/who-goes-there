@@ -3031,3 +3031,135 @@ and the test count is 802. Steps re-run: 109 links resolve, all 19 commands exit
 green (802 passed).
 
 Review: tier 0 (docs only), nothing to run.
+
+## 2026-10-16: session 10, item 10.01, the demo's prediction and its Gradio app (Opus 5.5)
+
+**Done.**
+
+- `trailcam/demo/predict.py`: `load_model(checkpoint, config_name)` loads with 8.03's
+  `load_checkpoint` (no second loader), which refuses another model or class map, and returns the
+  model in eval mode on the CPU. `predict(model, photo)` returns a `Prediction`: the top class and
+  two runners-up as (label, softmax probability) pairs, most probable first, and the forward
+  pass's seconds. Labels come from `CLASSES`; the photo goes through `EvalTransform` after
+  `convert("RGB")` (a night photo is grayscale).
+- Timer (the 8.01 carry-over): `trailcam/evaluate/metrics.py` gains `timed_forward(model, image)
+  -> (logits, seconds)`, the same warm-up plus timed pass, returning the timed pass's detached
+  logits; `time_one_prediction` is now `timed_forward(...)[1]`, so its tests run unchanged. The
+  demo decodes from those logits, so a request costs the warm-up and one timed pass (two
+  forwards), not three. The transform, the move to the device and the softmax stay outside the
+  timed region; `tests/test_demo.py` checks the order transform, forward, clock, forward, clock.
+- Grad-CAM in memory: `trailcam/evaluate/gradcam.py` gains `overlay_photo(model, photo)`, the
+  overlay of a PIL image already in memory, returned and never written. `overlay(model, path)`
+  keeps `assets_image` and now delegates to it after opening the file; `write_overlay`, the only
+  writer, still goes through `overlay`, so the R04 containment for files is unchanged. The app
+  calls it outside `torch.inference_mode()`.
+- `trailcam/demo/app.py`: Gradio Blocks with upload, a Grad-CAM checkbox, a Classify button,
+  `gr.Label` with the top class and two runners-up, the seconds ("0.042 s (forward pass only)"),
+  the overlay image, the Beery et al. 2018 citation and CDLA-Permissive 1.0. Examples are the
+  photos directly under `assets/` (`example_photos`, each through `assets_image`, so a link out
+  of the folder is refused); no `assets/` folder or an empty one means no examples. `--check`
+  builds the interface and exits 0 without launching; without `--checkpoint` it uses the
+  config's model with random weights (default config `resnet18_arm_b`; both arms are a
+  ResNet-18, open question 7 picks the checkpoint). A launch without `--checkpoint` is refused.
+- gradio (6.30.0 locked, `>=6.30.0`): the user's decision in this session, a `demo` dependency
+  group with `[tool.uv] default-groups = ["dev", "demo"]`, not `uv add gradio` as a runtime
+  dependency. `uv sync`, `check.sh` and CI install it as they are; the wheel's Requires-Dist and
+  pip on Kaggle never see it, so the notebook's install does not pull gradio's ~30 packages
+  (R38). `uv.lock` committed.
+- `docs/review/invariants.md`: test cells of R04 (the in-memory overlay writes nothing; the path
+  overlay still refuses a photo outside `assets/`), R33 (`timed_forward`, the demo's two passes,
+  transform before the clock) and R35 (the demo's examples) filled; the Space and the sort script
+  stay open (11.01, 10.02).
+
+Steps: `uv run pytest tests/test_demo.py` 13 passed: predict on a synthetic-fixture JPEG through
+a random-weight small CNN loaded from a checkpoint file returns three distinct (label,
+probability) pairs in `CLASSES`, descending, summing to at most 1, and a positive float of
+seconds; and `python -m trailcam.demo.app --check` (run as a subprocess too) builds the interface
+and exits 0. `tests/test_metrics.py` adds the `timed_forward` test. `check.sh` green.
+
+Notes for 11.01 (the Space):
+
+- `space/requirements.txt`: `uv export --no-dev --no-hashes --group demo` (the `--no-dev` export
+  alone leaves gradio out), trimmed to torch, torchvision, gradio, Pillow, NumPy, matplotlib
+  (`gradcam.py` imports it at module level) and PyYAML (`trailcam.train.config`); timm only if
+  the Space serves EfficientNet-B0. `predict.py` imports `load_checkpoint` from
+  `trailcam/evaluate/attention.py`, which brings in more of `trailcam` (split, train) but no other
+  third-party package.
+- `load_model` needs the root `config.yaml` (only to name the model): a Space that pip-installs
+  `trailcam` has no checkout, so it uploads `config.yaml` and passes `config_path`, or 11.01
+  proposes another way.
+
+For the learning journal (docs/learning-journal.md is not on main yet; topic: demo):
+
+- Top-3 with probabilities: softmax turns the 12 logits into probabilities that sum to 1; the
+  demo shows the three largest, so they sum to at most 1, and a low top value says the model is
+  unsure. See `trailcam/demo/predict.py`.
+- Why the timer excludes decoding: the seconds should measure the model, not JPEG decoding or
+  resizing, which depend on the photo's size; and the timed pass's own logits are reused so a
+  request runs the model twice, not three times. See `timed_forward` in
+  `trailcam/evaluate/metrics.py`.
+- What Grad-CAM shows: which part of the 224 x 224 frame pushed the top class's score up (the
+  last conv block's channels weighted by their gradients); on camera traps, a map on the animal
+  is good, a map on the background suggests the model learned the scene. See
+  `trailcam/evaluate/gradcam.py`, `overlay_photo`.
+
+**Next.** 10.02 (the sort script). The user merges and pushes.
+
+## 2026-10-16: review 10.01: two lows fixed, `--share` added, a fix round next (Opus 5.5)
+
+Review (`/review-session 10.01`, the user's start, range f706326..HEAD): code-reviewer (Opus 5.5
+xhigh) on the range, risk-reviewer (Fable 5.1 high) on the nine high-stakes files. Scenarios R01,
+R03, R04, R05, R20, R21, R23, R26, R32 to R35, R38 and R42 to R45 hold; skipped as known gaps:
+the Space parts of R33 and R35 (11.01), the sort script (10.02), the `assets/` photos (8.05).
+Risk-reviewer found nothing. Code-reviewer, three lows:
+
+- Fixed: the default-examples test passed on an empty `assets/` whatever the default was. It now
+  asserts the defaults of `example_photos` and of `--assets` are the repo's `assets/`.
+- Fixed: R20, R21, R23 and R34 still read "none yet (10.01)". New test: every forward of a
+  request (warm-up, timed pass, Grad-CAM) takes one argument, equal to `EvalTransform` of the
+  photo, and the handler and `predict` take the photo (and the Grad-CAM switch) only. Another
+  checks that the UI says "model confidence" and never "accuracy"; the label now reads "Top class
+  and two runners-up (model confidence)". The four test cells are filled.
+- Decided, the user's go via the coordinator, confirmed by the user in this session:
+  `trailcam/demo/**` and `space/**` join the paths of `.claude/rules/data.md`; plan.md's open line
+  for sessions 10 and 11 (section 10, "Sessions 10 and 11") now records the decision. Spec
+  changed: plan.md, that line only.
+
+Outside the criteria, the user's go via the coordinator: every `gr.Blocks` build made Gradio's
+version check and an analytics request to `api.gradio.app` (tests, CI, the live demo). The app
+is now built with `analytics_enabled=False`. In gradio 6.30 the version check runs only when the
+Blocks has analytics on (`blocks.py`, the `analytics_enabled` branch), so no environment variable
+is needed; the inner Blocks of `gr.Examples` is built only when caching examples, which the app
+does not. Test: the built Blocks has analytics off and the version check is never called.
+
+Added at the user's go-ahead, via the coordinator: `--share` launches with Gradio's
+`share=True`, the demo-day backup if the Space is down. The default stays local only, and
+`--check --share` builds without opening a tunnel. A share link is temporary (it expires after
+a time set by Gradio) and is served from the Mac, so it works only while the laptop stays on,
+awake and online, with the app running. Test: `--share` passes `share=True` to a mocked
+`launch`, the default `share=False`, `--check --share` never launches.
+
+Main merged twice through the sync tool (9.01/9.02, then 12.07), both sides of each log
+conflict kept. With 12.07 on main, the demo lines of "For the learning journal" above are now
+topic 13 of `docs/learning-journal.md`.
+
+`check.sh` green. The fix touches `trailcam/demo/app.py` and `tests/test_demo.py` (high-stakes,
+test lines modified), so one fix round runs on the fix range.
+
+Fix round (`/review-session d3e8cf1..HEAD 10.01`, the user's start): code-reviewer (Opus 5.5
+xhigh) on the range, risk-reviewer (Fable 5.1 high) on `.claude/rules/data.md`,
+`tests/test_demo.py` and `trailcam/demo/app.py`. Scenarios R01, R03, R04, R05, R20, R21, R23,
+R33, R34, R35 and R42 to R45 hold (Space and sort-script parts skipped as known gaps). Spec
+changed: `.claude/rules/data.md` (its paths only; R03, R20, R23, R24 cite it) and plan.md section
+10 (no row cites it). Two lows, both from `--share`, fixed at the user's go:
+
+- Both reviewers: `app.py`'s docstring said no launch calls `api.gradio.app`; with `--share`,
+  Gradio asks it for a tunnel server (`gradio/networking.py`). The docstring now says a local
+  build or launch never calls it and `--share` does, by design. Analytics stay off in every mode.
+  The 5c03add commit message carries the old claim; commits are not rewritten.
+- Code-reviewer: `--share` writes `.gradio/certificate.pem` (Gradio's public root CA, not a
+  secret) into the working directory, which nothing ignored. `.gradio/` is now in `.gitignore`,
+  and a test checks `git check-ignore` covers it. The guard is not changed: the file is no secret
+  and `tests/test_guard_data.py` only requires the guard's patterns to be in `.gitignore`.
+
+No third round (the user's request would be needed). `check.sh` green.

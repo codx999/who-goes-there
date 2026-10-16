@@ -31,7 +31,15 @@ packages = ["trailcam"]
 [tool.hatch.build.targets.sdist]
 only-include = ["trailcam", "README.md", "LICENSE"]
 
+# gradio is the demo's alone (item 10.01): a group, not a runtime dependency, so the wheel's
+# Requires-Dist and pip on Kaggle never see it, while `uv sync` installs it with dev.
+[tool.uv]
+default-groups = ["dev", "demo"]
+
 [dependency-groups]
+demo = [
+    "gradio>=6.30.0",
+]
 dev = [
     "mypy>=2.4.0",
     "pytest>=9.1.1",

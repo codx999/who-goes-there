@@ -405,9 +405,10 @@ session below also updates the setup it touches, in the same commit as the code:
 - **Sessions 6 and 11** (new scripts): `scripts/check.sh` runs mypy on `trailcam/` and
   `scripts/guard_data.py` by explicit path; `kaggle_prepare_cct20.py` and `deploy_space.py` are
   added there (and to the mypy `files` list) when written.
-- **Sessions 10 and 11** (demo and Space): `.claude/rules/data.md` covers `trailcam/data/**` and
-  `trailcam/evaluate/**` only; decide whether `trailcam/demo/**` and `space/**` join its paths so
-  the "assets only, never `data/`" rules apply there.
+- **Sessions 10 and 11** (demo and Space): decided 2026-10-16, the user's decision (review
+  10.01): `trailcam/demo/**` and `space/**` join the paths of `.claude/rules/data.md`, beside
+  `trailcam/data/**` and `trailcam/evaluate/**`, so the "assets only, never `data/`" rules apply
+  there.
 - **After the first review** (item 2.04): add to the allow list in `.claude/settings.json`
   whatever read-only git commands the reviewers prompted for (`git show`, `git rev-parse` are
   the likely ones).

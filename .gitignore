@@ -217,6 +217,9 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
+# Gradio: `--share` writes .gradio/certificate.pem into the working directory
+.gradio/
+
 # --- project-specific ---
 # Kept in step with scripts/guard_data.py (tests/test_guard_data.py checks the two agree).
 # CCT20 images and metadata live in data/ (downloaded from LILA, CDLA-Permissive) and are never
