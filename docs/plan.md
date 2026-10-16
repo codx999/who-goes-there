@@ -77,7 +77,9 @@ evaluation, the demo and the Space. Nothing redefines it inline.
 augmentation and the attention score, never a model input), the capture hour from `date_captured`,
 and a day/night flag computed during the Kaggle resize from the pixels (infrared frames are
 grayscale JPEGs whose three channels are near-identical; the clock alone is unreliable, hour 12
-holds about twice as many images as its neighbours). About half the images are night shots.
+holds about twice as many images as its neighbours). Most images are night shots: 65.7% of the
+kept images and 63.6% of all annotated images; trans_test is 71.6% night against cis_test's 62.6%
+of kept images (`docs/data-card.md`, "Day and night").
 
 Boxes are stored once, in `trailcam/data/metadata.py`, as fractions (x, y, width, height) of the
 image's original `width` and `height`, so the same box holds on the 1024 px tarball, the 512 px
@@ -98,10 +100,11 @@ alone would reward predicting opossum, so macro-F1 sits next to accuracy everywh
 training reads the cache. Models take 224 x 224 inputs; 512 leaves room for a 320 px run if there
 is time. Normalisation uses ImageNet mean and standard deviation for both models so they share
 one pipeline. Training runs attach the cache as one uncompressed tar (item 6.08,
-`scripts/kaggle_pack_cache.py`, packed from that dataset on a CPU session and saved as a second
-private dataset, `cct20-512-tar`) and unpack it to local disk under `/tmp` at the start
-(`trailcam.data.cache.unpack_cache`): one file starts faster than 57,864 and training reads
-local disk. The 6.04 version sat at "Starting..." for about 48 billed GPU minutes with the loose
+`scripts/kaggle_pack_cache.py`, packed from that dataset on a CPU session) and unpack it to local
+disk under `/tmp` at the start (`trailcam.data.cache.unpack_cache`): one file starts faster than
+57,864 and training reads local disk. The tar is attached as the packing notebook's output (Add
+Input > Notebook, at `/kaggle/input/notebooks/<user>/<notebook>/cct20_512.tar`), not as a
+dataset: Kaggle extracts a `.tar` that becomes a dataset (item 6.09). The 6.04 version sat at "Starting..." for about 48 billed GPU minutes with the loose
 files attached (2026-10-15), but a CPU run with the same files started in about 5, so the cause
 is not known (more likely the GPU session's own start). Whatever the cause, a version still
 "Starting..." with an empty Logs tab about 10 minutes after Save & Run All is cancelled and
@@ -170,7 +173,7 @@ before any training run, and checks the head size against the class map.
 | Schedule | Cosine annealing with a one-epoch linear warmup, **and** early stopping on val macro-F1 with patience 3; the best checkpoint is restored |
 | Epochs | Up to 15 for the small CNN, up to 10 for the backbone, the first of them head-only: the head-only epoch counts inside the 10, so the body trains at most 9 epochs, the same for both arms (user's decision, review 5.03); the ledger records epochs run and the best epoch |
 | Batch and input | 64 images at 224 x 224; mixed precision on the GPU |
-| Augmentation, control arm | Training only: random resized crop (scale 0.65 to 1.0, mirroring the paper's crops), horizontal flip, mild colour jitter, random grayscale with probability 0.1 (half the data is infrared). Val and test: resize so the shorter side is 256, centre crop 224, normalise |
+| Augmentation, control arm | Training only: random resized crop (scale 0.65 to 1.0, mirroring the paper's crops), horizontal flip, mild colour jitter, random grayscale with probability 0.1 (about two thirds of the kept images are infrared (section 2)). Val and test: resize so the shorter side is 256, centre crop 224, normalise |
 | Augmentation, treatment arm | Identical, except the crop sampler described in section 6 |
 | Seeds | One seed for the split, one per run; both set (`torch`, `numpy`, `random`) and logged |
 | DataLoader | Shuffle on the training loader only; val and test loaders never shuffle |
@@ -285,6 +288,20 @@ methods. Mixed outcomes are reported as mixed. A negative result is a result.
 - **Protocol**: cis test and trans test are scored **once**, at the end, with the user's go-ahead,
   by a script that writes the ledger rows and the results tables. That scoring is tier 3. No
   test score is looked at before every arm and seed that will be reported has finished training.
+  The script (`trailcam/evaluate/score_test.py`, item 9.01) writes one row per checkpoint to
+  `docs/test-ledger.md`, with the test scores, the gaps, the checkpoint hash and who approved;
+  `docs/ledger.md` keeps its 16 training columns (user's decision, session 9.01). It refuses to
+  run without `--approved-by`, refuses a checkpoint with no training row or one already scored,
+  and requires every run in the ledger to be given (user's decision, session 9.01). A run still
+  training has no row, so the ledger alone cannot show it is missing: the user states the
+  reported run seeds (`--run-seeds`, required), and the script refuses a ledger without a small
+  CNN row, without an arm A and an arm B row for each of those seeds, or with a row of another
+  seed (user's decisions, review 9.01 and its ultra review). It also refuses two rows of one
+  checkpoint or of one config and run seed (a rerun: the user picks one; review 9.01). It runs
+  once: a test ledger that already holds a row is refused, so no run added after test scores
+  were seen can be scored. Each checkpoint's row is printed as soon as it is scored, and the rows
+  are appended together after every output is written, so a run that stops part way appends
+  nothing and is run again from the start (user's decisions, review 9.01 and its fix round).
 
 ## 8. Demo and deployment
 
@@ -403,8 +420,9 @@ session below also updates the setup it touches, in the same commit as the code:
    fallback only if the course later rejects the dataset outright.
 2. **Submission format.** The Space (app.py, weights, requirements.txt) is known; whether a report,
    notebook or video is also required is not.
-3. **Tarball layout.** The folder structure inside `eccv_18_all_images_sm.tar.gz` is unknown until
-   it is opened on Kaggle (session 6); the prepare script prints it.
+3. **Tarball layout.** Closed 2026-10-15 by item 6.03, from the cache build's printout:
+   `eccv_18_all_images_sm.tar.gz` holds 1 directory and 57,864 files, all `.jpg`, all at depth 1
+   (one top-level folder, the only folder holding `.jpg` files).
 4. **`car` as a class.** Kept because it has 668 training and 1,113 trans-test images; drop to 11
    classes if the audience finds a non-animal class confusing.
 5. **Grad-CAM in the Space.** It doubles the CPU work per prediction; it may stay local-only, with

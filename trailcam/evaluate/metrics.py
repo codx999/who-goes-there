@@ -12,7 +12,8 @@ order of `trailcam/data/classes.py`: rows are the true class, columns the predic
 
 No scikit-learn: the counts are plain Python over index sequences, checked against hand-computed
 values in `tests/test_metrics.py`. Item 5.03 wrote `accuracy` and `macro_f1` for the training
-loop; item 8.01 added the per-class report, the confusion matrix and the inference timer.
+loop; item 8.01 added the per-class report, the confusion matrix and the inference timer; item
+8.02 the per-camera scores (`per_camera_scores`), which the per-camera bars plot.
 
 `time_one_prediction` (R33) is the one timer: the Gradio UI and the Space call it rather than
 time a prediction their own way. It times the model's forward pass only. Decoding the image and
@@ -134,3 +135,32 @@ def time_one_prediction(model: nn.Module, image: Tensor) -> float:
             return time.perf_counter() - start
     finally:
         model.train(was_training)
+
+
+class CameraScores(NamedTuple):
+    """One camera location's scores: its image count, accuracy and macro-F1 over the classes
+    present at that location."""
+
+    images: int
+    accuracy: float
+    macro_f1: float
+
+
+def per_camera_scores(
+    predictions: Sequence[int], labels: Sequence[int], locations: Sequence[int]
+) -> dict[int, CameraScores]:
+    """Accuracy beside macro-F1 (R32) for the images of each camera location, keyed by location
+    in ascending order. Each location is scored with `accuracy` and `macro_f1` on its own images,
+    so macro-F1 averages over the classes present there."""
+    _check(predictions, labels)
+    if len(locations) != len(labels):
+        raise ValueError(f"{len(locations)} locations for {len(labels)} labels")
+    positions: dict[int, list[int]] = {}
+    for i, location in enumerate(locations):
+        positions.setdefault(location, []).append(i)
+    scores = {}
+    for location in sorted(positions):
+        p = [predictions[i] for i in positions[location]]
+        y = [labels[i] for i in positions[location]]
+        scores[location] = CameraScores(len(y), accuracy(p, y), macro_f1(p, y))
+    return scores

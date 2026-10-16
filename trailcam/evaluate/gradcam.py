@@ -17,18 +17,45 @@ would bring OpenCV and scikit-learn into the runtime dependencies; the overlay f
 
 The model only ever receives the images: no box reaches it (R23). Gradients are taken with
 `torch.autograd.grad`, so no parameter's `.grad` is touched, and the hook is removed on return.
+
+**Overlays (item 8.02; R04, R26, R35).** `overlay` and `write_overlay` draw the map `gradcam`
+returns, the one attention-in-box scores, over the photo it was computed from. The photo must lie
+under the `assets/` folder (`ASSETS_DIR`, or another folder named `assets` passed as
+`assets_root`, e.g. a clone's on Kaggle): the trans-test demo photos the user picks (item 8.05)
+are the only dataset images allowed in the repo, so `assets_image` refuses any other path,
+including one that leaves the folder through `..` or a symbolic link. The photo goes through the
+eval transform; the overlay is drawn on that transform's output with the normalisation undone,
+so it covers exactly the 224 x 224 pixels the model saw. For display the map is divided by its
+maximum (attention-in-box divides by its sum; the two differ by a constant factor, so the shape
+shown is the shape scored) and blended in one colour whose opacity grows with the map, up to
+`OVERLAY_ALPHA`; where the map is zero the photo is untouched. The PNG holds the blended image
+only, never the unblended photo: generated figures go to `docs/figures/`, which must never hold a
+raw dataset image (`.claude/rules/data.md`; the user's decision, review 8.02). A map that is zero
+everywhere would leave the photo unblended, so it is refused (`ZeroMapError`, review 8.02's fix
+round).
 """
 
 from __future__ import annotations
 
-from typing import Any
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Final
 
+import numpy as np
 import torch
 import torch.nn.functional as F
+from matplotlib.figure import Figure
+from PIL import Image
 from torch import Tensor, nn
 from torchvision.models import ResNet
 
+from trailcam.data.classes import CLASSES
+from trailcam.data.dataset import IMAGENET_MEAN, IMAGENET_STD, EvalTransform
 from trailcam.model.small_cnn import SmallCNN
+
+ASSETS_DIR: Final = Path(__file__).resolve().parents[2] / "assets"
+OVERLAY_COLOUR: Final = (0xEB, 0x68, 0x34)  # categorical slot 2, orange: apart from foliage
+OVERLAY_ALPHA: Final = 0.6  # the opacity at the map's maximum
 
 
 def target_layer(model: nn.Module) -> nn.Module:
@@ -80,3 +107,106 @@ def gradcam(
     cam = F.relu((weights * activations).sum(dim=1, keepdim=True))
     cam = F.interpolate(cam, size=tuple(images.shape[-2:]), mode="bilinear", align_corners=False)
     return cam[:, 0].detach(), logits.detach()
+
+
+def assets_image(path: Path, assets_root: Path = ASSETS_DIR) -> Path:
+    """`path` resolved, if it is a file under `assets_root`, a folder named `assets` (R04, R35);
+    anything else is refused. The message names neither path, so a refused dataset path is not
+    echoed (R03)."""
+    root = Path(assets_root).resolve()
+    if root.name != "assets":
+        raise ValueError("overlays are made from the photos of an assets/ folder only (R04, R35)")
+    resolved = Path(path).resolve()
+    if resolved == root or not resolved.is_relative_to(root):
+        raise ValueError("an overlay's photo must lie under the assets/ folder (R04, R35)")
+    if not resolved.is_file():
+        raise FileNotFoundError("no such photo under the assets/ folder")
+    return resolved
+
+
+def denormalise(image: Tensor) -> Image.Image:
+    """An eval-transform output, (3, H, W), back to RGB pixels: the normalisation undone,
+    clamped to 0 to 255 and rounded."""
+    if image.dim() != 3 or image.shape[0] != 3:
+        raise ValueError(f"expected one (3, H, W) image, got shape {tuple(image.shape)}")
+    mean = torch.tensor(IMAGENET_MEAN).view(3, 1, 1)
+    std = torch.tensor(IMAGENET_STD).view(3, 1, 1)
+    pixels = (image.detach().cpu().float() * std + mean).clamp(0.0, 1.0) * 255.0
+    return Image.fromarray(pixels.round().to(torch.uint8).permute(1, 2, 0).numpy(), "RGB")
+
+
+def blend(frame: Image.Image, cam: Tensor) -> Image.Image:
+    """`frame` with `cam` (H, W, non-negative, the frame's size) drawn over it in
+    `OVERLAY_COLOUR`: each pixel's opacity is `OVERLAY_ALPHA` times the map divided by its
+    maximum. A map that is zero everywhere leaves the frame as it is."""
+    rgb = np.asarray(frame.convert("RGB"), dtype=np.float64)
+    if tuple(cam.shape) != rgb.shape[:2]:
+        raise ValueError(f"map {tuple(cam.shape)} and frame {rgb.shape[:2]} differ")
+    values = cam.detach().cpu().double().numpy()
+    if (values < 0).any():
+        raise ValueError("a Grad-CAM map has negative values; it is taken after a ReLU")
+    peak = float(values.max())
+    alpha = (values / peak if peak > 0 else np.zeros_like(values))[..., None] * OVERLAY_ALPHA
+    mixed = (1.0 - alpha) * rgb + alpha * np.asarray(OVERLAY_COLOUR, dtype=np.float64)
+    return Image.fromarray(mixed.round().clip(0, 255).astype(np.uint8), "RGB")
+
+
+class ZeroMapError(ValueError):
+    """The top-1 Grad-CAM map is zero everywhere, so an overlay would be the unblended photo. The
+    message names no path (R03)."""
+
+
+@dataclass(frozen=True)
+class Overlay:
+    """One photo's overlay: the eval frame with the top-1 class's Grad-CAM map blended in, and
+    that class with its softmax confidence. The unblended frame is not kept, so no caller can
+    write the raw photo out by mistake."""
+
+    image: Image.Image
+    prediction: int
+    confidence: float
+
+
+def overlay(model: nn.Module, path: Path, assets_root: Path = ASSETS_DIR) -> Overlay:
+    """The Grad-CAM overlay of the photo at `path`, which must lie under `assets_root`
+    (`assets_image`). Puts `model` in eval mode, as `gradcam` needs. Raises `ZeroMapError` when
+    the map is zero everywhere: `blend` would return the photo as it is."""
+    source = assets_image(path, assets_root)
+    with Image.open(source) as opened:
+        photo = opened.convert("RGB")
+    parameter = next(model.parameters(), None)
+    device = parameter.device if parameter is not None else torch.device("cpu")
+    batch = EvalTransform()(photo).unsqueeze(0)
+    model.eval()
+    maps, logits = gradcam(model, batch.to(device))
+    if float(maps[0].max()) <= 0.0:
+        raise ZeroMapError("the Grad-CAM map of this photo is zero everywhere: no overlay drawn")
+    confidence, prediction = logits[0].float().softmax(dim=0).max(dim=0)
+    image = blend(denormalise(batch[0]), maps[0])
+    return Overlay(image, int(prediction), float(confidence))
+
+
+def write_overlay(
+    model: nn.Module,
+    path: Path,
+    out_path: Path,
+    label: int | None = None,
+    assets_root: Path = ASSETS_DIR,
+) -> Overlay:
+    """`overlay` as a PNG at `out_path`: one panel, the blended image only (no raw photo),
+    titled with the predicted class and its confidence, and the true class when `label` is
+    given."""
+    result = overlay(model, path, assets_root)
+    title = f"predicted {CLASSES[result.prediction]} ({result.confidence:.2f})"
+    if label is not None:
+        verdict = "correct" if label == result.prediction else "wrong"
+        title += f", true {CLASSES[label]}: {verdict}"
+    figure = Figure(figsize=(3.6, 3.9), layout="constrained", facecolor="#fcfcfb")
+    ax = figure.subplots()
+    ax.imshow(result.image)
+    ax.set_title("Grad-CAM of the top-1 class, eval frame 224 x 224", fontsize=8, color="#52514e")
+    ax.set_axis_off()
+    figure.suptitle(title, fontsize=9, color="#0b0b0b")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    figure.savefig(out_path, dpi=120, facecolor="#fcfcfb")
+    return result

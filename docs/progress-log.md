@@ -2239,6 +2239,700 @@ coordinator gives it.
 **Next.** The user creates `cct20-512-tar` from the packing run's output (the steps in
 `scripts/kaggle_pack_cache.py`), then 6.04 on it at the coordinator's COMMIT.
 
+## 2026-10-15: session 8, item 8.02, the evaluation figures, the Grad-CAM overlays and the entry point (Opus 5.5)
+
+Taken ahead of its 10-18 date by the user's decision in the coordinator session. Main at 0968e1a
+(8.03 merged); 8.04 (`slices.py`) is reviewed on its branch but not on main, so it is not imported
+here (see "8.04" below).
+
+**Done.** `trailcam/evaluate/figures.py`, `trailcam/evaluate/evaluate.py`, the overlays added to
+`trailcam/evaluate/gradcam.py`, `per_camera_scores` added to `trailcam/evaluate/metrics.py`;
+`tests/test_figures.py` (21 tests) and two tests in `tests/test_metrics.py`. Rules, stated in the
+module docstrings:
+
+- `figures.py` takes scores, never images (R03, R04): the confusion matrix (rows true, columns
+  predicted, `CLASSES` order; counts in the cells, shaded by share of the row so rare classes
+  read; an absent class's row is empty and labelled "absent"), per-class bars (precision, recall,
+  F1 for the classes present, support under each name) and per-camera bars. The per-camera bars
+  show accuracy beside macro-F1 (R32), worst accuracy first, with the split's accuracy as a dashed
+  line; the item says "accuracy bars", and R32 asks for macro-F1 wherever a score is shown.
+  Colours from the reference data-viz palette: one blue ramp for the matrix, categorical slots 1
+  to 3 for the bars.
+- `per_camera_scores` (metrics.py): accuracy and macro-F1 per camera location, each location
+  scored on its own images, so macro-F1 averages over the classes present there.
+- Overlays (`gradcam.py`): `overlay` and `write_overlay` draw `trailcam.evaluate.gradcam.gradcam`,
+  the function attention-in-box scores (R26), on the photo's eval-transform output; the frame
+  shown is that output with the normalisation undone, so it is the 224 x 224 the model saw. For
+  display the map is divided by its maximum (attention divides by its sum: same shape) and
+  blended in orange with opacity up to 0.6; zero-map pixels are untouched. The PNG is the frame
+  beside the overlay, titled with the prediction, its confidence and, when a class is given,
+  correct or wrong. `assets_image` refuses any photo not under a folder named `assets` (the repo's
+  `assets/` by default), including one reached through `..` or a symbolic link, and its message
+  does not echo the path (R03, R04, R35). The repo's `assets/` was not created (8.05).
+- `evaluate.py`: `python -m trailcam.evaluate.evaluate --config <name> [--checkpoint <run>.pt
+  --data-root <cache>] --split val [--split trans_val] --out <dir> [--overlay
+  assets/<photo>[=<class>] ...] [--assets <dir>] [--config-file <config.yaml>]`. One eval pass
+  per split; `metrics.md` (per split: accuracy, macro-F1, classes present; per-class, per-camera
+  and confusion-matrix tables) and `<split>_confusion_matrix.png`, `<split>_per_class.png`,
+  `<split>_per_camera.png` under `--out`; overlays as `gradcam_overlay_<n>.png`, numbered, so no
+  photo file name (possibly an image id) reaches the output. A `fixture: true` config (dryrun)
+  uses the synthetic fixture and random weights; any other needs `--checkpoint` (loaded with
+  8.03's `load_checkpoint`, which refuses another model or class map) and `--data-root`. The
+  header gives the checkpoint sha256, split seed and split hash, as attention.md does.
+- Test-set isolation (R17): `--split` takes `val` and `trans_val` only (exit 2 otherwise); the
+  split object is deleted once the given splits' records are taken. 9.01 calls `predict`,
+  `write_report` and `write_overlays` directly.
+
+Decision to review: the item's step spells the config as `--config dryrun`, so here `--config`
+is the config name (`--config-name` is accepted as an alias) and the YAML path is
+`--config-file`. In `train.py`, `attention.py` and `slices.py`, `--config` is the YAML path. A path
+given to `--config` here fails with "no config named ...", exit 2, so a mix-up cannot run the
+wrong config; but the flag means two things across the four entry points.
+
+8.04: `evaluate.py` does not run attention (8.03) or the slices (8.04). Each has its own entry
+point with its own `--out`; slices takes arm A and arm B together, which a one-checkpoint entry
+point cannot. 8.04's `SplitPredictions` carries labels, predictions and locations, so a caller
+holding one scores it here with `SplitResult(run.split, run.labels, run.predictions,
+run.locations)`, no second pass (the hook is stated in the docstring).
+
+Steps: `uv run python -m trailcam.evaluate.evaluate --config dryrun --split val --out <scratch>`
+exit 0, writes `metrics.md`, `val_confusion_matrix.png`, `val_per_class.png`,
+`val_per_camera.png`, and `docs/figures/` does not exist before or after. `uv run pytest
+tests/test_figures.py` 21 passed. The figures were looked at on the fixture and on a made-up
+1,500-image trans_val score set (scratchpad only, not committed). Each of these mutations fails a
+test: no assets containment check, any root name accepted, the overlay map squared or taken on
+a flipped image, the frame denormalised without the mean, cameras ordered by id, an absent row
+divided by its zero total, the overlay paths checked only after evaluating, `cis_test` added to
+`CLI_SPLITS`, trans_val read when only val is asked for, and per-camera macro-F1 computed over
+the whole split. The last two first survived and the tests were tightened. `check.sh` green
+(668 passed). Invariants: R04 and R26 (the rows naming 8.02) have their test cells filled; R03
+and R35 now cite `tests/test_figures.py`.
+
+Process note: during the mutation checks a helper restored files with `git checkout`, which
+reset the uncommitted `gradcam.py` to HEAD; it was restored from a copy taken just before, and
+the two mutations it left in untracked files were undone by hand. The final diff was re-read and
+the full suite rerun afterwards.
+
+**For 8.06: an evaluation notebook is needed (not built; needs your OK).**
+`notebooks/kaggle_train.ipynb` cannot take it: `tests/test_notebook.py` (R17) forbids an
+evaluation call in any of its code cells. A separate `notebooks/kaggle_evaluate.ipynb` would:
+
+1. install `trailcam` from the public repo at a pinned commit, and clone the repo at the same
+   commit for `config.yaml` and `assets/` (8.05 must be merged first; a wheel ships neither);
+2. attach the 512 px cache dataset and the checkpoints (the training runs' outputs as a Kaggle
+   dataset), and check each checkpoint's sha256 against its ledger row;
+3. per checkpoint: `python -m trailcam.evaluate.evaluate --config <name> --config-file
+   <clone>/config.yaml --checkpoint <run>.pt --data-root <cache> --split val --split trans_val
+   --out /kaggle/working/eval/<run>`, plus `--overlay <clone>/assets/<photo>=<class>` four times
+   and `--assets <clone>/assets` on the checkpoint the overlays come from; then
+   `python -m trailcam.evaluate.attention` with the same checkpoint;
+4. once per seed: `python -m trailcam.evaluate.slices` with the arm A and arm B checkpoints;
+5. zip `/kaggle/working/eval` for download. You then copy the chosen PNGs into `docs/figures/`
+   (40 files, 20 MB in all; one checkpoint's val set is 3 PNGs + 4 overlays + the attention
+   histogram + 2 feature maps).
+
+It would come with a test like `tests/test_notebook.py`: no code cell names cis_test or
+trans_test, outputs cleared.
+
+Notes, not fixed:
+
+- 11.01: `gradcam.py` now imports matplotlib (for `write_overlay`) and torchvision's eval
+  transform. If the Space imports it for its optional overlay, `space/requirements.txt` needs
+  matplotlib; `overlay()` returns PIL images, which Gradio can show without a PNG.
+- 9.01 must call `write_overlays` (like `attention_pass`) outside `torch.inference_mode()`.
+
+**Next.** Review 8.02. Then 8.04 merge, 8.05 (your photos into `assets/`), and the 8.06
+notebook if you approve it.
+
+Review: tier 2, `/review-session 8.02`
+
+Review: tier 2, ran `/review-session 8.02` (0968e1a..d3ee3ca; code-reviewer Opus xhigh,
+risk-reviewer Fable high). risk-reviewer found nothing. code-reviewer found one low: R17's
+"where" column did not name `evaluate.py` or `attention.py`, so a later diff to either alone would
+not bring the test-isolation scenarios to a reviewer. It also raised a note for 8.06: the
+overlay's left panel was the unblended eval crop of the `assets/` photo, which would have put a
+raw dataset image into `docs/figures/`. Scenarios R01, R03, R04, R05, R17, R26, R32, R33, R35
+and R42 to R45 held. Known gaps passed: R04 and R35 the real photos and the `docs/figures/` copy
+(8.05, 8.06), R26 and R32 the final scoring's calls (9.01), R35 the demo and the Space.
+
+Fix 79b9594 (the user's decisions, via the coordinator):
+
+- R17's "where" column now names `evaluate.py`, `attention.py` and item 8.02, and R32's
+  `evaluate.py`. The user approved the rule-map change.
+- The overlay PNG is now one panel, the blended image, and `Overlay` no longer keeps the
+  unblended frame. A test captures the saved figure and checks it has one axes holding the
+  blended image. This supersedes "the eval frame beside the overlay" above.
+- 8.04 merged first (c303041). I did not fold its slices into the val report: slices takes arm A
+  and arm B together, and `evaluate.py` works on one checkpoint. A test shows that 8.04's
+  `SplitPredictions` scores in `evaluate.py` without a second pass. That is the hook for 8.06.
+
+Before the fix I merged main twice through the sync tool: c303041 (8.04) and ef9100d (6.08).
+Both times the conflicts were in this log and in the test cells of R03 and R04. Both sides were
+kept, and the other items' entries come first.
+
+Fix round: `/review-session cb258d4..79b9594 8.02` (the gradcam.py and test_figures.py the
+high-stakes files). Both reviewers found the same low independently. A map that is zero
+everywhere left the photo unblended, so the one-panel PNG would have been the raw photo.
+code-reviewer found a second low: R17's and R32's test cells did not name the tests guarding the
+newly listed modules. Both were fixed in c8a9a08, after merging main at 61f1ecc (6.08's review;
+the one conflict was in this log). The fixes:
+
+- `overlay` raises `ZeroMapError`, with no path in the message, and no PNG is written. The test
+  fails if the refusal is removed.
+- R17's test cell now names the split refusals in `tests/test_figures.py` and
+  `tests/test_attention.py`. R32's names `per_camera_scores` and `test_render_metrics_by_hand`.
+
+Scenarios R01, R03, R04, R05, R17, R26, R35 and R42 to R45 held. No third round. `check.sh`
+green (724 passed).
+
+Notes, recorded and not fixed:
+
+- mypy on tests: `tests/` is outside `check.sh`'s mypy scope. Run there, it reports 4 `arg-type`
+  errors at `tests/test_metrics.py:180-181` (`pytest.approx` in a `CameraScores`) and 3 at the
+  `Figure.savefig` wrapper in `tests/test_figures.py`. The tests are correct at runtime. These
+  matter only if mypy is widened to `tests/`.
+- 8.06 needs `notebooks/kaggle_evaluate.ipynb` (described above). It still needs the user's OK.
+- 11.01: `gradcam.py` imports matplotlib. `overlay()` returns the blended PIL image, which Gradio
+  shows without a PNG.
+
+For the learning journal (`docs/learning-journal.md` is not on main yet):
+
+- A figure can leak data through the panel beside the one you look at: the overlay's raw left
+  panel would have put a dataset photo into `docs/figures/` with every test still green.
+- "Never the raw photo" needs the degenerate input too: a zero heat map blends to nothing, so
+  the guard has to refuse it, not just draw it.
+- A review map only works if the rows name the files: a new module that enforces a rule must be
+  added to that rule's "where" and test columns, or later diffs to it skip the scenario.
+- Restore mutation tests by copying files, never with `git checkout`: it silently reset
+  uncommitted work, which a backup taken just before recovered.
+
+**Next.** The user merges this branch. Then 8.05 (photos into `assets/`) and the 8.06 evaluation
+notebook, if approved.
+
+## 2026-10-15: session 8, item 8.07, the data charts (Opus 5.5)
+
+New item, approved by the user in the coordinator session on 2026-10-15 and added to
+`docs/progress.json` as 8.07 (session 8, owner claude, due 2026-10-17). Why: the data was
+inspected and cleaned in numbers and tests (items 3.01 to 3.05) but no chart existed; the user
+wants the exploration visible, for learning and for the presentation's data slide.
+
+**Done.** `trailcam/data/datavis.py` (new). Placed in `trailcam/data/`, not `trailcam/evaluate/`:
+it reads the metadata and the split only, no model, prediction or image, so it belongs with the
+data code and keeps imports one way (`evaluate` uses `data`, never the reverse); `.claude/rules/data.md`
+covers both folders. `python -m trailcam.data.datavis --root <dir> --seed 42 --out <dir>
+[--sidecar day_night.json]` writes five PNGs and prints counts only:
+
+1. `class_counts.png`: each class's share of each split with its count (opossum 20% of train;
+   raccoon 25% of trans_test against 7% of train; trans_val lacks squirrel, car and rodent).
+2. `camera_locations.png`: images per camera stacked by split, cis vs trans. Cameras are labelled
+   C1 to C10 and T1 to T10 by image count; location ids are never drawn (R03). One cis camera
+   holds 9,579 kept images, the smallest 891; trans_val is a single camera.
+3. `day_night.png`: night share of the kept images per split and kept images per capture hour by
+   day and night, hour 12 annotated. At first no `day_night.json` was in the main checkout's
+   `data/`, so the chart drew the 6.03 cache build's numbers (all 57,864 annotated images before
+   the drop rules, per official file). Then the coordinator reported that the user had copied the
+   6.03 sidecar to `data/day_night.json` (gitignored, never committed) and asked for kept-image
+   shares, with both sets in the data card. The committed chart is now drawn with `--sidecar`.
+   Kept images, seed 42: train 8246/13587 = 0.607, val 1436/2394 = 0.600, trans_val 1014/1603 =
+   0.633, cis_test 9066/14478 = 0.626, trans_test 15384/21473 = 0.716, all 35146/53535 = 0.657;
+   hour 12 has 2,990 night frames of 4,525. These match the coordinator's counts. Without a
+   sidecar the chart falls back to the 6.03 numbers and its subtitle says so.
+4. `box_fill.png`: box width x height as fractions of the image, log bins, cis vs trans, arm B's
+   0.2 to 1.0 range shaded. 93% of the 12,177 train boxes cover less than 20% of the image (median
+   near 2 to 3%), so arm B's crop zooms in on almost every boxed image it takes; a second bump
+   near the whole frame.
+5. `burst_length.png`: sequences and kept images by `seq_num_frames` (4,787 single frames,
+   15,969 bursts of 3, 196 of 5); 48,701 of the 53,535 kept images (91%) share their burst with
+   another kept image, and 222 bursts have frames in both official train and cis_val.
+
+Every chart carries the Beery et al. 2018 citation and the licence in a footer. Colours: the
+dataviz reference palette, one colour per split across all charts, validated with its checker
+(adjacent pairs pass; yellow is below 3:1 on white, so every yellow bar has a label or legend).
+`ARM_B_FILL` is a copy of `boxcrop.FILL` because only the training transform may import
+`boxcrop` (R24); a test checks the two agree. The 6.03 numbers are constants
+(`CACHE_BUILD_NIGHT_BY_FILE`, `CACHE_BUILD_NIGHT_BY_HOUR`).
+
+The five PNGs are committed in `docs/figures/` (384 KB of the 20 MB budget, 5 of 40 files),
+generated from the real metadata and the sidecar with seed 42. `docs/data-card.md`: "Day and
+night" now gives, first, the kept images per split and per hour (sidecar, seed 42) and, second,
+the 6.03 build's numbers per official file and per hour, labelled as all annotated images before
+the drop rules; the channel-spread gap and the 551 single-band images; and the hour-12 note. A
+"Figures" section lists the charts and the command. Item 6.03 stays the user's and is not
+flipped.
+
+`notebooks/kaggle_look_at_data.ipynb` (new, outputs cleared): a separate notebook rather than a
+section of `kaggle_train.ipynb`, because the training notebook is a Save & Run All batch run whose
+tests forbid definitions and extra calls, and a photo grid there would run and be stored with every
+training version. It installs `trailcam` from the public repo at `COMMIT`, loads the metadata with
+the sidecar, shows a grid of train photos per class, day vs night (titles: class and day or night
+only), then runs the datavis CLI with the sidecar into `/kaggle/working/figures` for the
+kept-image night shares. Its markdown says never to commit it with outputs (the guard refuses
+them anyway, R41) and that photos never go into `docs/figures/`. Only the train split is read for
+photos (R17). Smoke-run locally on the synthetic fixture with the install stubbed: every cell ran.
+
+`tests/test_datavis.py` (new, 18 tests): the CLI on the fixture (with and without the sidecar)
+writes exactly the five PNGs under `--out` and nothing under `docs/figures/`, from a fixture with
+no image file; no drawn text or printed line holds an image id, seq id or file name, and on a
+fixture with locations shifted to distinctive numbers no location id is drawn (CCT20's own
+location ids are small numbers that collide with counts, so they are checked there); camera tick
+labels are C1, C2, T1; every chart has the citation; class counts, camera totals and ranking,
+night counts from the sidecar, the fallback to the 6.03 numbers, box fill = w x h, burst counts;
+the 6.03 numbers sum to 57,864 and 36,776 and hour 12 is (3120, 5077); on the real metadata the
+summary gives 53,535 images, 10 + 10 cameras, 47,729 boxes, 20,952 sequences, 222 shared, 48,701
+with a sibling, and the raw annotation files hold the 6.03 build's images per file and per hour;
+the look notebook has no outputs, says never to commit them, cites the data and reads the train
+split only. Mutations that each fail a test: location ids as labels, no citation, big boxes
+dropped, singletons counted as siblings, cameras unranked, a typo in hour 12, the sidecar ignored.
+
+`docs/review/invariants.md`: `trailcam/data/datavis.py` added to the "where" of R03 and R04 (and
+8.07 to R04's items); test cells of R03, R04, R06, R17 and R41 name `tests/test_datavis.py`.
+
+Steps: the CLI wrote the five PNGs into a tmp `--out` on the fixture (tests) and into
+`docs/figures/` on the real metadata; `uv run pytest tests/test_datavis.py` 18 passed (the 18th
+pins the kept-image night counts from the sidecar in `data/`, and fails locally if it is missing);
+`uv run python scripts/guard_data.py --all` passed with the PNGs staged; `check.sh` green.
+`tests/test_notebook.py` unchanged and passing. Main had not moved, so no sync was needed.
+
+For the learning journal (`docs/learning-journal.md` does not exist on main yet):
+
+- Data charts (8.07): five PNGs in `docs/figures/`, from metadata only; regenerate with
+  `uv run python -m trailcam.data.datavis --root <data dir> --seed 42 --sidecar <data
+  dir>/day_night.json --out docs/figures`.
+- `class_counts.png` and `camera_locations.png`: the classes and the cameras are both imbalanced,
+  and the trans cameras see a different mix (raccoon, bobcat), so accuracy alone flatters.
+- `day_night.png`: 60 to 72% of kept frames per split are infrared night shots (trans_test
+  the most), and hour 12 holds 2,990 night frames: the camera clock is wrong on some cameras, so
+  day/night is read from the pixels.
+- `box_fill.png`: most animals cover 1 to 5% of the frame, which is why arm B crops in on the box.
+- `burst_length.png`: 91% of images have a near-identical sibling in their burst, so splitting by
+  image would leak; the split goes by sequence.
+
+**Next.** 8.02, 8.04 (the day/night slices measure accuracy by night and day).
+
+Review: tier 2, `/review-session 8.07`
+
+Coordinator request after the item commit (from the user, 2026-10-15): the user copied the 6.03
+sidecar to the main checkout's `data/day_night.json` (gitignored). `day_night.png` was redrawn
+with it (kept images per split, seed 42), the data card gives both sets of numbers (kept images
+per split first, all annotated images per official file second), and a real-data test pins the
+kept-image counts. Folded into the item commit (0bce6a5) before any review.
+
+Review: tier 2, ran `/review-session 8.07` (0968e1a..0bce6a5; code-reviewer Opus xhigh,
+risk-reviewer Fable high). risk-reviewer found nothing. code-reviewer found two lows, fixed in
+fade23f with the user's go-ahead via the coordinator:
+
+- R03 listed "a notebook cell displays a batch of training images" as a failure while the look
+  notebook does exactly that. R03 now records the photo grid as the one exception, with its
+  conditions: Kaggle only, train split only, titles with the class and day or night (no file name
+  or id), outputs never committed (the guard refuses them).
+- The 6.03 night counts were never checked against the sidecar, and a docstring said the sum test
+  checked them. A real-data test now recomputes night per official file and per capture hour from
+  the sidecar and the raw annotation files, and requires every annotated image to have a flag;
+  both constants match. Swapping two hours' night counts fails it. The docstring is corrected.
+- Not a finding, fixed with the user's approval: `docs/plan.md` section 2 said "About half the
+  images are night shots"; it now gives the measured shares (65.7% of kept images, 63.6% of all
+  annotated images; trans_test 71.6% against cis_test 62.6% of kept images). Spec changed: plan
+  §2. The rows citing it (R01, R05, R06, R15, R21, R23, R32) were re-read; none states a night
+  share, so none changes.
+
+Scenarios R01, R03, R04, R06, R07, R16, R17, R27, R37, R38, R41 to R45 held for both reviewers;
+known gaps passed: R04 the figure and Grad-CAM writers (8.02), R06 the Space and the slides
+(11.01, 12.02), R17 the scoring script (9.01). Main was merged before the fix at c303041 (8.04;
+conflicts in this log and in R03, R04 and R17, both sides kept) and after it at ef9100d (6.08;
+conflicts in this log and R03).
+
+Fix round: `/review-session 054f7be..fade23f 8.07` (`tests/test_datavis.py` the one high-stakes
+file). Fixed in e1f67cf, after merging main at 61f1ecc (conflict in this log only):
+
+- Both reviewers, low: the photo-title test searched only the source text of title calls, so a
+  file name passed through a variable, a label, `ax.text` or a `print` slipped by. The test now
+  walks every code cell's syntax tree: no image id, seq id or location as an attribute, a name or
+  a string key, and `file_name` only inside the one `Image.open(...)` call. Each of those four
+  bypasses fails it. R03's test cell says so.
+- code-reviewer, low: plan section 5's augmentation row said "half the data is infrared". With the
+  user's approval it now reads "about two thirds of the kept images are infrared (section 2)".
+  Spec changed: plan §5. The rows citing it (R17, R20, R22, R27, R31, R37, R38, R40) were
+  re-read; R20 gives the grayscale probability without a share, so none changes.
+- code-reviewer, outside the range: the data card's "About six in ten kept images" became two in
+  three (0.657), matching its table.
+
+Scenarios R01, R03, R04, R42 to R45 held for both. No third round (the user's decision).
+
+Notes, recorded and not fixed:
+
+- R45: code-reviewer reported one stray no-op command (`uv run --quiet python -c "pass"`)
+  outside its allowed list in the fix round; it read nothing. The harness flagged risk-reviewer's
+  fix-round report for a settings-shaped pattern; the only match was its mention of
+  `.claude/settings.json` in the R43 result, with no instruction in it.
+- The look notebook reads the loose 6.03 dataset (`cct20-512`), which still exists and is the
+  training notebook's fallback; since 6.08, training reads the archive dataset (`cct20-512-tar`).
+  Moving the look notebook to the archive is the user's call.
+- `uv run mypy tests/test_datavis.py` reports two `no-untyped-call` errors on
+  `FigureCanvasAgg.draw`; `check.sh` type-checks `trailcam/` and the scripts only, not `tests/`.
+
+Also approved by the user via the coordinator, for item 6.03 (the user's): `docs/plan.md`
+section 11, open question 3 (tarball layout) is closed with the 6.03 cache build's output (1
+directory, 57,864 `.jpg` files, all at depth 1 in one top-level folder). With the data card's
+"Day and night" section, it is what 6.03 still needed; the user flips 6.03 after the merge. Spec changed: plan §11; no row cites it.
+
+`check.sh` green at e1f67cf: 718 passed. `docs/learning-journal.md` is still not on main, so the
+learning-journal lines stay above, under "For the learning journal".
+
+**Next.** 8.02, then 9.01.
+
+## 2026-10-15: session 6, item 6.09, a ledger test for the life of the ledger, the small CNN row, the 6.08 wording (Opus 5.5)
+
+New item, approved by the user in the coordinator session on 2026-10-15 and added to
+`docs/progress.json` as 6.09 (session 6, owner claude, due 2026-10-16). What happened: the user
+committed the small CNN run's ledger row (93b9769, item 6.04) and CI failed on
+`tests/test_train.py::test_the_ledger_file_holds_the_header_and_no_rows`, a 5.03 test written
+before any run existed. The row itself passed the ledger checker. 93b9769 was reverted by
+f414912 (main green, 698 passed); the commit had been made without running `check.sh` first.
+
+**Done.**
+
+- Test: `test_the_ledger_file_holds_the_header_and_no_rows` is replaced by
+  `test_the_ledger_file_is_its_text_then_the_header_then_rows_that_pass_the_check`: the
+  explanatory text (non-empty, no table line), the header of `LEDGER_COLUMNS` (both lines of
+  `ledger_header`), then zero or more rows. It calls `trailcam.train.ledger.check_ledger` for the
+  rest (header exactly once, every line after it a well-formed row, the cross-row checks), with
+  no problems and one good row per line after the header; nothing of the checker is copied.
+  5.03's other guarantee, that the dry run never appends, is
+  `test_the_dry_run_trains_on_its_own_fixture_and_never_appends` (the ledger file is unchanged
+  byte for byte), and the checker refuses a `dryrun` row (`tests/test_ledger.py`). R40's test
+  cell in `docs/review/invariants.md` now says this.
+- Ledger row, re-added byte for byte from 93b9769, and checked against the values of the brief
+  through `ledger_row` before it was appended:
+
+  `| small_cnn-seed0-20261015T223717Z | small_cnn | A | small_cnn | f40ed6e3960104f10a78e3d33a8f530cde82e23a555def76f694e19ab09a3e95 | 42 | 0 | c78a9c1048f63aa52f34578ca17a6391315afdc2e478b4dbfd8a3aa954d1b009 | 15 | 14 | cosine warmup 1 | 0.6625 | 0.6216 | 0.1965 | 0.0775 | 18529bf80a299551e41970e380f36cb2d1d217ddb838322b56b596829c47573c |`
+
+  `uv run python -m trailcam.train.ledger --check docs/ledger.md` exits 0: "ledger: 1 rows, every
+  check passed", small_cnn A, split seed 42, run seed 0. No leakage alarm: trans_val accuracy
+  (0.1965) is far below val (0.6625). Item 6.04 is the user's and stays `passes: false`; the user
+  flips it after the merge.
+- Notebook (text and defaults only; outputs cleared): How-to-run step 2 attaches the packing
+  notebook's output with Add Input > Notebook, not a dataset, since Kaggle extracts a `.tar` when
+  a notebook's output becomes a dataset (`cct20-512-tar` came out as folders); it says to remove
+  both `cct20-512` and `cct20-512-tar`. Default `CACHE_ARCHIVE =
+  Path("/kaggle/input/notebooks/codx888/notebook2b5a4bf6ad/cct20_512.tar")` (verified
+  2026-10-15: one file of 3,213,506,560 bytes, unpacked in about 35 s; step 5 gives the 35 s).
+  Step 6 adds the practice: about 10 minutes after Save & Run All, open the Logs tab and, if it
+  is empty and the version still shows "Starting...", cancel and submit again; it says why the
+  2026-10-15 stall happened is not known. The unpacking cell's message no longer says a committed
+  run copies the 57,864 files; section 3's text no longer says the loose files slow the start.
+  Default `COMMIT` is left as it was (0968e1a, refused in section 2); the user sets the pinned
+  training commit 61f1eccf24a3e33cf876e4ceb9dd5e5af8aed020, which this item leaves valid: no
+  training code changes here (the only `trailcam` change is the docstring of
+  `trailcam/data/cache.py`).
+- Docstrings: `trailcam/data/cache.py` and `scripts/kaggle_pack_cache.py` no longer name the input
+  copy as the cause of the stall (cause not known; a CPU run with the same input logged its first
+  line in about 5 minutes). The packing script's step 5 now says to keep the version and attach
+  its output as a notebook input, not to make it a dataset, and its note on Save & Run All no
+  longer says the run copies every input file.
+- `tests/test_notebook.py`: the new default and How-to-run strings (step 2, the 10-minute
+  practice in step 6, in order), and a new test that neither the notebook nor the two docstrings
+  name the input copy as the cause.
+- Not changed, for the coordinator: `docs/plan.md` line 102 still names the private dataset
+  `cct20-512-tar` as where the archive comes from; plan.md is edited by other sessions, so it is
+  left for one of them or a follow-up item.
+
+Checks: `bash scripts/check.sh` green; the ledger checker exits 0 with the row; `uvx --from
+nbconvert jupyter nbconvert --clear-output --inplace notebooks/kaggle_train.ipynb` leaves the
+notebook byte for byte unchanged; `uv run python scripts/guard_data.py --all` passes.
+
+For the learning journal (`docs/learning-journal.md` is not on main yet; testing topic):
+
+- Lesson: a test written for the starting state (an empty ledger) broke on the first real row,
+  because it pinned a moment, not the rule. Test the invariant that holds for the file's whole
+  life, and reuse the checker the project already has instead of a second copy of its rules.
+- Practice: run `bash scripts/check.sh` before every commit, even one that only touches docs or
+  data rows: the docs are read by the tests, so a docs-only commit can turn CI red.
+- Evidence: 93b9769 added one ledger row, passed the ledger checker, and failed CI on the 5.03
+  test; it was reverted (f414912) and re-landed here with the test replaced.
+
+**Next.** Review tier 2. After the merge, the user flips 6.04; the next GPU run uses the
+notebook's new `CACHE_ARCHIVE` default at the commit the coordinator gives.
+
+## 2026-10-15: review 6.09: one low fixed, main merged (Opus 5.5)
+
+Tier 2 (`/review-session` on f414912..6f53b6c): code-reviewer (Opus 5.5 xhigh) on the range,
+risk-reviewer (Fable 5.1 high) on the notebook, `scripts/kaggle_pack_cache.py`,
+`trailcam/data/cache.py`, `tests/test_notebook.py` and `tests/test_train.py`. Scenarios R01, R03,
+R06, R07, R16, R17, R25, R27, R37, R38, R40, R41 and R42 hold for both. Between them they
+confirmed the row's config hash (`config_hash(load_config("small_cnn"))` at HEAD) and split hash
+(`REAL_HASH` of `tests/test_split.py`). Risk-reviewer found nothing.
+
+Code-reviewer, low: `docs/plan.md` section 2 still said the archive is "saved as a second
+private dataset, `cct20-512-tar`", the route the notebook and the packing script now say fails,
+and the notebook's missing-archive message asked "is the archive dataset attached?". The user's
+decision (via the coordinator): fix it here; the plan.md edit is approved.
+
+**Done.**
+
+- Main merged (3a4fcf3: 8.02, 8.07 and the 6.03 flip) with the app's sync. Two conflicts, both
+  sides kept: `docs/progress-log.md` (main's 8.02 and 8.07 entries, then 6.09) and R40/R41 of
+  `docs/review/invariants.md` (6.09's R40 test cell, 8.07's R41 test cell).
+- `docs/plan.md` section 2: the tar is attached as the packing notebook's output (Add Input >
+  Notebook, at `/kaggle/input/notebooks/<user>/<notebook>/cct20_512.tar`), not as a dataset,
+  since Kaggle extracts a `.tar` that becomes a dataset. Spec changed: plan section 2.
+- Notebook, unpacking cell: a missing archive now says "is the output of the packing notebook
+  attached?". The first wording, with "notebook's", broke the cell (an apostrophe inside the
+  f-string's single-quoted literal); `tests/test_notebook.py` caught it when it parsed the cells.
+  `test_the_unpack_cell_sets_data_root_or_keeps_the_loose_dataset` now pins the message.
+- Outputs cleared; nbconvert `--clear-output` leaves the notebook unchanged. `check.sh` green.
+
+The fix (ee80471) touches `docs/plan.md` and the notebook (high-stakes), so one fix round ran on
+the fix range.
+
+Fix round (`/review-session fa72fd9..HEAD 6.09`, the user's start): code-reviewer (Opus 5.5
+xhigh) and risk-reviewer (Fable 5.1 high), nothing found by either. R01, R03, R06, R07, R16, R17,
+R27, R37, R38, R41 and R42 hold; the new assertion makes the test stricter. Spec changed: plan
+section 2, cited by R01, R05, R06, R15, R21, R23 and R32; the edit is only how the archive is
+attached, which none of them concern. `check.sh` green, 745 passed.
+
+Left for a later item (code-reviewer, optional, outside the range): the cache-check cell (cell-11)
+still ends its error with "none (is the dataset attached?)". It shows only for a tar without the
+annotations or the sidecar, which `kaggle_pack_cache.py` refuses to write; the wording predates
+6.09.
+
+**Next.** The user merges and pushes; then the user flips 6.04.
+
+## 2026-10-15: session 9, item 9.01, the final scoring script (Opus 5.5, xhigh)
+
+Main at 9c63bac. Built and tested on the synthetic fixture only: no real checkpoint was loaded
+and no real cis_test or trans_test was read (that is 9.02, the user's run on Kaggle).
+
+**Decisions (the user's, asked mid-session).** The item wants one ledger row per checkpoint with
+the test scores and who approved, but `LEDGER_COLUMNS` has 16 training columns and `ledger.py`
+requires that table to end `docs/ledger.md`. The user chose: (1) a separate
+`docs/test-ledger.md` with its own columns, so `docs/ledger.md`, `train.py` and `ledger.py` are
+unchanged; (2) a checkpoint that already has a test row is refused, so each is scored once.
+Recorded in plan.md section 7 (Protocol) and in R40's rule.
+
+**Done.** `trailcam/evaluate/score_test.py`, `docs/test-ledger.md` (header, no rows),
+`tests/test_score_test.py` (37 tests).
+
+- `python -m trailcam.evaluate.score_test --approved-by <name> --checkpoint <run>.pt ...
+  --data-root <cache> --out <new dir> [--config --ledger --test-ledger --overlay --assets]`.
+  The config of each checkpoint is the one its ledger row names, with the row's run seed, so a
+  checkpoint cannot be scored under another recipe.
+- Refusals, exit 1, all before any checkpoint is loaded or any test image read: no or empty
+  `--approved-by` (or one holding `|`); a non-empty `--out`; an overlay outside `assets/`; a
+  ledger that fails `ledger.py`'s check or a malformed test ledger; a missing checkpoint file, one
+  given twice, one with no ledger row ("unknown checkpoint"), one already in the test ledger; a
+  ledger row whose checkpoint is not given; a config that no longer hashes to its row; more than
+  one split hash; a file of another model (`load_checkpoint`). After the metadata is read: a
+  cache whose split hash is not the checkpoints' (still before any prediction).
+- One pass: `predict_split` once per checkpoint and test split; its predictions feed the
+  headline, `evaluate.write_report` (per-class, per-camera, confusion matrix, three PNGs per
+  split) and `slices.write_report`. `keep_features` only for the ResNet-18 (`FEATURE_MODELS`).
+  `attention_pass` once per checkpoint and split, and `write_overlays`, outside inference mode.
+  The overlays are drawn first, from `assets/` alone, so a failing one stops the run before any
+  test split is scored.
+- Output under `--out`: `headline.md` (per checkpoint: cis_test and trans_test accuracy and
+  macro-F1, both gaps, cis minus trans; a mean row per model and arm with more than one seed;
+  rows in ledger order, never by score; the leakage alarms of `train.py` applied to the test
+  scores; the Beery et al. citation), `slices.md`, the two feature maps (ResNet-18 only), and per
+  run id `metrics.md`, six PNGs, `attention.md`, `attention_in_box.png` and the overlays.
+- Test ledger rows: run id, model, arm, config, split hash, checkpoint sha256, the four scores,
+  both gaps, scored at (UTC), approved by. Printed with the alarms before the append, as
+  `train.py` does; exit `ALARM_EXIT` (3) when an alarm fired, else 0.
+- `evaluate.py`'s docstring now says 9.01 uses `predict_split`'s pass, not `predict`.
+- invariants.md: R17, R26 and R32 test cells name `tests/test_score_test.py`; R32's "where" adds
+  `score_test.py` and item 9.01; R40's rule says where the final scoring's rows go, and its test
+  cell names the new tests.
+
+Decision to review: every run in `docs/ledger.md` must be given in the one run (a row whose
+checkpoint is missing exits 1). With the re-scoring refusal this makes the scoring all at once and
+once only, and it is R17's "a listed checkpoint is missing" gap. If a ledger run should not be
+reported, this blocks 9.02 until the user decides; dropping the check is one `if`.
+
+Steps: `uv run pytest tests/test_score_test.py` 37 passed: the headline has both splits, both
+metrics and both gaps per checkpoint (by hand from the spied predictions); the test ledger rows
+have the files' sha256 and the approver; without `--approved-by` exits 1 (also via `python -m`);
+an unknown checkpoint exits 1. One run on the fixture (scratchpad) printed the table and rows and
+exited 3: random weights put trans within two points of cis, so the alarm fired, as intended.
+
+Mutation checks, each restored by copying the file back, each failing a test: the approver check
+removed (2 ways), the unknown-checkpoint check, the missing-ledger-row check, the already-scored
+check, the non-empty `--out` check, the config-hash check, the split-hash check; a test split by
+another route (`CLI_SPLITS` widened to cis_test and trans_test in `attention.py`; val added to the
+records returned; `TEST_SPLITS` swapped for val and trans_val); a second `predict_split` pass;
+features kept for the small CNN; the attention pass inside `torch.inference_mode()`; the overlays
+removed, and moved after the test passes. 17 of 17 killed.
+
+`check.sh` green (761 passed). Then main moved to 3a4fcf3 (8.07, 6.03) and I merged it with the
+sync tool. The conflicts were in this log and in R17's and R41's rows of invariants.md (8.07
+added `tests/test_datavis.py` to both). Both sides were kept, with the other items' entries
+first. `check.sh` green after the merge (781 passed).
+
+Notes, not fixed:
+
+- 9.02's steps say "ledger rows ... pasted into docs/ledger.md"; with the user's decision they go
+  into `docs/test-ledger.md`. Items are not edited by Claude; the user may want to reword 9.02.
+- On Kaggle, pass `--config`, `--ledger`, `--test-ledger` and `--assets` from the clone (the wheel
+  ships no `docs/`), and a new `--out` under `/kaggle/working`. The clone's `docs/ledger.md` must
+  hold every training row (6.09 adds the small CNN's).
+- One mutation run took 11 minutes of wall time while pytest reported 42 s; the unmutated file
+  runs in 45 s and exits cleanly. Not reproduced.
+
+For the learning journal (`docs/learning-journal.md` is not on main yet), evaluation:
+
+- A test set is a one-shot measurement: once you have seen its score, every later choice is
+  tuned on it a little, so `score_test.py` scores every checkpoint together and refuses one that
+  already has a row in `docs/test-ledger.md`.
+- The script refuses to run without `--approved-by` because "the user's go-ahead" is a rule only
+  if it leaves a trace; the approver's name goes into every row.
+- Refusals are checked before anything is loaded, and the tests prove it by replacing the
+  loaders with functions that fail: a refusal after the first prediction would already be a look.
+- Where to look: `trailcam/evaluate/score_test.py` (docstring), `docs/test-ledger.md`,
+  `tests/test_score_test.py`, plan.md section 7 (Protocol).
+
+**Next.** Review 9.01 (tier 3). Then 9.02, the user's single run on Kaggle once every arm and
+seed has finished training.
+
+Review: tier 3, ran `/review-session 9.01` (3a4fcf3..bc61d94; code-reviewer Opus xhigh,
+risk-reviewer Fable high). Both found the same low independently. Findings:
+
+- High (code-reviewer): R17's "scored while a run is still training" was open. A run in training
+  has no ledger row, so a ledger with the small CNN and arm A seed 0 passed while arm B seed 0
+  trained. After arm B's row was added, nothing could be scored without a second test ledger.
+- Low (both): the test rows were printed only after the slice tables, feature maps and headline.
+  A crash there, or in a later checkpoint's pass, left test scores on disk with no row.
+- Low (risk-reviewer; a hardening note from code-reviewer): two training rows with one checkpoint
+  sha256 were not refused. One file would be scored as two rows, and the test ledger would then
+  refuse itself.
+- Low (code-reviewer): 9.02's steps still say the rows go into `docs/ledger.md`. This is the
+  user's edit after the merge; items are not touched here.
+- Risk-reviewer's design question: two rows of one config and run seed (a rerun) could never be
+  scored.
+
+Scenarios R01, R03, R05, R26, R32, R42 to R45 held for both. R40 held for the row content and
+order. R17 broke on scenario 2 (the high).
+
+Fix 5612c2d (the user's decisions, via the coordinator):
+
+- `check_complete`: refuses a ledger with no small CNN row, with no ResNet-18 row, or whose arm A
+  and arm B rows differ in run seeds. The message names each missing arm and seed.
+- `check_unique`: refuses two rows of one checkpoint sha256, and two rows of one config and run
+  seed (the message says the user must pick one).
+- `log_row`: each checkpoint's test row and alarms are printed, then the row is appended, right
+  after that checkpoint is scored. This comes before its tables, the next checkpoint, the slices,
+  the feature maps and the headline.
+- Decision to review: with rows appended per checkpoint, a run that stops part way would have
+  left the rest unscoreable. The "already scored" refusal and the "every row given" check
+  together refuse every rerun. So a ledger row now counts as present if it is given or already
+  in the test ledger, and a second run with the checkpoints left finishes the scoring. Given
+  again, the scored ones are still refused. That second run's slices, feature maps and headline
+  hold its own checkpoints only.
+- Plan section 7, the docstring, and R17's and R40's test cells state the rules.
+- Tests (46 in the file, 9 new): five incomplete ledgers, including the reviewer's two-row case
+  and arm A {0, 1} with arm B {0}; a complete paired ledger with seeds 0 and 1 passes; one
+  checkpoint in two rows; a rerun of arm A seed 0; a run whose second checkpoint fails has
+  printed and appended the first row, a full rerun is refused, and a run with the other two
+  finishes the ledger.
+- Mutation checks, each restored by copying and each failing a test, 8 of 8: the small CNN
+  check, the seed pairing, the no-ResNet-18 check, `check_complete` not called, the duplicate
+  hash, the duplicate config and seed, the rows logged at the end, and no resume.
+
+`check.sh` green (790 passed).
+
+**Next.** Fix round: `/review-session bc61d94..5612c2d 9.01` (`score_test.py` and its tests are
+high-stakes files). Then the user's tier-3 option, `/code-review ultra`. The user rewords 9.02's
+steps after the merge.
+
+Fix round: `/review-session bc61d94..5612c2d 9.01` (code-reviewer Opus xhigh, risk-reviewer
+Fable high). Findings:
+
+- High (code-reviewer; risk-reviewer found a narrower version, low): the resume path counted an
+  already-scored row as present. So runs trained after the test scores were seen could be scored
+  later: arm A and arm B seed 1, or a rerun of arm B seed 0 after its old row was removed. Before
+  the fix this was impossible. The resume was my decision, flagged in the fix entry above.
+- Low (both): a failure between a row's append and its tables (or the slices and feature maps)
+  lost those outputs for good, since the checkpoint was then "already scored". A resumed run's
+  headline and alarms covered only its own checkpoints.
+
+Scenarios R01, R03, R05, R26, R32, R42 to R45 held for both. R17's named scenario held
+(`check_complete`); the high is another route around it. R40 held, with these findings left over.
+Code-reviewer also noted that plan section 7 credited the resume rule to the user; it was mine.
+
+Fix 60b2185 (the user's decision: drop the resume):
+
+- A test ledger that already holds a row is refused, whichever checkpoints are given: the final
+  scoring runs once, for every checkpoint together. Runs added after it can never be scored.
+- `print_row` prints each checkpoint's row and alarms as soon as it is scored; the rows are
+  appended together after every checkpoint's tables, the headline, the slices and the feature
+  maps. A run that stops part way appends nothing and is run again from the start with a new
+  `--out` (the checkpoints are pinned by sha256, so the scores are the same).
+- `read_test_ledger` also refuses one run id in two rows.
+- Plan section 7 credits each rule to the decision it came from; R17's and R40's test cells
+  updated.
+- Tests (48 in the file): the part-way test now fails the second checkpoint and, in a second run,
+  the feature maps; both print the rows scored and append none, then a full run appends all
+  three. The rescoring test also gives seeds 1 of both arms added to the ledger later: refused.
+  The malformed test ledger cases check each reason on the reader, including one run id in two
+  rows.
+- Mutation checks, each restored by copying and each failing a test, 7 of 7: the run-once
+  refusal, the rows appended per checkpoint, the rows appended before the figures, the run-id
+  check, the sha256 check, and the rows not printed. The run-id mutation first survived, because
+  `main` refuses any test ledger with rows before the reader's check is reached. The test now
+  checks the reader's message.
+
+`check.sh` green (792 passed). No third round unless the user asks.
+
+**Next.** The user's tier-3 option, `/code-review ultra` on the branch, with time for one fix
+round before 9.02. The user rewords 9.02's steps after the merge, then merges this branch.
+
+Ultra review (2026-10-16): `/code-review ultra` on the branch (the user's tier-3 option; a
+first attempt was stopped before it finished). Four findings, all graded nit, all verified real:
+
+- `check_complete` saw a missing arm only when the other arm already had that seed. With seed 0
+  of both arms in the ledger and seed 1 still training it passed, and the run-once rule would
+  then lock seed 1 out. The docstring and plan section 7 claimed more than the code did. The
+  ledger cannot see a run with no row, so completeness has to be stated.
+- `append_rows` re-read the test ledger but did not re-apply the run-once check. A second
+  scoring, or rows pasted in during the run, would leave duplicate rows that every later read
+  refuses.
+- `docs/test-ledger.md` still described the first version (refuses "a checkpoint that already
+  has a row"; "pastes the printed rows here" without saying which copy).
+- `--approved-by` with U+2028, U+0085 or another line break `splitlines()` splits on passed the
+  `\n` and `\r` check and would be written as a broken row.
+
+Fix f5b23e4 (the user's decisions):
+
+- `--run-seeds` is required (exit 1 without it). `check_complete` refuses a ledger without a
+  small CNN row, without an arm A and an arm B row for each seed given, or with a ResNet-18 row
+  of another seed. The headline records the seeds.
+- `append_rows` refuses a test ledger that gained a row during the run; `main` exits 1 and the
+  rows are already printed.
+- `breaks_table`: a `|` or any non-printable character, which covers every `splitlines()`
+  boundary. Used by `check_approver` and `ledger_line`.
+- `docs/test-ledger.md` rewritten: the script appends to the clone's copy, the user pastes the
+  printed rows once into the repo's file, and every refusal is listed. Plan section 7 and R17's
+  test cell state `--run-seeds`.
+- Tests (57 in the file): the ultra case (seed 0 of both arms, `--run-seeds 0 1`) and a ledger
+  seed not given are refused; no `--run-seeds` exits 1; approvers with U+2028, U+0085, a
+  vertical tab and a tab are refused, and a cell with U+2028 or U+001C is refused by
+  `ledger_line` while accented names pass; an append to a test ledger that gained a row is
+  refused and leaves it unchanged.
+- Mutation checks, 5 of 5 killed, each restored by copying: no `--run-seeds` check, a missing
+  seed not seen, an extra seed not seen, the cell check back to `\n` and `\r` only, and no
+  re-check at the append.
+- Not tested through `main`: the `except Refusal` around the append (exit 1, not a traceback).
+  It is covered by reading only; a test would need another full scoring run.
+
+`check.sh` green (801 passed). Reviewing these fixes would be a third round, which needs the
+user's request.
+
+Merged main at 914e5fe (6.09 and the 6.04 flip; the small CNN row is now in `docs/ledger.md`) with
+the sync tool. The conflicts were in this log and in R40's test cell (6.09 rewrote "holds the
+header and no rows"); both sides were kept, the other item's entries first. `check.sh` green
+after the merge (802 passed).
+
+**Next.** On Kaggle, 9.02 now needs `--run-seeds` (for example `--run-seeds 0 1 2`, or `0` if
+seeds 1 and 2 are not trained). The user rewords 9.02's steps after the merge, then merges this
+branch.
+
 ## 2026-10-15: session 12, item 12.07, the learning journal (Opus 5.5)
 
 New item, approved by the user in the coordinator session on 2026-10-15 and added to

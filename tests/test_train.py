@@ -42,6 +42,7 @@ from trailcam.train.config import (
     load_config,
     load_configs,
 )
+from trailcam.train.ledger import check_ledger
 from trailcam.train.train import (
     LEDGER_COLUMNS,
     LEDGER_PATH,
@@ -418,9 +419,21 @@ def test_the_options_are_the_allowed_ones() -> None:
 # The ledger (R40).
 
 
-def test_the_ledger_file_holds_the_header_and_no_rows() -> None:
-    table = [line for line in LEDGER_PATH.read_text().splitlines() if line.startswith("|")]
-    assert table == ledger_header().splitlines()
+def test_the_ledger_file_is_its_text_then_the_header_then_rows_that_pass_the_check() -> None:
+    """What holds for the life of `docs/ledger.md` (item 6.09; 5.03's test, written before any
+    run, wanted no rows): the explanatory text, the header of `LEDGER_COLUMNS`, then zero or more
+    rows, every one passing `trailcam.train.ledger`'s checks. That the dry run never appends is
+    `test_the_dry_run_trains_on_its_own_fixture_and_never_appends`."""
+    lines = LEDGER_PATH.read_text().splitlines()
+    header = ledger_header().splitlines()
+    start = lines.index(header[0])
+    assert lines[start : start + 2] == header
+    text = lines[:start]
+    assert any(line.strip() for line in text)
+    assert not any(line.lstrip().startswith("|") for line in text)
+    rows, problems = check_ledger(LEDGER_PATH)
+    assert problems == []
+    assert len(rows) == len(lines) - start - 2
 
 
 def test_the_header_follows_the_plan_with_the_config_hash_after_the_config() -> None:
