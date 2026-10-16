@@ -2408,3 +2408,94 @@ For the learning journal (`docs/learning-journal.md` is not on main yet):
 
 **Next.** The user merges this branch. Then 8.05 (photos into `assets/`) and the 8.06 evaluation
 notebook, if approved.
+
+## 2026-10-15: session 9, item 9.01, the final scoring script (Opus 5.5, xhigh)
+
+Main at 9c63bac. Built and tested on the synthetic fixture only: no real checkpoint was loaded
+and no real cis_test or trans_test was read (that is 9.02, the user's run on Kaggle).
+
+**Decisions (the user's, asked mid-session).** The item wants one ledger row per checkpoint with
+the test scores and who approved, but `LEDGER_COLUMNS` has 16 training columns and `ledger.py`
+requires that table to end `docs/ledger.md`. The user chose: (1) a separate
+`docs/test-ledger.md` with its own columns, so `docs/ledger.md`, `train.py` and `ledger.py` are
+unchanged; (2) a checkpoint that already has a test row is refused, so each is scored once.
+Recorded in plan.md section 7 (Protocol) and in R40's rule.
+
+**Done.** `trailcam/evaluate/score_test.py`, `docs/test-ledger.md` (header, no rows),
+`tests/test_score_test.py` (37 tests).
+
+- `python -m trailcam.evaluate.score_test --approved-by <name> --checkpoint <run>.pt ...
+  --data-root <cache> --out <new dir> [--config --ledger --test-ledger --overlay --assets]`.
+  The config of each checkpoint is the one its ledger row names, with the row's run seed, so a
+  checkpoint cannot be scored under another recipe.
+- Refusals, exit 1, all before any checkpoint is loaded or any test image read: no or empty
+  `--approved-by` (or one holding `|`); a non-empty `--out`; an overlay outside `assets/`; a
+  ledger that fails `ledger.py`'s check or a malformed test ledger; a missing checkpoint file, one
+  given twice, one with no ledger row ("unknown checkpoint"), one already in the test ledger; a
+  ledger row whose checkpoint is not given; a config that no longer hashes to its row; more than
+  one split hash; a file of another model (`load_checkpoint`). After the metadata is read: a
+  cache whose split hash is not the checkpoints' (still before any prediction).
+- One pass: `predict_split` once per checkpoint and test split; its predictions feed the
+  headline, `evaluate.write_report` (per-class, per-camera, confusion matrix, three PNGs per
+  split) and `slices.write_report`. `keep_features` only for the ResNet-18 (`FEATURE_MODELS`).
+  `attention_pass` once per checkpoint and split, and `write_overlays`, outside inference mode.
+  The overlays are drawn first, from `assets/` alone, so a failing one stops the run before any
+  test split is scored.
+- Output under `--out`: `headline.md` (per checkpoint: cis_test and trans_test accuracy and
+  macro-F1, both gaps, cis minus trans; a mean row per model and arm with more than one seed;
+  rows in ledger order, never by score; the leakage alarms of `train.py` applied to the test
+  scores; the Beery et al. citation), `slices.md`, the two feature maps (ResNet-18 only), and per
+  run id `metrics.md`, six PNGs, `attention.md`, `attention_in_box.png` and the overlays.
+- Test ledger rows: run id, model, arm, config, split hash, checkpoint sha256, the four scores,
+  both gaps, scored at (UTC), approved by. Printed with the alarms before the append, as
+  `train.py` does; exit `ALARM_EXIT` (3) when an alarm fired, else 0.
+- `evaluate.py`'s docstring now says 9.01 uses `predict_split`'s pass, not `predict`.
+- invariants.md: R17, R26 and R32 test cells name `tests/test_score_test.py`; R32's "where" adds
+  `score_test.py` and item 9.01; R40's rule says where the final scoring's rows go, and its test
+  cell names the new tests.
+
+Decision to review: every run in `docs/ledger.md` must be given in the one run (a row whose
+checkpoint is missing exits 1). With the re-scoring refusal this makes the scoring all at once and
+once only, and it is R17's "a listed checkpoint is missing" gap. If a ledger run should not be
+reported, this blocks 9.02 until the user decides; dropping the check is one `if`.
+
+Steps: `uv run pytest tests/test_score_test.py` 37 passed: the headline has both splits, both
+metrics and both gaps per checkpoint (by hand from the spied predictions); the test ledger rows
+have the files' sha256 and the approver; without `--approved-by` exits 1 (also via `python -m`);
+an unknown checkpoint exits 1. One run on the fixture (scratchpad) printed the table and rows and
+exited 3: random weights put trans within two points of cis, so the alarm fired, as intended.
+
+Mutation checks, each restored by copying the file back, each failing a test: the approver check
+removed (2 ways), the unknown-checkpoint check, the missing-ledger-row check, the already-scored
+check, the non-empty `--out` check, the config-hash check, the split-hash check; a test split by
+another route (`CLI_SPLITS` widened to cis_test and trans_test in `attention.py`; val added to the
+records returned; `TEST_SPLITS` swapped for val and trans_val); a second `predict_split` pass;
+features kept for the small CNN; the attention pass inside `torch.inference_mode()`; the overlays
+removed, and moved after the test passes. 17 of 17 killed.
+
+`check.sh` green (761 passed).
+
+Notes, not fixed:
+
+- 9.02's steps say "ledger rows ... pasted into docs/ledger.md"; with the user's decision they go
+  into `docs/test-ledger.md`. Items are not edited by Claude; the user may want to reword 9.02.
+- On Kaggle, pass `--config`, `--ledger`, `--test-ledger` and `--assets` from the clone (the wheel
+  ships no `docs/`), and a new `--out` under `/kaggle/working`. The clone's `docs/ledger.md` must
+  hold every training row (6.09 adds the small CNN's).
+- One mutation run took 11 minutes of wall time while pytest reported 42 s; the unmutated file
+  runs in 45 s and exits cleanly. Not reproduced.
+
+For the learning journal (`docs/learning-journal.md` is not on main yet), evaluation:
+
+- A test set is a one-shot measurement: once you have seen its score, every later choice is
+  tuned on it a little, so `score_test.py` scores every checkpoint together and refuses one that
+  already has a row in `docs/test-ledger.md`.
+- The script refuses to run without `--approved-by` because "the user's go-ahead" is a rule only
+  if it leaves a trace; the approver's name goes into every row.
+- Refusals are checked before anything is loaded, and the tests prove it by replacing the
+  loaders with functions that fail: a refusal after the first prediction would already be a look.
+- Where to look: `trailcam/evaluate/score_test.py` (docstring), `docs/test-ledger.md`,
+  `tests/test_score_test.py`, plan.md section 7 (Protocol).
+
+**Next.** Review 9.01 (tier 3). Then 9.02, the user's single run on Kaggle once every arm and
+seed has finished training.
