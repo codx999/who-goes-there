@@ -7,11 +7,15 @@ checks below, on the records of cis_test and trans_test and of no other split.
 
 **Refusals (exit 1, before any checkpoint is loaded or any test image read).**
 
-- No `--approved-by`, or an empty one: the user's go-ahead is recorded by name in every row.
-- A ledger that is not complete (`check_complete`, the user's decision on review 9.01): no small
-  CNN row, or ResNet-18 arm A and arm B rows whose run seeds differ (every seed is trained and
-  reported for both arms, plan.md section 6). A run still training has no row yet, so this is
-  how a scoring that would leave it out is refused; the message names what is missing.
+- No `--approved-by`, or an empty one, or one that would break the table (a `|`, a line break
+  of any kind or another non-printable character): the user's go-ahead is recorded by name in
+  every row.
+- No `--run-seeds`: the run seeds the experiment reports, stated by the user. A run still
+  training has no ledger row, so the ledger alone cannot show it is missing; the seeds given
+  can (the user's decision on the ultra review of 9.01).
+- A ledger that is not complete for those seeds (`check_complete`): no small CNN row, a ResNet-18
+  arm A or arm B row missing for one of the seeds, or a ResNet-18 row of a seed not given (every
+  seed is trained and reported for both arms, plan.md section 6). The message names each.
 - Two ledger rows with one checkpoint sha256, or with one config and run seed (a rerun: the user
   picks one row and removes the other before scoring).
 - A test ledger that already holds a row: the final scoring has run, and it runs once, for every
@@ -67,7 +71,7 @@ checkpoint.
 
 On Kaggle (item 9.02), from a clone at the commit of the installed package:
 
-    python -m trailcam.evaluate.score_test --approved-by "<name>" \\
+    python -m trailcam.evaluate.score_test --approved-by "<name>" --run-seeds 0 1 2 \\
         --checkpoint <small_cnn run>.pt --checkpoint <arm A seed 0>.pt ... \\
         --data-root <cache> --config <clone>/config.yaml --ledger <clone>/docs/ledger.md \\
         --test-ledger <clone>/docs/test-ledger.md --out /kaggle/working/final \\
@@ -198,17 +202,33 @@ class Headline:
         return self.cis_macro_f1 - self.trans_macro_f1
 
 
+def breaks_table(cell: str) -> bool:
+    """A cell that would break a markdown table row: a `|`, or any character that is not
+    printable, which covers every line break `str.splitlines` splits on (U+2028 among them)."""
+    return "|" in cell or not cell.isprintable()
+
+
 def check_approver(text: str | None) -> str:
     """The approver's name, stripped; refuses a missing or empty one, or one that would break the
-    table (a | or a line break)."""
+    table (`breaks_table`)."""
     name = (text or "").strip()
     if not name:
         raise Refusal(
             "--approved-by is required: the final scoring runs only with the user's go-ahead"
         )
-    if "|" in name or "\n" in name or "\r" in name:
-        raise Refusal("--approved-by holds a | or a line break")
+    if breaks_table(name):
+        raise Refusal("--approved-by holds a |, a line break or another non-printable character")
     return name
+
+
+def check_run_seeds(seeds: Sequence[int] | None) -> tuple[int, ...]:
+    """The run seeds the experiment reports, sorted; refuses none given."""
+    if not seeds:
+        raise Refusal(
+            "--run-seeds is required: the run seeds the experiment reports, so a run still "
+            "training, which has no ledger row yet, is seen as missing"
+        )
+    return tuple(sorted(set(seeds)))
 
 
 def scoring_header() -> str:
@@ -285,29 +305,29 @@ def _config_of(row: Row, config_file: Path) -> Config:
     return config
 
 
-def check_complete(ledger: Sequence[Row]) -> None:
-    """Refuses a training ledger that does not hold every reported run (R17; the user's decision
-    on review 9.01): a small CNN row, and ResNet-18 arm A and arm B rows with one non-empty set
-    of run seeds. The message names what is missing."""
+def check_complete(ledger: Sequence[Row], run_seeds: Sequence[int]) -> None:
+    """Refuses a training ledger that does not hold every reported run (R17): a small CNN row, and
+    a ResNet-18 arm A and arm B row for each of `run_seeds` and for no other seed (the user's
+    decisions on review 9.01 and its ultra review). The message names what is missing."""
     missing = []
     if not any(row["model"] == "small_cnn" for row in ledger):
         missing.append("no small_cnn row")
-    seeds = {
-        arm: {
+    for arm in ("A", "B"):
+        seeds = {
             int(row["run seed"])
             for row in ledger
             if (row["model"], row["arm"]) == ("resnet18", arm)
         }
-        for arm in ("A", "B")
-    }
-    if not seeds["A"] | seeds["B"]:
-        missing.append("no resnet18 row")
-    for arm, other in (("A", "B"), ("B", "A")):
-        for seed in sorted(seeds[other] - seeds[arm]):
-            missing.append(f"no resnet18 arm {arm} row for run seed {seed} (arm {other} has one)")
+        missing += [
+            f"no resnet18 arm {arm} row for run seed {n}" for n in run_seeds if n not in seeds
+        ]
+        missing += [
+            f"a resnet18 arm {arm} row of run seed {n}, which --run-seeds does not give"
+            for n in sorted(seeds - set(run_seeds))
+        ]
     if missing:
         raise Refusal(
-            "the ledger does not hold every reported run, so a run may still be training: "
+            "the ledger does not hold exactly the reported runs, so a run may still be training: "
             + "; ".join(missing)
         )
 
@@ -335,6 +355,7 @@ def resolve_checkpoints(
     ledger: Sequence[Row],
     scored: Sequence[Mapping[str, str]],
     config_file: Path,
+    run_seeds: Sequence[int],
 ) -> list[Checkpoint]:
     """The checkpoints given, each with its ledger row and config, in ledger order. Refuses a
     test ledger with any row, an incomplete ledger, two rows of one checkpoint or of one config
@@ -349,7 +370,7 @@ def resolve_checkpoints(
             "run, and every checkpoint is scored once, together"
         )
     check_unique(ledger)
-    check_complete(ledger)
+    check_complete(ledger, run_seeds)
     split_hashes = {row["split hash"] for row in ledger}
     if len(split_hashes) != 1:
         raise Refusal(
@@ -598,14 +619,21 @@ def ledger_values(scored: Scored, stamp: str, approver: str) -> dict[str, str]:
 
 def ledger_line(values: Mapping[str, str]) -> str:
     cells = [values[column] for column in TEST_LEDGER_COLUMNS]
-    if any("|" in cell or "\n" in cell for cell in cells):
-        raise ValueError("a test ledger cell holds a | or a line break")
+    if any(breaks_table(cell) for cell in cells):
+        raise ValueError("a test ledger cell holds a |, a line break or a non-printable character")
     return "| " + " | ".join(cells) + " |"
 
 
 def append_rows(path: Path, lines: Sequence[str]) -> None:
-    """Append `lines` to the table that ends the test ledger, rechecked first."""
-    read_test_ledger(path)
+    """Append `lines` to the table that ends the test ledger, rechecked first: it must still hold
+    no row, since the run-once check in `prepare` came before the scoring (a second scoring, or
+    rows pasted in while this one ran, are refused here)."""
+    found = read_test_ledger(path)
+    if found:
+        raise Refusal(
+            f"{path.name} gained {len(found)} rows during this run; nothing appended, the rows "
+            "are printed above"
+        )
     text = path.read_text(encoding="utf-8")
     path.write_text(
         text + ("" if text.endswith("\n") else "\n") + "".join(f"{line}\n" for line in lines),
@@ -646,6 +674,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--approved-by", help="who gave the go-ahead for the final scoring (required)"
     )
     parser.add_argument(
+        "--run-seeds",
+        type=int,
+        nargs="+",
+        help="the run seeds the experiment reports, e.g. 0 1 2 (required)",
+    )
+    parser.add_argument(
         "--checkpoint",
         type=Path,
         action="append",
@@ -678,11 +712,12 @@ def prepare(
 ) -> tuple[str, list[Checkpoint], list[nn.Module], dict[str, tuple[Record, ...]]]:
     """Every check, in order, before any test image is read; then the test records."""
     approver = check_approver(args.approved_by)
+    run_seeds = check_run_seeds(args.run_seeds)
     check_out(args.out)
     check_overlays(args.overlay, args.assets)
     ledger = read_ledger(args.ledger)
     scored = read_test_ledger(args.test_ledger)
-    checkpoints = resolve_checkpoints(args.checkpoint, ledger, scored, args.config)
+    checkpoints = resolve_checkpoints(args.checkpoint, ledger, scored, args.config, run_seeds)
     models = load_models(checkpoints)
     first = checkpoints[0]
     records = load_test_records(args.data_root, first.config.split_seed, first.row["split hash"])
@@ -701,7 +736,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     first = checkpoints[0]
     common = (
         f"Approved by {approver}, scored at {stamp} (UTC). Split seed {first.config.split_seed}, "
-        f"split hash {first.row['split hash']}."
+        f"split hash {first.row['split hash']}. ResNet-18 run seeds reported: "
+        f"{', '.join(map(str, check_run_seeds(args.run_seeds)))}."
     )
     out: Path = args.out
     for model, checkpoint in zip(models, checkpoints, strict=True):
@@ -739,7 +775,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         write_feature_maps(projections, out)
     print(table.read_text(encoding="utf-8"))
     sys.stdout.flush()
-    append_rows(args.test_ledger, ledger_lines)  # last: a run that stops earlier appends nothing
+    try:  # last: a run that stops earlier appends nothing
+        append_rows(args.test_ledger, ledger_lines)
+    except Refusal as refusal:
+        print(f"score_test refused to append: {refusal}", file=sys.stderr)
+        return REFUSED_EXIT
     print(f"appended {len(ledger_lines)} rows to {args.test_ledger}; outputs under {out}")
     return ALARM_EXIT if alarms else 0
 

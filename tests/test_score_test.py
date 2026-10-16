@@ -162,6 +162,7 @@ class World:
         checkpoints: Sequence[Path] | None = None,
         config_file: Path | None = None,
         ledger: Path | None = None,
+        run_seeds: Sequence[int] | None = (0,),
     ) -> list[str]:
         given = self.checkpoints.values() if checkpoints is None else checkpoints
         argv = [arg for path in given for arg in ("--checkpoint", str(path))]
@@ -171,6 +172,8 @@ class World:
         argv += ["--assets", str(self.assets), "--overlay", f"{self.photo}={CLASSES[0]}"]
         if approver is not None:
             argv += ["--approved-by", approver]
+        if run_seeds is not None:
+            argv += ["--run-seeds", *map(str, run_seeds)]
         return argv
 
 
@@ -347,6 +350,7 @@ def test_headline_has_both_splits_both_metrics_and_the_gap(world: World, scoring
     one pass's predictions, and the gap, cis minus trans, for both metrics (R32)."""
     text = (scoring.out / "headline.md").read_text()
     assert f"Approved by {APPROVER}" in text
+    assert "ResNet-18 run seeds reported: 0." in text
     assert "Beery et al. 2018" in text
     for header in (
         "cis_test accuracy",
@@ -518,7 +522,9 @@ def _refused(world: World, argv: list[str], capsys: pytest.CaptureFixture[str], 
     assert world.test_ledger.read_text() == before
 
 
-@pytest.mark.parametrize("approver", [None, "", "   ", "a | b"])
+@pytest.mark.parametrize(
+    "approver", [None, "", "   ", "a | b", "Jane\u2028Doe", "Jane\x85Doe", "Jane\x0bDoe", "a\tb"]
+)
 def test_without_an_approver_it_exits_1(
     fresh: World,
     tmp_path: Path,
@@ -733,38 +739,64 @@ def _refused_ledger(
     why: str,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
+    run_seeds: Sequence[int] = (0,),
 ) -> None:
     ledger = _write_ledger(tmp_path / "ledger.md", rows)
     assert check_ledger(ledger)[1] == []  # the rows pass ledger.py; the scoring refuses them
     _forbid_reading(monkeypatch)
-    _refused(world, world.argv(tmp_path / "out", ledger=ledger), capsys, why)
+    argv = world.argv(tmp_path / "out", ledger=ledger, run_seeds=run_seeds)
+    _refused(world, argv, capsys, why)
 
 
 @pytest.mark.parametrize(
-    ("runs", "why"),
+    ("runs", "seeds", "why"),
     [
-        ([("small", 0), ("arm_a", 0)], "no resnet18 arm B row for run seed 0"),
+        ([("small", 0), ("arm_a", 0)], (0,), "no resnet18 arm B row for run seed 0"),
         (
             [("small", 0), ("arm_a", 0), ("arm_a", 1), ("arm_b", 0)],
+            (0, 1),
             "no resnet18 arm B row for run seed 1",
         ),
-        ([("small", 0), ("arm_b", 0)], "no resnet18 arm A row for run seed 0"),
-        ([("arm_a", 0), ("arm_b", 0)], "no small_cnn row"),
-        ([("small", 0)], "no resnet18 row"),
+        ([("small", 0), ("arm_b", 0)], (0,), "no resnet18 arm A row for run seed 0"),
+        ([("arm_a", 0), ("arm_b", 0)], (0,), "no small_cnn row"),
+        ([("small", 0)], (0,), "no resnet18 arm A row for run seed 0"),
+        # the ultra review's case: seed 0 of both arms in the ledger, seed 1 still training
+        (
+            [("small", 0), ("arm_a", 0), ("arm_b", 0)],
+            (0, 1),
+            "no resnet18 arm A row for run seed 1",
+        ),
+        (
+            [("small", 0), ("arm_a", 0), ("arm_b", 0), ("arm_a", 1), ("arm_b", 1)],
+            (0,),
+            "arm A row of run seed 1, which --run-seeds does not give",
+        ),
     ],
 )
 def test_an_incomplete_ledger_exits_1(
     fresh: World,
     tmp_path: Path,
     runs: list[tuple[str, int]],
+    seeds: tuple[int, ...],
     why: str,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """R17: a run still training has no row, so the ledger must hold a small CNN row and arm A
-    and arm B rows with one set of run seeds; the message names what is missing."""
+    """R17: a run still training has no row, so the ledger must hold a small CNN row and an arm A
+    and an arm B row for each of the `--run-seeds` given, and none of another seed; the message
+    names what is missing."""
     rows = [_row(fresh, name, seed) for name, seed in runs]
-    _refused_ledger(fresh, tmp_path, rows, why, monkeypatch, capsys)
+    _refused_ledger(fresh, tmp_path, rows, why, monkeypatch, capsys, seeds)
+
+
+def test_without_run_seeds_it_exits_1(
+    fresh: World,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _forbid_reading(monkeypatch)
+    _refused(fresh, fresh.argv(tmp_path / "out", run_seeds=None), capsys, "--run-seeds is required")
 
 
 def test_a_complete_paired_ledger_passes(world: World) -> None:
@@ -774,8 +806,29 @@ def test_a_complete_paired_ledger_passes(world: World) -> None:
             [("small", 0), ("arm_a", 0), ("arm_b", 0), ("arm_a", 1), ("arm_b", 1)]
         )
     ]
-    score_test.check_complete(rows)
+    score_test.check_complete(rows, (0, 1))
     score_test.check_unique(rows)
+
+
+def test_a_cell_with_a_unicode_line_break_is_refused(fresh: World) -> None:
+    """A row written with U+2028 in a cell would split in two on the next read."""
+    row = {column: "x" for column in TEST_LEDGER_COLUMNS}
+    for cell in ("Jane\u2028Doe", "a\x1cb", "a|b"):
+        with pytest.raises(ValueError, match="non-printable"):
+            score_test.ledger_line(row | {"approved by": cell})
+    assert score_test.ledger_line(row | {"approved by": "Zoë Ångström"}).count("|") == 15
+
+
+def test_the_append_refuses_a_test_ledger_that_gained_rows(fresh: World) -> None:
+    """The run-once check comes before the scoring; rows that reached the test ledger during the
+    run (a second scoring, a paste) make the append refuse, and nothing is appended."""
+    row = {column: "x" for column in TEST_LEDGER_COLUMNS}
+    pasted = score_test.ledger_line(row | {"run id": "pasted"})
+    score_test.append_rows(fresh.test_ledger, [pasted])
+    before = fresh.test_ledger.read_text()
+    with pytest.raises(Refusal, match="gained 1 rows during this run"):
+        score_test.append_rows(fresh.test_ledger, [score_test.ledger_line(row)])
+    assert fresh.test_ledger.read_text() == before
 
 
 def test_two_rows_of_one_checkpoint_exit_1(
