@@ -2696,3 +2696,76 @@ annotations or the sidecar, which `kaggle_pack_cache.py` refuses to write; the w
 6.09.
 
 **Next.** The user merges and pushes; then the user flips 6.04.
+
+## 2026-10-16: session 10, item 10.01, the demo's prediction and its Gradio app (Opus 5.5)
+
+**Done.**
+
+- `trailcam/demo/predict.py`: `load_model(checkpoint, config_name)` loads with 8.03's
+  `load_checkpoint` (no second loader), which refuses another model or class map, and returns the
+  model in eval mode on the CPU. `predict(model, photo)` returns a `Prediction`: the top class and
+  two runners-up as (label, softmax probability) pairs, most probable first, and the forward
+  pass's seconds. Labels come from `CLASSES`; the photo goes through `EvalTransform` after
+  `convert("RGB")` (a night photo is grayscale).
+- Timer (the 8.01 carry-over): `trailcam/evaluate/metrics.py` gains `timed_forward(model, image)
+  -> (logits, seconds)`, the same warm-up plus timed pass, returning the timed pass's detached
+  logits; `time_one_prediction` is now `timed_forward(...)[1]`, so its tests run unchanged. The
+  demo decodes from those logits, so a request costs the warm-up and one timed pass (two
+  forwards), not three. The transform, the move to the device and the softmax stay outside the
+  timed region; `tests/test_demo.py` checks the order transform, forward, clock, forward, clock.
+- Grad-CAM in memory: `trailcam/evaluate/gradcam.py` gains `overlay_photo(model, photo)`, the
+  overlay of a PIL image already in memory, returned and never written. `overlay(model, path)`
+  keeps `assets_image` and now delegates to it after opening the file; `write_overlay`, the only
+  writer, still goes through `overlay`, so the R04 containment for files is unchanged. The app
+  calls it outside `torch.inference_mode()`.
+- `trailcam/demo/app.py`: Gradio Blocks with upload, a Grad-CAM checkbox, a Classify button,
+  `gr.Label` with the top class and two runners-up, the seconds ("0.042 s (forward pass only)"),
+  the overlay image, the Beery et al. 2018 citation and CDLA-Permissive 1.0. Examples are the
+  photos directly under `assets/` (`example_photos`, each through `assets_image`, so a link out
+  of the folder is refused); no `assets/` folder or an empty one means no examples. `--check`
+  builds the interface and exits 0 without launching; without `--checkpoint` it uses the
+  config's model with random weights (default config `resnet18_arm_b`; both arms are a
+  ResNet-18, open question 7 picks the checkpoint). A launch without `--checkpoint` is refused.
+- gradio (6.30.0 locked, `>=6.30.0`): the user's decision in this session, a `demo` dependency
+  group with `[tool.uv] default-groups = ["dev", "demo"]`, not `uv add gradio` as a runtime
+  dependency. `uv sync`, `check.sh` and CI install it as they are; the wheel's Requires-Dist and
+  pip on Kaggle never see it, so the notebook's install does not pull gradio's ~30 packages
+  (R38). `uv.lock` committed.
+- `docs/review/invariants.md`: test cells of R04 (the in-memory overlay writes nothing; the path
+  overlay still refuses a photo outside `assets/`), R33 (`timed_forward`, the demo's two passes,
+  transform before the clock) and R35 (the demo's examples) filled; the Space and the sort script
+  stay open (11.01, 10.02).
+
+Steps: `uv run pytest tests/test_demo.py` 13 passed: predict on a synthetic-fixture JPEG through
+a random-weight small CNN loaded from a checkpoint file returns three distinct (label,
+probability) pairs in `CLASSES`, descending, summing to at most 1, and a positive float of
+seconds; and `python -m trailcam.demo.app --check` (run as a subprocess too) builds the interface
+and exits 0. `tests/test_metrics.py` adds the `timed_forward` test. `check.sh` green.
+
+Notes for 11.01 (the Space):
+
+- `space/requirements.txt`: `uv export --no-dev --no-hashes --group demo` (the `--no-dev` export
+  alone leaves gradio out), trimmed to torch, torchvision, gradio, Pillow, NumPy, matplotlib
+  (`gradcam.py` imports it at module level) and PyYAML (`trailcam.train.config`); timm only if
+  the Space serves EfficientNet-B0. `predict.py` imports `load_checkpoint` from
+  `trailcam/evaluate/attention.py`, which brings in more of `trailcam` (split, train) but no other
+  third-party package.
+- `load_model` needs the root `config.yaml` (only to name the model): a Space that pip-installs
+  `trailcam` has no checkout, so it uploads `config.yaml` and passes `config_path`, or 11.01
+  proposes another way.
+
+For the learning journal (docs/learning-journal.md is not on main yet; topic: demo):
+
+- Top-3 with probabilities: softmax turns the 12 logits into probabilities that sum to 1; the
+  demo shows the three largest, so they sum to at most 1, and a low top value says the model is
+  unsure. See `trailcam/demo/predict.py`.
+- Why the timer excludes decoding: the seconds should measure the model, not JPEG decoding or
+  resizing, which depend on the photo's size; and the timed pass's own logits are reused so a
+  request runs the model twice, not three times. See `timed_forward` in
+  `trailcam/evaluate/metrics.py`.
+- What Grad-CAM shows: which part of the 224 x 224 frame pushed the top class's score up (the
+  last conv block's channels weighted by their gradients); on camera traps, a map on the animal
+  is good, a map on the background suggests the model learned the scene. See
+  `trailcam/evaluate/gradcam.py`, `overlay_photo`.
+
+**Next.** 10.02 (the sort script). The user merges and pushes.

@@ -18,7 +18,9 @@ loop; item 8.01 added the per-class report, the confusion matrix and the inferen
 `time_one_prediction` (R33) is the one timer: the Gradio UI and the Space call it rather than
 time a prediction their own way. It times the model's forward pass only. Decoding the image and
 the eval transform happen before it is called and are not in the timed region, nor is moving the
-input to the model's device; the seconds the demo shows are the model's.
+input to the model's device; the seconds the demo shows are the model's. `timed_forward` is the
+same timer returning the timed pass's logits too (item 10.01), so the demo predicts from that
+pass and a request costs the warm-up and one timed pass, not a third forward of its own.
 """
 
 from __future__ import annotations
@@ -108,13 +110,15 @@ def _synchronize(device: torch.device) -> None:
         torch.mps.synchronize()
 
 
-def time_one_prediction(model: nn.Module, image: Tensor) -> float:
-    """Seconds for one forward pass of `model` on one preprocessed image (R33).
+def timed_forward(model: nn.Module, image: Tensor) -> tuple[Tensor, float]:
+    """The logits of one forward pass of `model` on one preprocessed image, (1, classes) and
+    detached, and the seconds that pass took (R33).
 
     `image` is the eval transform's output, (3, H, W), or a batch of one, (1, 3, H, W). It is
     moved to the model's device first; then one untimed warm-up call, then `time.perf_counter()`
-    around a second forward pass, in eval mode under `torch.no_grad()`. On a GPU the clock stops
-    after the device has finished. The model's train or eval mode is restored afterwards.
+    around a second forward pass, in eval mode under `torch.no_grad()`, whose output is returned.
+    On a GPU the clock stops after the device has finished. The model's train or eval mode is
+    restored afterwards.
     """
     if image.dim() == 3:
         image = image.unsqueeze(0)
@@ -130,11 +134,18 @@ def time_one_prediction(model: nn.Module, image: Tensor) -> float:
             model(batch)  # warm-up, not timed
             _synchronize(device)
             start = time.perf_counter()
-            model(batch)
+            logits: Tensor = model(batch)
             _synchronize(device)
-            return time.perf_counter() - start
+            seconds = time.perf_counter() - start
     finally:
         model.train(was_training)
+    return logits.detach(), seconds
+
+
+def time_one_prediction(model: nn.Module, image: Tensor) -> float:
+    """Seconds for one forward pass of `model` on one preprocessed image (R33): `timed_forward`
+    without its logits."""
+    return timed_forward(model, image)[1]
 
 
 class CameraScores(NamedTuple):
