@@ -3384,3 +3384,16 @@ gradio's import makes a network call in a dry run (sockets are blocked only afte
 test); Hugging Face's side (the 60-character limit, pip honouring `--extra-index-url`, `spaces`
 provided on the Space) is checked at 11.03 and the switch. The fix touches `scripts/deploy_space.py`,
 `space/` and modifies test lines, so one fix round runs on the fix range. `check.sh` green.
+
+## 2026-10-17: fix round 11.01: clean, no third round (Opus 5.5)
+
+Fix round (`/review-session c74777c..HEAD 11.01`, the user's start), tier 2: code-reviewer (Opus 5.5
+xhigh) on the fix range, risk-reviewer (Fable 5.1 high) on its five high-stakes files. No finding
+from either; scenarios R01 to R03, R05 to R07, R20, R21, R23, R33 to R36, R38, R42 to R45 hold
+(R36's "deployed before the scoring" by process only). Spec changed: plan.md section 8 and R35's
+test cell, both matching the code. Noted, not fixed: the deploy lists the Space's files and then
+commits with no `parent_commit`, so a Hub-side edit in between could be lost (one user, unlikely);
+a direct mypy run on `tests/test_space.py` flags `module.loaded = loaded` (tests are outside
+check.sh's mypy scope); the Hub-side checks stay with 11.03. Merged `main` (8aa83bf, 13ecf46):
+plan.md open question 5 kept from this branch, 6 from main. Review: tier 2, ran both reviewers;
+fix round ran, clean.
