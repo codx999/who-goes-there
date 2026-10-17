@@ -3398,6 +3398,103 @@ check.sh's mypy scope); the Hub-side checks stay with 11.03. Merged `main` (8aa8
 plan.md open question 5 kept from this branch, 6 from main. Review: tier 2, ran both reviewers;
 fix round ran, clean.
 
+## 2026-10-17: session 13, item 13.01, the phase-2 plan (Opus 5.5)
+
+Items 13.01 and 13.02 added to `docs/progress.json` (session 13, owner claude; due 2026-10-24 and
+2026-10-28), the user's OK of 2026-10-17 through the coordinator. 13.02 (the phase-2
+infrastructure) is not implemented here. Docs only: no code, config or notebook changed.
+
+**Done.** `docs/phase2-plan.md`, "Phase 2: improving generalisation to new cameras", covering the
+ten agreed points: the goal and baseline (arm A, 3 seeds); the phase-1 results as trans_val means
+(small CNN 0.6625 / 0.6216 val, 0.1965 / 0.0775 trans_val; arm A 0.8661 / 0.8557 and 0.3783 /
+0.3101; arm B 0.8537 / 0.8428 and 0.3337 / 0.3026, accuracy / macro-F1) and the noise (arm A
+seeds: val macro-F1 range 0.0027, trans_val accuracy 0.3525 to 0.4099, macro-F1 range 0.0285);
+screen, confirm and keep with numeric thresholds; the rules carried over with the honesty note;
+the hypothesis line; the eight-step ladder with change, hypothesis, needs and tier per step; the
+budget; the timing; 13.02's infrastructure; future work. `docs/plan.md` section 9 points to it
+(a paragraph, not a numbered open question, so it cannot collide with 8.08 or 9.03). Journal
+topic 15, "What we'd improve next, and how".
+
+Mid-item, the user's decision through the coordinator: a literature review of improvement methods
+for new-location shift will be done separately, as an external research pass, and later become
+Part 7 of `docs/research-report.md`. So the ladder (section 6) is marked provisional, to be
+re-ranked from that review's evidence, and step 4 (class-balanced loss) is marked low expected
+value, citing WILDS in the report's Part 3 (plain training not meaningfully beaten by CORAL, IRM
+or Group DRO) and Part 4 (reweighting did not help). No research done here.
+
+Found while writing, recorded in the plan (no code touched):
+
+- Step 1 (resolution) is not config-only: 224 px is a constant in the transforms, the attention
+  frame, Grad-CAM, the demo and the Space, so it needs a tier-2 code item. That makes the
+  pre-presentation option cost a code item plus 13.02 in the week of 9.02.
+- Adding any field to `Config` changes every phase-1 config hash (`config_hash` hashes all fields
+  but `arm` and `run_seed`), and `score_test.py` refuses a config whose hash no longer matches its
+  ledger row. Each code step that adds a setting must leave the phase-1 hashes unchanged, with a
+  test pinning them. Not in 13.02 as agreed; flagged for the user.
+- The phase-1 ledger checker refuses one model under two config hashes, a second reason for the
+  separate ledger; 13.02's checker has to allow it.
+- config.yaml is in the risk regex, so even config-only steps are tier 2 by the script.
+- Arm B's seeds spread about three times wider than arm A's on trans_val macro-F1 (range 0.088 vs
+  0.029), so the noise bands are per recipe.
+- Open questions for the user in the plan's section 11: the screen's val condition (as agreed it is
+  stricter than the keep rule's 1 point); the screen's trans_val condition (as agreed it passes
+  most no-effect changes, so the 5-hour cap, not the screen, likely ends the ladder); step 5 as one
+  change; the Space after phase 2; CLAUDE.md's and R17's "every choice on val".
+
+Checks: every path and relative link in the plan and the new journal topic resolves; every
+phase-1 number re-derived from `docs/ledger.md` (means, ranges, per-seed differences, standard
+deviations) and the data card (2,394 val images, about 212 batches per epoch); the journal's
+command (`uv run python -m trailcam.train.ledger --check docs/ledger.md`) exits 0; `check.sh`
+green.
+
+**Next.** 13.02 after the presentation; the open questions in `docs/phase2-plan.md` section 11 are
+the user's.
+
+Review: tier 0 (docs only), nothing to run. Spec changed: plan.md section 9 only, cited by no
+invariant row.
+
+## 2026-10-17: item 13.01 revised: the ladder from the literature review (Opus 5.5)
+
+The user's "go" through the coordinator, on top of 79c1a10 and before the review: the ladder in
+`docs/phase2-plan.md` is rebuilt from an external literature review (three AI research tools run
+by the user), replacing the provisional one. Only the facts the coordinator checked against the
+original pages are marked verified (the WILDS leaderboard, Gao et al. 2023, Mesnage et al. 2025,
+Connect Later); everything else is marked "to verify in 13.03". Item 13.03 (owner claude, due
+2026-10-24, the user's OK) added: Part 7 of `docs/research-report.md` from that review, each
+citation verified, then the ladder re-checked. No research done here.
+
+The ladder now: 0 a soup and an ensemble of arm A's three seeds (evaluation only); 1 copy-paste,
+arm C; 2 SWA; 3 a longer head-only phase; 4 resolution 320; 5 ResNet-50; 6 infrared-aware
+augmentation; a "Dropped, with reasons" list (reweighting losses, MixUp, IRM and Group DRO,
+wildlife-pretrained backbones, test-time augmentation and ensembles for the demo). Section 3 adds
+resolvability: gains under about 4 points cannot be confirmed with three seeds, so steps 2 to 6
+confirm on five. Journal topic 15 rewritten to match.
+
+Checked against the repo, and corrected or flagged in the plan:
+
+- trans_val is 1,603 kept images (1,725 released; the data card's filter table). Plan.md section 3
+  quotes the released 1,725; not changed here (a phase-1 spec section).
+- The cache and the sidecar hold every annotated image, empties included, so arm C needs no cache
+  rebuild. But "empties from training-camera locations" would admit cis_test's 1,180, which are
+  test images: the pool is the 995 empties of the official cis_val file only, minus any whose
+  sequence has a frame in val, with tests. Arm C's tier: 2 at xhigh, tier 3 recommended.
+- Resolution (step 4) and the infrared-aware augmentation (step 6) need code, not config: the
+  input size and the augmentation strengths are constants in `trailcam/data/dataset.py`.
+- Step 3: head-only epochs count inside `max_epochs`, so `max_epochs` rises with them to keep the
+  body's 9 epochs (one change, the head-only phase).
+- A per-camera breakdown cannot stand in for extra seeds: trans_val is one camera.
+- The "tens of milliseconds" on the CPU is not measured in this repo; it is marked expected, to be
+  measured at 11.03.
+- Arm B on the final recipe (first draft's step 8) is not in the revised ladder: open question 4.
+  ABSGD scores 33.0 on the leaderboard, 2.2 above ERM; whether it is a reweighting method is left
+  to 13.03, since it bears on dropping the reweighting losses.
+
+Checks: every path and relative link in the plan and in journal topic 15 resolves; the journal's
+command exits 0; `check.sh` green.
+
+Review: tier 0 (docs only), nothing to run. Spec changed: plan.md section 9 only (in 79c1a10),
+cited by no invariant row.
+
 ## 2026-10-17: session 9, item 9.03, the final scoring's notebook (Opus 5.5, xhigh)
 
 New item, approved by the user via the coordinator on 2026-10-17 and added to
