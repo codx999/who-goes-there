@@ -4,7 +4,8 @@ On the synthetic fixture (written into a temporary directory) and on the real me
 `TRAILCAM_DATA_ROOT` (check.sh sets it locally; CI has no data and skips the real runs, anywhere
 else a missing root fails). A failure on the real metadata prints numbers, never an id or a record
 (R03): asserts compare counts or booleans computed beforehand. Also checks the look-at-the-data
-notebook's shape (outputs cleared, train images only, the citation).
+notebook's shape (outputs cleared, train images only, the citation) and runs its arm B crop check
+(item 8.08) on the synthetic fixture.
 """
 
 import ast
@@ -14,6 +15,7 @@ import re
 from collections import Counter
 from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
 import pytest
 from matplotlib.backends.backend_agg import FigureCanvasAgg
@@ -22,6 +24,7 @@ from matplotlib.text import Text
 
 from trailcam.data import boxcrop, datavis
 from trailcam.data.classes import CLASSES
+from trailcam.data.dataset import ControlCropSampler
 from trailcam.data.datavis import (
     ARM_B_FILL,
     CACHE_BUILD_NIGHT_BY_FILE,
@@ -40,7 +43,12 @@ from trailcam.data.metadata import (
     load_night_flags,
 )
 from trailcam.data.split import CIS_SPLITS, SPLIT_NAMES, TRANS_SPLITS, Split, make_split
-from trailcam.data.synthetic import write_synthetic_metadata
+from trailcam.data.synthetic import (
+    HEIGHT,
+    WIDTH,
+    write_synthetic_fixture,
+    write_synthetic_metadata,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 FIGURES = ROOT / "docs" / "figures"
@@ -436,3 +444,129 @@ def test_the_look_notebook_s_trailcam_names_exist() -> None:
                 module = importlib.import_module(node.module)
                 for alias in node.names:
                     assert hasattr(module, alias.name), f"{node.module}.{alias.name}"
+
+
+# The arm B crop check of the look-at-the-data notebook (item 8.08)
+
+
+def _look_cell(cell_id: str) -> str:
+    nb = json.loads(LOOK_NOTEBOOK.read_text(encoding="utf-8"))
+    (source,) = ["".join(c["source"]) for c in nb["cells"] if c["id"] == cell_id]
+    return source
+
+
+def test_the_crop_check_uses_the_real_samplers_not_a_copy() -> None:
+    """The crop check takes arm B's sampler from `TrainTransform("B")`, as training builds it, and
+    draws every crop with its `box_crop` (the box path) or its `control` (arm A's sampler). The
+    cell defines nothing, builds no sampler of its own and draws no random number for a crop."""
+    source = _look_cell("crops")
+    tree = ast.parse(source)
+    calls = {ast.unparse(n.func) for n in ast.walk(tree) if isinstance(n, ast.Call)}
+    assert {"TrainTransform", "sampler.box_crop", "sampler.control"} <= calls
+    assert 'transform = TrainTransform("B")' in source and "sampler = transform.sampler" in source
+    defining = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)
+    assert not [n for n in ast.walk(tree) if isinstance(n, defining)]
+    named = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)}
+    named |= {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
+    for copied in ("BoxCropSampler", "ControlCropSampler", "make_sampler", "get_params", "math"):
+        assert copied not in named
+    for drawn in ("torch.rand", "torch.randint", "torch.normal", "random.uniform"):
+        assert drawn not in calls
+    imported = {
+        alias.name
+        for n in ast.walk(tree)
+        if isinstance(n, ast.ImportFrom) and n.module and n.module.startswith("trailcam")
+        for alias in n.names
+    }
+    assert imported == {"FILL", "to_pixels", "CLASSES", "CCT20Dataset", "TrainTransform"}
+
+
+def test_the_crop_check_says_its_outputs_stay_in_the_session() -> None:
+    """R03 and R04: the section's note says the photos are for the user's eyes in the session,
+    cleared before any commit and never copied into docs/figures/."""
+    note = " ".join(_look_cell("crops-md").split())
+    for needle in (
+        "for your eyes in this session only",
+        "Edit > Clear All Outputs",
+        "never put any of them into `docs/figures/` (R03, R04)",
+        "changes no training code",
+        'TrainTransform("B").sampler',
+        "title shows its class and day or night only, never a file name",
+    ):
+        assert needle in note
+
+
+def test_the_crop_check_draws_the_sampler_s_crops_on_the_fixture(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The cell run as written on the synthetic fixture, with the notebook's crop counts: one boxed
+    train photo per class, day and night by turns where the class has both, beside the crops the
+    real box path and arm A's sampler returned (spied on, not replaced), each panel showing exactly
+    that crop's pixels. Titles give the class and day or night, or the arm and the fill; every arm
+    B crop holds a box whole at a fill of 20% to 100%; no text shows a file name."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    root = tmp_path / "fixture"
+    fixture = write_synthetic_fixture(root)
+    train = make_split(load_metadata(root, fixture.paths["sidecar"]), SEED).records["train"]
+    box_crops: list[tuple[int, int, int, int] | None] = []
+    control_crops: list[tuple[int, int, int, int]] = []
+    box_crop, control = boxcrop.BoxCropSampler.box_crop, ControlCropSampler.__call__
+
+    def spy_box_crop(self: boxcrop.BoxCropSampler, width: int, height: int, boxes: Any) -> Any:
+        box_crops.append(box_crop(self, width, height, boxes))
+        return box_crops[-1]
+
+    def spy_control(self: ControlCropSampler, image: Any, boxes: Any) -> Any:
+        control_crops.append(control(self, image, boxes))
+        return control_crops[-1]
+
+    monkeypatch.setattr(boxcrop.BoxCropSampler, "box_crop", spy_box_crop)
+    monkeypatch.setattr(ControlCropSampler, "__call__", spy_control)
+    shown: list[Any] = []
+    monkeypatch.setattr(plt, "show", lambda: shown.append(plt.gcf()))
+    parameters: dict[str, Any] = {}
+    exec(compile(_look_cell("parameters"), "parameters", "exec"), parameters)
+    b, a = parameters["ARM_B_CROPS"], parameters["ARM_A_CROPS"]
+    assert (b, a) == (3, 2)  # "2 or 3 arm B crops ... plus 1 or 2 arm A crops"
+    names = {"train": train, "DATA_ROOT": root, "SPLIT_SEED": SEED, "ARM_B_CROPS": b}
+    names["ARM_A_CROPS"] = a
+    exec(compile(_look_cell("crops"), "crops", "exec"), names)
+
+    (figure,) = shown
+    picked = names["picked"]
+    assert [r.label for r in picked] == list(range(len(CLASSES)))
+    assert all(r.split == "train" and r.boxes for r in picked)
+    for record in picked:
+        boxed = [r for r in train if r.label == record.label and r.boxes]
+        if {r.night for r in boxed} == {True, False}:
+            assert record.night is (record.label % 2 == 1)
+    assert len(box_crops) == b * len(picked) and len(control_crops) == a * len(picked)
+    assert None not in box_crops
+    columns = 1 + b + a
+    assert len(figure.axes) == columns * len(picked)
+    for row, record in enumerate(picked):
+        axes = figure.axes[row * columns : (row + 1) * columns]
+        night = "night" if record.night else "day"
+        assert axes[0].get_title() == f"{CLASSES[record.label]}, {night}"
+        assert axes[0].images[0].get_array().shape[:2] == (HEIGHT, WIDTH)
+        crops = box_crops[row * b : (row + 1) * b] + control_crops[row * a : (row + 1) * a]
+        for n, (ax, crop) in enumerate(zip(axes[1:], crops, strict=True)):
+            assert crop is not None
+            _, _, h, w = crop
+            assert ax.images[0].get_array().shape[:2] == (h, w)
+            title = ax.get_title()
+            assert title.startswith("arm B, fill " if n < b else "arm A, ")
+    out = capsys.readouterr().out
+    total = b * len(picked)
+    assert (
+        f"arm B: {total} crops of {len(picked)} photos, {total} with a whole box at a fill" in out
+    )
+    suptitle = figure.get_suptitle()
+    assert "Beery et al. 2018" in suptitle and "CDLA-Permissive 1.0" in suptitle
+    texts = [suptitle, out, *(ax.get_title() for ax in figure.axes)]
+    assert not [text for text in texts if "syn-img-" in text or "syn-seq-" in text]
+    plt.close(figure)

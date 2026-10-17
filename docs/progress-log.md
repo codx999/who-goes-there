@@ -3494,3 +3494,136 @@ command exits 0; `check.sh` green.
 
 Review: tier 0 (docs only), nothing to run. Spec changed: plan.md section 9 only (in 79c1a10),
 cited by no invariant row.
+
+## 2026-10-17: session 8, item 8.08, the evaluation notebook and the arm B crop check (Opus 5.5)
+
+The user approved item 8.08 on 2026-10-17 through the coordinator, and it was added to
+`docs/progress.json` (session 8, owner claude, due 10-18) with the description and steps given.
+Main was at b64c486 (item 7.03, the 7 ledger rows), so that is the notebook's default `COMMIT`. It
+needs no code from this branch: the notebook calls only entry points that are already on main.
+
+**Done.**
+
+- `notebooks/kaggle_evaluate.ipynb`, committed with its outputs cleared: 8 sections and 22 cells.
+  - Parameters, one cell: `COMMIT`, `CACHE_ARCHIVE` (the training notebook's default),
+    `CHECKPOINTS_ROOT` (`/kaggle/input/datasets/codx888/trailcam-checkpoints`), and
+    `ASSETS_OVERLAY_RUN` (default `None`). The derived paths sit in the same cell. The clone goes to
+    `/tmp/who-goes-there`, not to the version's output.
+  - Sections 1 to 3 are the training notebook's patterns: the parameter check and the GPU pin, the
+    clone at `COMMIT`, the pip install that keeps Kaggle's torch, the import-once guard, the
+    byte-for-byte module check, and `check_gpu` with the workers warning. The clone cell also
+    refuses a `COMMIT` that lacks `unpack_cache`, any of the three entry points, or the demo's
+    `PHOTO_SUFFIXES`.
+  - Section 4 runs before anything is unpacked. It checks the ledger, finds the `.pt` files at any
+    depth under `CHECKPOINTS_ROOT`, and matches them to the ledger rows by SHA-256. It refuses
+    unknown files (counted only), rows with no file (named by run id), and two rows with one hash.
+    If the folder holds no `.pt` file, it lists the folders under `/kaggle/input` that do, with
+    counts. A file attached twice counts as one checkpoint.
+  - Section 5 is the archive unpack and the cache completeness check, as in training.
+  - Section 6 calls `evaluate.main` and `attention.main` for each row, in ledger order. Section 7
+    calls `slices.main` once per run seed, with arm A and then arm B. Section 8 writes
+    `/kaggle/working/eval.zip` and prints the summary.
+- Decisions to review:
+  - Beyond the item's letter, section 4 checks each row's config at `COMMIT`: config hash, model,
+    arm and split seed, as `score_test`'s `_config_of` does. Section 5 checks that the cache's split
+    hash equals the rows' (R14). Without these checks, a changed `config.yaml` or another cache
+    would evaluate on a different val with no error.
+  - The entry points are called in-process (`evaluate.main(argv)` and so on), as the training
+    notebook calls `train.main`. Each call is inside `try`/`except SystemExit`, and a non-zero exit
+    fails the cell.
+  - A non-empty `EVAL_DIR` is refused, so the outputs of two runs in one session never mix.
+  - Overlays are made only for the run `ASSETS_OVERLAY_RUN` names, and only if `assets/` holds
+    photos at `COMMIT`. Each photo is checked with `assets_image` in section 4. The printed command
+    line counts the photos and does not name them (a name may be an image id, R03). The overlays
+    take no `=<class>`: no machine-readable class list for the 8.05 photos exists, so their titles
+    show the prediction and its confidence.
+  - The summary puts each run's val and trans_val accuracy and macro-F1 beside the ledger's. A
+    difference above 0.01 prints a CHECK line to stderr, and the cell does not fail. Training scored
+    in mixed precision and this notebook scores in float32, so small differences are expected. I
+    have not verified that Kaggle keeps a failed version's output, so the notebook warns after the
+    zip rather than raising. The SHA-256 pins each checkpoint; the score comparison catches a
+    changed pipeline.
+  - The small CNN never reaches slices. No `keep_features=False` is needed: the slices command line
+    has no such switch, and it keeps the 512 ResNet-18 features the feature maps need.
+  - How to run, step 9, is the copy list for `docs/figures/`: seed 0's arm A and arm B and the small
+    CNN (val confusion matrix, per-class plot, attention histogram), seed 0's two feature maps, four
+    overlays, and seed 0's `slices.md` as `slices_val_seed0.md`. That is 15 PNGs. With the five 8.07
+    charts that makes 20 of the guard's 40 files, which leaves 20 for 9.02.
+- `notebooks/kaggle_look_at_data.ipynb`, new section 4, an eye check of arm B crops. It shows one
+  boxed train photo per class, day and night by turns, with every box outlined. Beside each photo
+  are 3 crops from `TrainTransform("B").sampler.box_crop` (the box path; in training only half the
+  boxed images take it) and 2 from `.control` (arm A's sampler), each titled with its fill. A line
+  prints how many arm B crops hold a whole box at 20% to 100% fill. The intro and the markdown note
+  say the outputs are for the user's eyes, cleared before any commit and never put into
+  `docs/figures/` (R03, R04). `ARM_B_CROPS` (3) and `ARM_A_CROPS` (2) are in the parameter cell. No
+  training code changed. On the synthetic fixture (scratchpad only), all 36 arm B crops held their
+  box whole, at fills of 22% to 100%. It has not been run on real photos: that is the user's look
+  on Kaggle.
+- Tests:
+  - `tests/test_evaluate_notebook.py` (47 tests, about 30 s). The notebook's shape: outputs
+    cleared; both notebooks pass the guard; no code cell names a test split or `score_test`; every
+    `--split` is val or trans_val; the parameter cell is the only one that binds its names; the
+    default `COMMIT` holds the 7 rows and the needed code; the one pip install; the GPU pin; the
+    order checkpoints, then unpack, then cache, then any evaluation.
+  - Same file: the checkpoint cell run as written on made-up files, covering every refusal. The
+    evaluation cells run with recorders, each argv parsed by its own module's parser, for empty and
+    present `assets/` with and without `ASSETS_OVERLAY_RUN`.
+  - Same file: every cell from section 4 to the summary, run as written on a cache-shaped fixture
+    with five random-weight checkpoints and the real entry points. The tests check the outputs, the
+    zip, R03 on everything printed, the split-hash refusal, and the summary's tolerance.
+  - `tests/test_datavis.py` (3 new tests). The crop cell uses the real sampler (static check). It
+    is run on the fixture with the samplers spied on, not replaced, and every panel is the crop
+    they returned. The markdown note is checked too.
+- `docs/review/invariants.md`. R03's rule text now lists the crop check as a second exception
+  beside 8.07's photo grid, same terms: train photos, Kaggle only, no file name, outputs never
+  committed. This rule-map change was approved by the user, via the coordinator, 2026-10-17. The
+  test cells of R03, R04, R06, R07, R14, R17, R24, R38 and R41 now name the new tests. Items or
+  paths were added to the where columns of R04, R14, R17, R24, R38 and R41.
+- `docs/learning-journal.md`, topic 10: one entry for 8.08.
+
+Steps: `uv run pytest tests/test_evaluate_notebook.py` 47 passed. `uv run pytest tests/test_datavis.py
+-k "look or crop"` 7 passed. Ruff check and format are clean on both notebooks. Mutation checks:
+22 faults planted in the two notebooks, each restored by copying from a backup, never with
+`git checkout`, and each makes a test fail. The faults:
+
+- the evaluation notebook: cis_test in the split list; an unknown file, or a missing one,
+  accepted; overlays on every run, or without photos; the small CNN paired for slices, or its file
+  passed to slices; photo names printed; the CHECK, split-hash, config, `EVAL_DIR`, unpaired-seed,
+  overlay-run, `assets_image` or attention-exit check removed; the zip of one folder only;
+- the look notebook: a hand-made arm B crop; arm A from a new sampler; no day/night alternation;
+  val photos.
+
+One small-CNN fault first survived because I had written it as an equivalent change; rewritten,
+it fails. `check.sh` green (943 passed).
+
+**For 8.06: its steps can now be run** with this notebook (How to run, steps 1 to 9, the
+`trailcam-checkpoints` dataset first). 8.05's photos are optional for the run: without them the
+notebook makes no overlays and says so.
+
+Notes, not fixed:
+
+- The time of a full Kaggle run is not measured. Each step prints its seconds.
+- Not verified on Kaggle: the mount path of the new dataset (the search covers any depth), and
+  whether a committed version that fails keeps its output.
+- The look notebook still reads the loose 6.03 dataset (`DATA_ROOT`), as in 8.07, not the archive.
+
+**Next.** Review 8.08. Then you merge it, then 8.05 (photos) and 8.06 on Kaggle.
+
+Review: tier 2, `/review-session 8.08`
+
+Review: tier 2, ran `/review-session 8.08` (b64c486..4c4c594; code-reviewer Opus 5.5 xhigh on the
+range, risk-reviewer Fable 5.1 high on the two notebooks and two test files). Nothing found by
+either, so no fix round. Scenarios R01, R03, R04, R06, R07, R14, R16, R17, R24, R27 (not
+applicable, nothing trains), R37, R38 and R41 to R45 held. Spec changed: none; R03's rule text in
+`docs/review/invariants.md` changed, and the user approved its wording via the coordinator on
+2026-10-17. Noted by the reviewers, not fixed:
+
+- an arm B crop the sampler cannot draw would be titled "no usable box" and lower the printed
+  count (none on the fixture);
+- mypy run directly on the two test files reports 11 errors (tests are outside check.sh's mypy
+  scope);
+- Kaggle behaviour, the dataset mount path and whether GitHub's `main` holds b64c486 could not be
+  verified offline.
+
+Merged `main` at c4b1e56 (13.01) through the sync tool: one conflict, in this log; main's two
+13.01 entries kept first, then this one. `check.sh` green after the merge (943 passed).
