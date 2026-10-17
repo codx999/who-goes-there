@@ -3397,3 +3397,116 @@ a direct mypy run on `tests/test_space.py` flags `module.loaded = loaded` (tests
 check.sh's mypy scope); the Hub-side checks stay with 11.03. Merged `main` (8aa83bf, 13ecf46):
 plan.md open question 5 kept from this branch, 6 from main. Review: tier 2, ran both reviewers;
 fix round ran, clean.
+
+## 2026-10-17: session 9, item 9.03, the final scoring's notebook (Opus 5.5, xhigh)
+
+New item, approved by the user via the coordinator on 2026-10-17 and added to
+`docs/progress.json` as 9.03 (session 9, owner claude, due 2026-10-19). Main at b64c486. Built and
+tested on the synthetic fixture only: no real checkpoint was loaded and no real cis_test or
+trans_test was scored (that is 9.02, the user's single run on Kaggle).
+
+**Done.** `notebooks/kaggle_score_test.ipynb` (22 cells, outputs cleared) and
+`tests/test_score_notebook.py` (44 tests).
+
+- Parameter cell: `COMMIT` (default b64c486, main at the session start, whose ledger holds the 7
+  rows), `CACHE_ARCHIVE` (the training notebook's default), `CHECKPOINTS_ROOT = None`,
+  `APPROVED_BY = ""`, `RUN_SEEDS = (0, 1, 2)`, and the fixed paths: the clone's `config.yaml`,
+  `docs/ledger.md`, `docs/test-ledger.md` and `assets/`, and `OUT = /kaggle/working/score`.
+- Sections 1 to 3 follow the training notebook: the parameter check and `CUDA_VISIBLE_DEVICES=0`,
+  the clone at `COMMIT`, the one `pip install` keeping Kaggle's torch, the stale-import guard, the
+  installed modules compared with the clone byte for byte, `check_gpu`, `unpack_cache` (the loose
+  dataset refused in an interactive session), and the cache check with `check_images`.
+- Section 4 finds the `trailcam-checkpoints` folder under `/kaggle/input` (any depth, links
+  followed, two mounts of one folder counted once; none or several refused with the folders that
+  hold `.pt` files) and calls `score_test.py`'s own checks, the ones its `prepare` runs first:
+  `resolve_checkpoints` with `read_ledger`, `read_test_ledger` and `check_run_seeds`. So a missing
+  or changed checkpoint, an incomplete ledger or a test ledger with a row fails the rehearsal,
+  before any weights are read. Nothing is duplicated; the scoring repeats every check.
+- Section 5, the go-ahead, is the code cell right before the scoring: `check_approver(APPROVED_BY)`,
+  re-raised as "the final scoring needs the user's go-ahead ... nothing has been scored". A Run All
+  with `APPROVED_BY` empty is therefore a full rehearsal that loads nothing.
+- Section 6: one `subprocess.Popen` of `python -m trailcam.evaluate.score_test` with
+  `--approved-by=<APPROVED_BY>` (the `=` form, so a name starting with a dash parses),
+  `--run-seeds`, every checked checkpoint, `--data-root`, `--config`, `--ledger`,
+  `--test-ledger`, `--out`, `--assets` and one `--overlay` per photo directly under the clone's
+  `assets/`. Output streamed line by line (`PYTHONUNBUFFERED`, `errors="replace"`, so a decoding
+  error cannot close the pipe mid-run). Exit 0 or 3 goes on; any other exit raises, saying what
+  to do.
+- Section 7: the clone's test ledger read back with `read_test_ledger`, checked one row per
+  checkpoint by sha256, and printed under `scoring_header()` for pasting; then `OUT` zipped to
+  `/kaggle/working/score.zip`.
+- Markdown: this runs once; `APPROVED_BY` starts empty (the rehearsal); never Save & Run All with
+  it filled in until the user means it (said at the top and over the go-ahead cell); set it back
+  to `""` right after the run; if it stops before `appended ... rows`, rerun from the start with a
+  new `--out` (a new version starts with an empty `/kaggle/working`); if it stopped after, never
+  run it again. Licence and citation.
+- plan.md section 7 (Protocol): one sentence naming the notebook and the empty `APPROVED_BY`.
+  invariants.md: R06, R07, R16, R17 (and 9.03 in its items), R38, R40 and R41 test cells name
+  `tests/test_score_notebook.py`. Learning journal topic 9: five lines.
+
+Decisions to review:
+
+- The clone may differ from `COMMIT` in `docs/test-ledger.md` only (the training notebook lets
+  `docs/ledger.md` differ). A session that has scored then reaches the run-once refusal in
+  section 4, rather than being told to factory-reset into a fresh clone whose test ledger is
+  empty again.
+- Exit 3 (a leakage alarm on the test scores) does not raise, unlike the training notebook. The
+  rows are appended by then and the scoring cannot run again, and I have not verified that Kaggle
+  keeps a failed version's output. So the cell reports the alarm on stderr and again after the
+  zip, and the outputs are kept. R16's test cell says so.
+- Overlays carry no class (`--overlay <photo>` only), so their titles show the predicted class
+  without a correct or wrong verdict. `assets/` is empty until 8.05, so there are none yet. A true
+  class per photo would need another parameter; that is the user's call.
+
+Not covered here (limits):
+
+- A fresh clone at the same `COMMIT` cannot know that the scoring ran until the rows are committed
+  to `docs/test-ledger.md`. Until then only `APPROVED_BY` guards a second run, hence the "set it
+  back" step. A possible follow-up, the user's call: the notebook could also refuse when
+  `origin/main`'s `docs/test-ledger.md` holds a row.
+- Kaggle-side facts not checked: where the `trailcam-checkpoints` dataset mounts (the search
+  covers any depth), the scoring's run time on a T4, and Kaggle's handling of a failed version's
+  output.
+
+Steps:
+
+- `uv run pytest tests/test_score_notebook.py`: 44 passed, covering outputs cleared and the guard
+  (`content_problems`, `path_problems`); `APPROVED_BY` defaults to `""`, and the go-ahead cell
+  refuses `""`, blanks, `None`, `|` and line breaks, and comes right before the scoring cell;
+  exactly one code cell runs score_test (the module named once, one `Popen`, not in a loop, no
+  other process but git and pip); the exact names imported from `trailcam` (from `score_test.py`
+  no `main`, `prepare`, `load_models` or `score_checkpoint`), no dynamic code, and `trailcam.` used
+  for `__file__` only; no cell imports, names or calls evaluate, attention, slices or train, or
+  any `main`; only the parameter cell binds the parameters and paths; `RUN_SEEDS` (0 1 2, 0, 2 0)
+  reaches `--run-seeds`, as score_test's own parser reads the command; the default COMMIT's
+  ledger, test ledger and configs pass score_test's checks for 0 1 2.
+- The cells as written on the fixture of `tests/test_score_test.py` (random weights): the
+  rehearsal passes every check and stops at the go-ahead, with `torch.load`, `Image.open` and
+  `subprocess.Popen` replaced by functions that fail; a missing or changed checkpoint, a test
+  ledger with a row and a missing seed are refused in section 4; a full run through
+  `python -m trailcam.evaluate.score_test` exits 3 (random weights fire the alarm, as intended),
+  appends 3 rows in ledger order with the approver, prints them under the header, zips 34 files,
+  and a second run is refused. The clone cell, run on a local clone of this repo, lets a changed
+  test ledger through and refuses a changed ledger.
+- Mutation checks, each restored by copying the notebook back, each failing a test: 23 of 23
+  killed. The refusal paths: `APPROVED_BY` defaulted to a name; the check removed; the check
+  bypassed (`APPROVED_BY or "nobody"`); the refusal printed instead of raised; the go-ahead cell
+  moved after the scoring; deleted. A second scoring: the scoring cell duplicated; `main(argv)`
+  imported from score_test; `subprocess.run(command)`; the `Popen` in a loop;
+  `trailcam.evaluate.score_test.main` by attribute. An evaluate call: `-m trailcam.evaluate.evaluate`;
+  `predict` imported from evaluate; `attention_pass` through score_test; `train.main`. Others: the
+  seeds hard-coded; the approver hard-coded; `RUN_SEEDS` rebound in the scoring cell; the clone
+  check excluding `docs/ledger.md`; a failed exit not raised; the pre-check given no test ledger;
+  an output left in a cell. One survived at first (the scoring cell falling back to a stale
+  `approver` when `APPROVED_BY` is empty); a new test now checks that the command carries
+  `APPROVED_BY` itself, which score_test refuses.
+- `uvx --from nbconvert jupyter nbconvert --clear-output --inplace notebooks/kaggle_score_test.ipynb`
+  leaves it unchanged (`cmp`); `uv run python scripts/guard_data.py --all` passes; ruff lints and
+  formats the notebook cleanly.
+
+`check.sh` green (937 passed).
+
+**Next.** Review, tier 3 (the final scoring): `/review-session b64c486..HEAD 9.03`. Its tier rule
+names 9.01 and `score_test.py` but not this notebook, so it reports tier 2 by itself; the
+tier-3 option, `/code-review ultra`, is the user's. Then 9.02, the user's single run with this
+notebook.

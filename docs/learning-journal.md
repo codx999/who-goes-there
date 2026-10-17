@@ -396,6 +396,12 @@ would already be a look. Rows go to [test-ledger.md](test-ledger.md); look at
 uv run pytest -q tests/test_score_test.py -k "approver or scored_again or run_seeds"
 ```
 
+**Added by 9.03, the scoring notebook.** The scoring runs from its own Kaggle notebook,
+[kaggle_score_test.ipynb](../notebooks/kaggle_score_test.ipynb), so no slip in the training or
+evaluation notebooks can reach a test split. `APPROVED_BY` starts empty since a fresh clone cannot
+know the scoring ran: empty, Run All checks everything and stops before anything is loaded. A run
+that stops part way has appended nothing: rerun from the start with a new `--out` (same scores).
+
 ## 10. Evaluation pieces built so far
 
 **What we did.** By 2026-10-15 these are built and tested (none run on real checkpoints yet):

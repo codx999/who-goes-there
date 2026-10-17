@@ -301,7 +301,10 @@ methods. Mixed outcomes are reported as mixed. A negative result is a result.
   once: a test ledger that already holds a row is refused, so no run added after test scores
   were seen can be scored. Each checkpoint's row is printed as soon as it is scored, and the rows
   are appended together after every output is written, so a run that stops part way appends
-  nothing and is run again from the start (user's decisions, review 9.01 and its fix round).
+  nothing and is run again from the start (user's decisions, review 9.01 and its fix round). On
+  Kaggle it runs from `notebooks/kaggle_score_test.ipynb` (item 9.03), a notebook of its own, so
+  the test sets can never be touched by accident from the training or evaluation notebooks. Its
+  `APPROVED_BY` starts empty, and the notebook refuses the scoring until the user fills it in.
 
 ## 8. Demo and deployment
 
