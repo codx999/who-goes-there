@@ -3452,3 +3452,45 @@ the user's.
 
 Review: tier 0 (docs only), nothing to run. Spec changed: plan.md section 9 only, cited by no
 invariant row.
+
+## 2026-10-17: item 13.01 revised: the ladder from the literature review (Opus 5.5)
+
+The user's "go" through the coordinator, on top of 79c1a10 and before the review: the ladder in
+`docs/phase2-plan.md` is rebuilt from an external literature review (three AI research tools run
+by the user), replacing the provisional one. Only the facts the coordinator checked against the
+original pages are marked verified (the WILDS leaderboard, Gao et al. 2023, Mesnage et al. 2025,
+Connect Later); everything else is marked "to verify in 13.03". Item 13.03 (owner claude, due
+2026-10-24, the user's OK) added: Part 7 of `docs/research-report.md` from that review, each
+citation verified, then the ladder re-checked. No research done here.
+
+The ladder now: 0 a soup and an ensemble of arm A's three seeds (evaluation only); 1 copy-paste,
+arm C; 2 SWA; 3 a longer head-only phase; 4 resolution 320; 5 ResNet-50; 6 infrared-aware
+augmentation; a "Dropped, with reasons" list (reweighting losses, MixUp, IRM and Group DRO,
+wildlife-pretrained backbones, test-time augmentation and ensembles for the demo). Section 3 adds
+resolvability: gains under about 4 points cannot be confirmed with three seeds, so steps 2 to 6
+confirm on five. Journal topic 15 rewritten to match.
+
+Checked against the repo, and corrected or flagged in the plan:
+
+- trans_val is 1,603 kept images (1,725 released; the data card's filter table). Plan.md section 3
+  quotes the released 1,725; not changed here (a phase-1 spec section).
+- The cache and the sidecar hold every annotated image, empties included, so arm C needs no cache
+  rebuild. But "empties from training-camera locations" would admit cis_test's 1,180, which are
+  test images: the pool is the 995 empties of the official cis_val file only, minus any whose
+  sequence has a frame in val, with tests. Arm C's tier: 2 at xhigh, tier 3 recommended.
+- Resolution (step 4) and the infrared-aware augmentation (step 6) need code, not config: the
+  input size and the augmentation strengths are constants in `trailcam/data/dataset.py`.
+- Step 3: head-only epochs count inside `max_epochs`, so `max_epochs` rises with them to keep the
+  body's 9 epochs (one change, the head-only phase).
+- A per-camera breakdown cannot stand in for extra seeds: trans_val is one camera.
+- The "tens of milliseconds" on the CPU is not measured in this repo; it is marked expected, to be
+  measured at 11.03.
+- Arm B on the final recipe (first draft's step 8) is not in the revised ladder: open question 4.
+  ABSGD scores 33.0 on the leaderboard, 2.2 above ERM; whether it is a reweighting method is left
+  to 13.03, since it bears on dropping the reweighting losses.
+
+Checks: every path and relative link in the plan and in journal topic 15 resolves; the journal's
+command exits 0; `check.sh` green.
+
+Review: tier 0 (docs only), nothing to run. Spec changed: plan.md section 9 only (in 79c1a10),
+cited by no invariant row.

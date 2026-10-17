@@ -716,11 +716,13 @@ uv run python scripts/deploy_space.py --dry-run --weights models/<run>.pt
 ## 15. What we'd improve next, and how
 
 **What we did.** Planned phase 2 (item 13.01), which starts after the presentation: a ladder of
-small changes meant to raise the scores on unseen cameras (higher resolution, regularisation,
-stronger augmentation, a class-balanced loss, longer training, a bigger backbone, an ensemble,
-then arm B again). The ladder is provisional: a separate literature review will re-rank it from
-the evidence. Each change is tried alone, screened on one seed, confirmed on three, and kept only
-if it beats the run-to-run noise without costing more than about 1 point on val.
+small changes meant to raise the scores on unseen cameras. A literature review re-ranked it the
+same day: first average the three seeds' weights or predictions (no training), then paste
+training animals onto empty frames from training cameras ("copy-paste", the strongest evidence),
+then weight averaging during training, a longer head-only phase, higher resolution, ResNet-50 and
+infrared-aware augmentation. Each change is tried alone, screened on one seed, confirmed on three
+or five, and kept only if it beats the run-to-run noise without costing more than about 1 point on
+val.
 
 **Why it mattered here.**
 
@@ -728,23 +730,29 @@ if it beats the run-to-run noise without costing more than about 1 point on val.
   say which one did it, or whether one helped while the other hurt. One change per step costs more
   runs and buys an answer you can explain on a slide.
 - **Know the noise first.** Arm A's three runs differ only in the random seed, yet trans_val
-  accuracy ranged from 0.35 to 0.41. Any change smaller than that is invisible in a single run.
-  Val is about ten times steadier (macro-F1 within 0.003): it has 2,394 images from ten cameras,
-  while trans_val is one camera.
+  accuracy ranged from 0.35 to 0.41. With three seeds, a gain under about 4 points cannot be told
+  apart from that, so the steps that expect small gains get five seeds. Val is about ten times
+  steadier (macro-F1 within 0.003): it has 2,394 images from ten cameras; trans_val is one camera.
+- **Read the evidence before spending GPU.** On the WILDS leaderboard for unseen cameras, MixUp
+  scores 13.8 macro-F1 against plain training's 30.8, so it was dropped without a run, while
+  copy-paste scores 36.5 and moved to the top of the ladder.
 - **Screen, then confirm.** A one-seed screen is cheap and stops the obvious failures; the
-  three-seed confirm, compared seed by seed, stops a lucky seed from passing a change that does
+  multi-seed confirm, compared seed by seed, stops a lucky seed from passing a change that does
   nothing. Even so, choosing on trans_val makes its numbers a little optimistic, for the same
   reason the test set is scored only once.
-- **Write the hypothesis first.** Before each run, write down which way the score should move and
-  by about how much. Then each run tests your understanding as well as the model. Raising weight
-  decay to 5e-2, for example, works out on paper to about 1% of weight shrinkage over a whole run,
-  so the prediction is "no change": a big move would mean something else is going on. A wrong
-  guess is where the lesson is.
+- **Write the hypothesis first**, which way the score should move and by about how much, so each
+  run tests your understanding as well as the model. Copy-paste helped in a published study that
+  pasted animals onto the test cameras' own backgrounds; our rules allow training cameras only, so
+  the prediction is a smaller gain than theirs. A wrong guess is where the lesson is.
+- **Leakage hides in augmentation too.** An empty frame from a test split, or from the same burst
+  as a val photo, would smuggle that scene into training; so the background pool gets its own
+  rules and tests, like the split.
 
 **Where to look.** [phase2-plan.md](phase2-plan.md) (sections 2, 3 and 5 for the noise, the rule
-and the hypothesis line); [ledger.md](ledger.md) for the seed rows; [plan.md](plan.md) section 3
-(trans_val's role) and section 9 (the pointer); [research-report.md](research-report.md) part 2
-(why resolution comes first) and the WILDS entry (tuning on the unseen-camera split).
+and the hypothesis line; section 6 for the evidence and the ladder); [ledger.md](ledger.md) for
+the seed rows; [plan.md](plan.md) section 3 (trans_val's role) and section 9 (the pointer);
+[data-card.md](data-card.md) for the empty frames per split;
+[research-report.md](research-report.md) Part 3's WILDS entry (tuning on the unseen-camera split).
 
 **Try it yourself.** Print the phase-1 scores per seed and their means, and compare the three
 arm A rows: that spread is the noise every phase-2 change has to beat.
