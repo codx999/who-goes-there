@@ -397,6 +397,12 @@ score well on accuracy. The result that matters is the cis vs trans gap on both.
 unseen cameras and with a quantified attention score plus a behavioural check. Not a new method:
 a controlled measurement the dataset paper did not run.
 
+**Phase 2, after the presentation** (agreed with the user 2026-10-17, item 13.01). Improving the
+scores on new cameras waits until phase 1 is scored and presented, so nothing changes the reported
+runs. `docs/phase2-plan.md` holds its goal, its rules (one change per step, screened on one seed,
+confirmed on three, its own ledger `docs/ledger-phase2.md`), the ladder of changes and the budget.
+This document stays the source of truth for phase 1; section 1's scope limits hold for phase 1.
+
 ## 10. Schedule
 
 The presentation is Monday 2026-10-26. One session per item group; items live in
