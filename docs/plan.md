@@ -316,19 +316,53 @@ visible timer and per-class counts for the live part of the presentation, with a
 video. Optional for the talk: a human baseline, the room votes on 20 unseen-camera photos before
 the model answers.
 
-**Hugging Face Space** (`space/`): `app.py` (imports the same predict function), `requirements.txt`
-exported from uv (`uv export --no-dev --no-hashes`, trimmed to what the app imports) and
-`README.md` with the Space header. The weights are **not** in this repo (the guard blocks `.pt`):
-`scripts/deploy_space.py` uploads `app.py`, the requirements, the examples and the weights with
-`huggingface_hub`, reading the token from the environment. Since mid-2026 a free account cannot
-host a Gradio Space on CPU Basic (decided 2026-10-16): the Space runs on CPU Basic under PRO ($9 a
-month) for one month from about 2026-10-20, then moves to free ZeroGPU, open to accounts older
-than 30 days, around 2026-11-15; `space/app.py` is made ZeroGPU-ready in item 11.01. The CPU Basic phase uses the lock's CPU
-torch; the ZeroGPU phase needs a CUDA torch and the `spaces` package, and 11.01 settles how its
-requirements file differs. Item 11.02's
-text ("the free CPU tier") predates this; this section wins. The local app's `--share` link is
-the free, temporary backup.
-Account and Space creation are the user's steps. The Space serves arm B if it wins, else arm A.
+**Hugging Face Space** (`space/`, item 11.01): `app.py` holds no prediction code of its own: it
+builds the local app's interface (`build_app`) and its button runs the same `classify`, which
+calls `predict`. `requirements.txt` is exported from uv (`uv export --no-dev --no-hashes --group
+demo`, the group carrying gradio) and trimmed to what the app imports at startup: torch,
+torchvision, gradio, Pillow, NumPy, matplotlib (Grad-CAM) and PyYAML (the config), pinned to the
+lock. `README.md` carries the Space header (`sdk: gradio`, `sdk_version` and `python_version`
+from the lock, `suggested_hardware: cpu-basic`) and the data citation. The `trailcam` package is
+uploaded beside `app.py` (its tracked modules, at the same paths), not installed from GitHub:
+the Space then always runs the code of the commit it was deployed from, the requirements file is
+the whole environment, and the package finds `config.yaml` and `assets/` at the Space's root as it
+finds them at the repo's. The weights are **not** in this repo (the guard blocks `.pt`, and
+`space/model.pt`, the local copy `app.py` loads, is ignored): `scripts/deploy_space.py --weights
+<path>` uploads `app.py`, the requirements, the README, `config.yaml`, the `assets/` examples, the
+package and the weights (as `model.pt`) in one commit with `huggingface_hub`, the token from
+`HF_TOKEN` only; the same commit deletes the Space's files under `assets/` and `trailcam/` that
+it no longer lists, so a photo taken out of `assets/` stops being shown. It refuses anything under `data/`, anything off its allowed list, weights that are
+not a checkpoint of the config's model, and uncommitted changes to the Space's sources;
+`--dry-run` lists the files with no token and no network call. No arm is hard-coded: the
+weights are the run open question 7 picks.
+
+**Hosting** (decided 2026-10-16, the user's decision). Hugging Face's rules changed in mid-2026:
+a free account can no longer host a Gradio Space on CPU Basic; that needs PRO ($9 a month). Free
+accounts in good standing and older than 30 days can host up to 2 ZeroGPU Spaces. The user's
+account was created on 2026-10-16, so: PRO for one month from about 2026-10-20, the Space on CPU
+Basic, then free ZeroGPU from about 2026-11-15. Item 11.02's text ("the free CPU tier")
+predates this; this section wins.
+
+**ZeroGPU-ready** (item 11.01). The same `app.py` runs on both hardware settings: `spaces` is
+imported first, before torch, if present, else the handler is left as it is (locally); the model
+is placed on `cuda` at module level when CUDA is available, else on the CPU (ZeroGPU emulates CUDA
+outside GPU calls and wants models placed at startup); and the one GPU-dependent function, the button's handler
+(prediction and Grad-CAM, which needs autograd), is wrapped in `spaces.GPU`, which has no effect
+off ZeroGPU. The torch wheel is the trade-off. CPU Basic runs the lock's CPU-only wheels
+(`+cpu`, from the PyTorch CPU index): a much smaller download and build, the wheels CI tests.
+ZeroGPU needs a CUDA torch. At the switch: (1) in `space/requirements.txt`, drop the index line
+and the two `+cpu` suffixes (PyPI's Linux wheels are the CUDA builds), with torch at a version
+ZeroGPU lists (its docs listed 2.8.0 to 2.13.0 on 2026-10-16; the lock has 2.14.1, so torch 2.13.0
+and torchvision 0.28.0 unless 2.14 is listed by then); (2) set the Space's hardware to ZeroGPU;
+(3) redeploy. `spaces` is provided by Hugging Face; check it imports there, and that a Grad-CAM
+warning (`gr.Warning`) still shows from inside a GPU call. ZeroGPU lists Python 3.12.12, which
+the header's "3.12" covers.
+
+**Grad-CAM in the Space** (open question 5, closed 2026-10-16, the user's decision): included,
+off by default (a checkbox), so the default request is the prediction alone.
+
+The local app's `--share` link is the free, temporary backup. Account and Space creation are the
+user's steps. The Space serves arm B if it wins, else arm A.
 
 ## 9. Decisions and why (quotable)
 
@@ -411,7 +445,9 @@ session below also updates the setup it touches, in the same commit as the code:
   override stay in 5.01.
 - **Sessions 6 and 11** (new scripts): `scripts/check.sh` runs mypy on `trailcam/` and
   `scripts/guard_data.py` by explicit path; `kaggle_prepare_cct20.py` and `deploy_space.py` are
-  added there (and to the mypy `files` list) when written.
+  added there (and to the mypy `files` list) when written. Item 11.01 adds `space/app.py` too,
+  and `huggingface_hub` in its own `deploy` dependency group (not the runtime dependencies pip
+  installs on Kaggle, not the `demo` group the Space's requirements are exported from).
 - **Sessions 10 and 11** (demo and Space): decided 2026-10-16, the user's decision (review
   10.01): `trailcam/demo/**` and `space/**` join the paths of `.claude/rules/data.md`, beside
   `trailcam/data/**` and `trailcam/evaluate/**`, so the "assets only, never `data/`" rules apply
@@ -433,13 +469,14 @@ session below also updates the setup it touches, in the same commit as the code:
    (one top-level folder, the only folder holding `.jpg` files).
 4. **`car` as a class.** Kept because it has 668 training and 1,113 trans-test images; drop to 11
    classes if the audience finds a non-animal class confusing.
-5. **Grad-CAM in the Space.** It doubles the CPU work per prediction; it may stay local-only, with
-   static heatmaps in the slides.
+5. **Grad-CAM in the Space.** Closed 2026-10-16, the user's decision: included, off by default
+   (it doubles the CPU work of a request only when ticked); section 8.
 6. **Seeds.** Decided on 2026-10-16 (the user's decision, once arm B seed 0 had finished that day,
    meeting item 7.02's gate): seeds 1 and 2 run for both arms (item 7.03), on the same pinned
    commit. One run per arm cannot tell an arm difference from run-to-run noise. The four runs cost
    about 35 GPU minutes.
-7. **Which arm the Space serves.** Decided after the final scoring (session 9).
+7. **Which arm the Space serves.** Decided after the final scoring (session 9). The deploy
+   script takes the chosen run's checkpoint as `--weights` and names no arm (item 11.01).
 
 ## 12. Sources
 

@@ -700,6 +700,18 @@ in 11.01. The `--share` link of 10.01 is the free, temporary backup.
 uv export --no-dev --no-hashes
 ```
 
+**Added by 11.01.** A Space needs the app (`app.py`), the packages (`requirements.txt`) and the
+weights; ours also gets `config.yaml`, the examples and the `trailcam` code, so it runs the
+committed code exactly. The token lives only in `HF_TOKEN`: a file can end up in git, a `--token`
+stays in the shell history. ZeroGPU-ready: one `app.py` for a CPU now and a shared GPU later, the
+model on `cuda` at startup when there is one and the GPU work wrapped in `spaces.GPU`, which
+borrows a GPU per call. Look at [space/app.py](../space/app.py),
+[deploy_space.py](../scripts/deploy_space.py). Try (lists the files; no token, no network):
+
+```bash
+uv run python scripts/deploy_space.py --dry-run --weights models/<run>.pt
+```
+
 ---
 
 ## Surprises and lessons

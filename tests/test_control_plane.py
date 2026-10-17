@@ -47,7 +47,7 @@ def test_check_sh_runs_every_check() -> None:
         "uv sync --locked --quiet",
         "uv run pytest --tb=short -q",
         "uv run mypy trailcam/ scripts/guard_data.py scripts/kaggle_prepare_cct20.py "
-        "scripts/kaggle_pack_cache.py",
+        "scripts/kaggle_pack_cache.py scripts/deploy_space.py space/app.py",
         "uv run ruff check .",
         "uv run ruff format --check .",
         "uv run python scripts/guard_data.py --all",
@@ -65,6 +65,7 @@ def test_check_sh_type_checks_the_mypy_files_list() -> None:
     assert {p.rstrip("/") for p in mypy.split()[3:]} == set(files)
     assert "scripts/kaggle_prepare_cct20.py" in files
     assert "scripts/kaggle_pack_cache.py" in files  # item 6.08
+    assert {"scripts/deploy_space.py", "space/app.py"} <= set(files)  # item 11.01
 
 
 def test_check_sh_fails_when_hooks_folder_is_missing(tmp_path: Path) -> None:
