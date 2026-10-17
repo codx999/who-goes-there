@@ -476,6 +476,18 @@ work). Look at [figures.py](../trailcam/evaluate/figures.py),
 uv run pytest -q tests/test_figures.py -k assets
 ```
 
+**Added by 8.08, the evaluation notebook.** Val is evaluated as often as needed, the test splits
+once, so they get separate notebooks: a Run All of
+[kaggle_evaluate.ipynb](../notebooks/kaggle_evaluate.ipynb) can never reach a test score. Each `.pt`
+is matched to its ledger row by SHA-256 first: a file name can lie, a hash cannot, so a swapped
+checkpoint is refused in seconds, not after an hour of wrong figures. The new arm B crop check held
+every box whole at 22% to 100% fill on the fixture; on Kaggle it will show whether real animals
+stay whole and readable, night frames included. Try:
+
+```bash
+uv run pytest -q tests/test_evaluate_notebook.py -k "unknown or missing or attached_twice"
+```
+
 ## 11. Running on Kaggle
 
 **What we did.** The Mac writes code and runs tests; Kaggle's free GPU trains. Getting there took
