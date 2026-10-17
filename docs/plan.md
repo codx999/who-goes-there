@@ -471,7 +471,10 @@ session below also updates the setup it touches, in the same commit as the code:
    classes if the audience finds a non-animal class confusing.
 5. **Grad-CAM in the Space.** Closed 2026-10-16, the user's decision: included, off by default
    (it doubles the CPU work of a request only when ticked); section 8.
-6. **Seeds.** Whether seeds 1 and 2 ran, decided on 2026-10-16 and recorded here.
+6. **Seeds.** Decided on 2026-10-16 (the user's decision, once arm B seed 0 had finished that day,
+   meeting item 7.02's gate): seeds 1 and 2 run for both arms (item 7.03), on the same pinned
+   commit. One run per arm cannot tell an arm difference from run-to-run noise. The four runs cost
+   about 35 GPU minutes.
 7. **Which arm the Space serves.** Decided after the final scoring (session 9). The deploy
    script takes the chosen run's checkpoint as `--weights` and names no arm (item 11.01).
 
