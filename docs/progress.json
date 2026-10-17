@@ -118,7 +118,7 @@
     {"id": "7.02", "session": 7, "owner": "user", "due": "2026-10-16",
      "description": "Run resnet18 arm B (box-guided) seed 0 on Kaggle; then decide open question 6: seeds 1 and 2 run only if this item is done by 2026-10-16",
      "steps": "manual: ledger row pasted into docs/ledger.md; `uv run python -m trailcam.train.ledger --check docs/ledger.md` exits 0; docs/plan.md open question 6 records the seeds decision and the date",
-     "passes": false},
+     "passes": true},
     {"id": "7.03", "session": 7, "owner": "user", "due": "2026-10-17",
      "description": "If open question 6 says yes: run seeds 1 and 2 of arm A and arm B on Kaggle (four runs, about 4 GPU hours). If no: record 'one seed per arm' in plan.md section 6 and skip",
      "steps": "manual: either four ledger rows pasted and the ledger check exits 0, or plan.md section 6 states that one seed per arm is reported and why",
