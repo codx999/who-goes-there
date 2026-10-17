@@ -10,7 +10,7 @@ app_file: app.py
 suggested_hardware: cpu-basic
 license: mit
 pinned: false
-short_description: Camera-trap species classifier (ResNet-18, Caltech Camera Traps)
+short_description: Camera-trap species classifier on Caltech Camera Traps
 ---
 
 # Who Goes There

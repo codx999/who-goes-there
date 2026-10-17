@@ -3352,3 +3352,35 @@ yet (the user picks them, item 8.05).
 `check.sh` green (889 passed).
 
 Next: review (tier 2), then 11.02 and 11.03 (the user).
+
+## 2026-10-16: review 11.01: four lows fixed, plus `spaces` first (Opus 5.5)
+
+Review (`/review-session eceba54..HEAD 11.01`, the user's start), tier 2: code-reviewer (Opus 5.5
+xhigh) on the range, risk-reviewer (Fable 5.1 high) on the 11 high-stakes files. Scenarios R01 to
+R07, R20, R21, R23, R33 to R36, R38, R42 to R45 hold in both reports; R36's "deployed before the
+scoring" holds by process only (your step, not checked by code). Spec changed: plan.md sections 8,
+10 and 11 (rows R02, R04, R07, R33 to R36); both reviewers traced them, no conflict. No finding
+above low; all fixed at the user's go:
+
+- Code-reviewer: the card's `short_description` was 64 characters; the reviewer recalls a Hub limit
+  of 60 (not verified), which would fail the first deploy's commit. Now 54, with a length test.
+- Code-reviewer: `HF_HUB_DISABLE_TELEMETRY` was set after gradio had already imported
+  `huggingface_hub`, which reads it once at import, so the upload's user agent still carried the
+  torch version; and the docstrings said a dry run never loads `huggingface_hub`, which gradio does.
+  The upload now sets `huggingface_hub.constants.HF_HUB_DISABLE_TELEMETRY`, which the library reads
+  at each request (`utils/_headers.py`); the test checks that constant; the docstrings now say the
+  library is loaded but a dry run builds no client, reads no token and makes no network call.
+- Code-reviewer (R35): the deploy only added files, so a photo taken out of `assets/` stayed public
+  as an example. The upload now lists the Space's files and the same commit deletes those under
+  `assets/` and `trailcam/` that the plan no longer holds; nothing else in the Space is touched.
+  The dry run says so (it cannot look without the network). Two new tests.
+- Code-reviewer: `ALLOWED` matched photo suffixes case-sensitively while `example_photos` and the
+  guard do not, so `assets/X.JPG` blocked the deploy. Now case-insensitive, with a test.
+- Risk-reviewer (could not verify, low at most): `import spaces` came after torch, while Hugging Face
+  asks for it first. Moved before torch, with a test of the order.
+
+Each fix was checked by planting its fault back: all six fail a test. Not fixed, noted: whether
+gradio's import makes a network call in a dry run (sockets are blocked only after import in the
+test); Hugging Face's side (the 60-character limit, pip honouring `--extra-index-url`, `spaces`
+provided on the Space) is checked at 11.03 and the switch. The fix touches `scripts/deploy_space.py`,
+`space/` and modifies test lines, so one fix round runs on the fix range. `check.sh` green.

@@ -8,7 +8,6 @@ network, and no real token is used.
 """
 
 import importlib.util
-import os
 import shutil
 import socket
 import subprocess
@@ -19,6 +18,7 @@ from typing import Any
 import huggingface_hub
 import pytest
 import torch
+from huggingface_hub import CommitOperationAdd, CommitOperationDelete
 from PIL import Image
 
 from trailcam.data.classes import CLASSES
@@ -96,14 +96,21 @@ def repo(tmp_path: Path) -> Path:
 
 
 class FakeApi:
-    """Stands in for `huggingface_hub.HfApi`: records the token and the commit."""
+    """Stands in for `huggingface_hub.HfApi`: records the token and the commit, and lists
+    `space_files` as the Space's files."""
 
     instances: list["FakeApi"] = []
+    space_files: list[str] = []
 
     def __init__(self, token: str | None = None) -> None:
         self.token = token
         self.commits: list[dict[str, Any]] = []
+        self.listed: list[tuple[str, str | None]] = []
         FakeApi.instances.append(self)
+
+    def list_repo_files(self, repo_id: str, *, repo_type: str | None = None) -> list[str]:
+        self.listed.append((repo_id, repo_type))
+        return list(FakeApi.space_files)
 
     def create_commit(self, **kwargs: Any) -> Any:
         self.commits.append(kwargs)
@@ -113,8 +120,10 @@ class FakeApi:
 @pytest.fixture
 def fake_api(monkeypatch: pytest.MonkeyPatch) -> type[FakeApi]:
     FakeApi.instances = []
+    FakeApi.space_files = []
     monkeypatch.setattr(huggingface_hub, "HfApi", FakeApi)
-    monkeypatch.delenv("HF_HUB_DISABLE_TELEMETRY", raising=False)  # restored after the test
+    # The library's switch, read at each request; set to "on" here and restored after the test.
+    monkeypatch.setattr(huggingface_hub.constants, "HF_HUB_DISABLE_TELEMETRY", False)
     return FakeApi
 
 
@@ -158,8 +167,9 @@ def test_dry_run_lists_the_files_without_a_token_or_the_network(
     monkeypatch.setattr(deploy, "ROOT", repo)
     assert deploy.main(["--dry-run", "--weights", str(weights)]) == 0
     out = capsys.readouterr().out
-    listed = {line.split()[0] for line in out.splitlines()[1:]}
+    listed = {line.split()[0] for line in out.splitlines()[1:] if line.startswith("  ")}
     assert listed == EXPECTED
+    assert "not listed are deleted" in out
     assert "data/" not in out and "secret_frame" not in out
 
 
@@ -178,16 +188,62 @@ def test_upload_is_one_space_commit_with_the_token_from_the_environment(
     assert api.token == SENTINEL_TOKEN
     (commit,) = api.commits
     assert commit["repo_id"] == "user/who-goes-there" and commit["repo_type"] == "space"
-    assert {op.path_in_repo for op in commit["operations"]} == EXPECTED
+    added = {op.path_in_repo for op in commit["operations"] if isinstance(op, CommitOperationAdd)}
+    assert added == EXPECTED and len(commit["operations"]) == len(EXPECTED)
+    assert api.listed == [("user/who-goes-there", "space")]
     head = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True
     ).stdout
     assert head[:12] in commit["commit_message"]
-    assert os.environ["HF_HUB_DISABLE_TELEMETRY"] == "1"
+    assert huggingface_hub.constants.HF_HUB_DISABLE_TELEMETRY is True
     captured = capsys.readouterr()
     piece = SENTINEL_TOKEN[3:9]  # any six characters of it: a partial print is a leak too
     assert piece not in captured.out + captured.err + caplog.text
     assert piece not in str(commit)
+
+
+def test_upload_deletes_the_spaces_stale_examples_and_modules_only(
+    repo: Path,
+    weights: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    fake_api: type[FakeApi],
+) -> None:
+    """R35: a photo taken out of `assets/` stops being shown; files outside the deploy's folders
+    (the Space's `.gitattributes`, a file added on the Hub) are left alone."""
+    fake_api.space_files = [
+        ".gitattributes",
+        "README.md",
+        "notes.md",
+        "assets/a.jpg",
+        "assets/removed.jpg",
+        "trailcam/__init__.py",
+        "trailcam/old_module.py",
+    ]
+    monkeypatch.setenv("HF_TOKEN", SENTINEL_TOKEN)
+    monkeypatch.setattr(deploy, "ROOT", repo)
+    assert deploy.main(["--space", "user/s", "--weights", str(weights)]) == 0
+    (commit,) = fake_api.instances[0].commits
+    operations = commit["operations"]
+    deleted = {op.path_in_repo for op in operations if isinstance(op, CommitOperationDelete)}
+    assert deleted == {"assets/removed.jpg", "trailcam/old_module.py"}
+    added = {op.path_in_repo for op in operations if isinstance(op, CommitOperationAdd)}
+    assert added == EXPECTED
+    out = capsys.readouterr().out
+    assert "deleted 2 stale files" in out and "assets/removed.jpg" in out
+
+
+def test_stale_paths_keep_planned_files_and_other_folders() -> None:
+    uploads = [deploy.Upload("assets/a.jpg", Path("a")), deploy.Upload("app.py", Path("b"))]
+    space = ["assets/a.jpg", "assets/b.png", "assetsx/c.jpg", "app.py", "old.py", "trailcam/x.py"]
+    assert deploy.stale_paths(space, uploads) == ["assets/b.png", "trailcam/x.py"]
+
+
+def test_an_upper_case_photo_suffix_is_uploaded(repo: Path, weights: Path) -> None:
+    """The demo and the guard read suffixes in any case; so does the allowed list."""
+    Image.new("RGB", (16, 16), "blue").save(repo / "assets" / "B.JPG", format="JPEG")
+    _commit(repo)
+    assert _paths(deploy.plan(weights, repo)) == EXPECTED | {"assets/B.JPG"}
 
 
 def test_upload_without_hf_token_stops_before_huggingface_hub(

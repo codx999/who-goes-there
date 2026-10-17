@@ -162,6 +162,17 @@ def test_with_spaces_the_button_runs_the_handler_wrapped_in_spaces_gpu(
     assert isinstance(overlay, Image.Image)
 
 
+def test_spaces_is_imported_before_torch() -> None:
+    """Hugging Face asks for `spaces` first: on ZeroGPU it sets up torch's CUDA emulation."""
+    line = {
+        alias.name: node.lineno
+        for node in ast.walk(ast.parse(APP.read_text()))
+        if isinstance(node, ast.Import)
+        for alias in node.names
+    }
+    assert line["spaces"] < line["torch"]
+
+
 def test_the_space_examples_are_the_assets_folder() -> None:
     """R35: the Space shows the photos of the `assets/` folder beside the package, never data/."""
     source = APP.read_text()
@@ -314,6 +325,7 @@ def test_the_readme_header_is_a_gradio_space_on_the_locked_versions() -> None:
     assert header["app_file"] == "app.py"
     assert header["suggested_hardware"] == "cpu-basic"
     assert header["license"] == "mit"
+    assert len(header["short_description"]) <= 60  # the Hub refuses a longer card text
 
 
 def test_the_readme_cites_the_data_and_its_licence() -> None:

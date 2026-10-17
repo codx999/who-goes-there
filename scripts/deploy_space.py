@@ -22,13 +22,19 @@ every `.pt` are ignored.
 
 The token is read from the `HF_TOKEN` environment variable only, never from a file or the
 command line (there is no `--token`), and is never printed, logged or written. `--dry-run` lists
-the files and stops: it reads no token, imports no `huggingface_hub` and makes no network call.
+the files and stops: it reads no token, builds no Hugging Face client and makes no network call.
+(`huggingface_hub` is loaded in every run anyway, by gradio through the demo's imports; loading
+it reads nothing and calls nothing.) Telemetry is off for the upload: the library's own switch
+is set before the client is built, since it read the environment when gradio imported it.
 
     uv run python scripts/deploy_space.py --dry-run --weights models/<run>.pt
     uv run python scripts/deploy_space.py --space <user>/<space> --weights models/<run>.pt
 
 The second needs `HF_TOKEN` exported in the shell beforehand (a write token, item 11.02) and the
-Space created on Hugging Face. Files already in the Space and no longer in the list stay there.
+Space created on Hugging Face. The same commit deletes every file under `assets/` and `trailcam/`
+in the Space that the list no longer holds (`STALE_PREFIXES`), so a photo taken out of `assets/`
+stops being shown; other files in the Space are left as they are. The dry run cannot see the
+Space without a network call, so it says that, and lists nothing to delete.
 """
 
 from __future__ import annotations
@@ -60,11 +66,13 @@ FIXED_FILES: Final = {
 # Every path the Space may receive; anything else is refused.
 ALLOWED: Final = re.compile(
     r"app\.py|requirements\.txt|README\.md|config\.yaml|model\.pt"
-    r"|assets/[^/]+\.(?:jpg|jpeg|png)"
+    r"|assets/[^/]+\.(?i:jpg|jpeg|png)"  # any case, as `example_photos` and the guard read it
     r"|trailcam/(?:[A-Za-z_][A-Za-z0-9_]*/)*[A-Za-z_][A-Za-z0-9_]*\.py"
 )
 # What the Space is built from: must match the commit before an upload.
 SOURCES: Final = ("space", "trailcam", "config.yaml", "assets")
+# Space folders the deploy owns: a file there that is not in the plan is deleted on upload.
+STALE_PREFIXES: Final = ("assets/", "trailcam/")
 SPACE_ID: Final = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*")
 
 
@@ -168,21 +176,33 @@ def plan(weights: Path, root: Path = ROOT) -> list[Upload]:
     return sorted(uploads, key=lambda upload: upload.path_in_space)
 
 
-def upload_to_space(uploads: Sequence[Upload], space: str, token: str, message: str) -> str:
-    """One commit to the Space holding `uploads`; its URL. huggingface_hub is imported here only,
-    with its telemetry off, so a dry run never loads it."""
-    os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
-    from huggingface_hub import CommitOperationAdd, HfApi
+def stale_paths(space_files: Sequence[str], uploads: Sequence[Upload]) -> list[str]:
+    """The Space's files under `STALE_PREFIXES` that `uploads` no longer holds, sorted."""
+    planned = {upload.path_in_space for upload in uploads}
+    return sorted(
+        path for path in space_files if path.startswith(STALE_PREFIXES) and path not in planned
+    )
 
+
+def upload_to_space(
+    uploads: Sequence[Upload], space: str, token: str, message: str
+) -> tuple[str, list[str]]:
+    """One commit to the Space that adds `uploads` and deletes its stale files; the commit's URL
+    and the deleted paths. Telemetry is off: the library reads its switch at each request."""
+    from huggingface_hub import CommitOperationAdd, CommitOperationDelete, HfApi, constants
+
+    constants.HF_HUB_DISABLE_TELEMETRY = True
     api = HfApi(token=token)
-    operations = [
+    stale = stale_paths(api.list_repo_files(space, repo_type="space"), uploads)
+    operations: list[CommitOperationAdd | CommitOperationDelete] = [
         CommitOperationAdd(path_in_repo=upload.path_in_space, path_or_fileobj=str(upload.source))
         for upload in uploads
     ]
+    operations += [CommitOperationDelete(path_in_repo=path) for path in stale]
     commit = api.create_commit(
         repo_id=space, repo_type="space", operations=operations, commit_message=message
     )
-    return str(commit.commit_url)
+    return str(commit.commit_url), stale
 
 
 def describe(upload: Upload) -> str:
@@ -220,14 +240,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.dry_run:
         print(f"dry run: would upload {len(uploads)} files (no token read, no network call):")
         print("\n".join(describe(upload) for upload in uploads))
+        print(
+            "on upload, files in the Space under assets/ or trailcam/ that are not listed are "
+            "deleted (the dry run does not look: that needs the network)"
+        )
         return 0
     token = os.environ.get(TOKEN_VARIABLE, "").strip()
     if not token:
         print(f"deploy_space.py: {TOKEN_VARIABLE} is not set; export it first", file=sys.stderr)
         return 1
     commit = git(ROOT, "rev-parse", "HEAD").strip()
-    url = upload_to_space(uploads, args.space, token, f"Deploy who-goes-there {commit[:12]}")
+    url, stale = upload_to_space(uploads, args.space, token, f"Deploy who-goes-there {commit[:12]}")
     print(f"uploaded {len(uploads)} files to https://huggingface.co/spaces/{args.space}: {url}")
+    print(f"deleted {len(stale)} stale files from the Space" + "".join(f"\n  {p}" for p in stale))
     return 0
 
 

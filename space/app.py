@@ -10,8 +10,8 @@ off by default (open question 5, closed 2026-10-16). Analytics are off, as in th
 ZeroGPU-ready: the same file runs on CPU Basic now and on ZeroGPU later, with only the Space's
 hardware setting changed (and the requirements' torch, plan.md section 8).
 
-- `spaces` is imported if it is there (on Hugging Face), else the handler is left as it is
-  (locally). Off ZeroGPU, `spaces.GPU` has no effect.
+- `spaces` is imported first, before torch, if it is there (on Hugging Face), else the handler
+  is left as it is (locally). Off ZeroGPU, `spaces.GPU` has no effect.
 - The model goes to `cuda` here, at module level, when CUDA is available, else it stays on the
   CPU. On ZeroGPU, CUDA is emulated outside `spaces.GPU` calls, and Hugging Face asks for models to
   be placed on `cuda` at startup, not inside the call.
@@ -29,6 +29,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Final
 
+# Before torch, as Hugging Face asks: on ZeroGPU, `spaces` sets up torch's CUDA emulation.
+try:
+    import spaces  # type: ignore[import-not-found]  # on Hugging Face only, not in the lock
+except ImportError:
+    spaces = None
+
 import torch
 from PIL import Image
 
@@ -36,11 +42,6 @@ from trailcam.demo.app import Handler, Result, build_app, classify, example_phot
 from trailcam.demo.predict import DEFAULT_CONFIG, load_model
 from trailcam.evaluate.gradcam import ASSETS_DIR
 from trailcam.train.config import CONFIG_PATH
-
-try:
-    import spaces  # type: ignore[import-not-found]  # on Hugging Face only, not in the lock
-except ImportError:
-    spaces = None
 
 # Beside this file: the Space's root, or `space/` in a checkout. CONFIG_PATH and ASSETS_DIR are
 # found from the package, so they are the Space's root files there and the repo's root ones here.

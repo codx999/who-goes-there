@@ -330,7 +330,8 @@ finds them at the repo's. The weights are **not** in this repo (the guard blocks
 `space/model.pt`, the local copy `app.py` loads, is ignored): `scripts/deploy_space.py --weights
 <path>` uploads `app.py`, the requirements, the README, `config.yaml`, the `assets/` examples, the
 package and the weights (as `model.pt`) in one commit with `huggingface_hub`, the token from
-`HF_TOKEN` only. It refuses anything under `data/`, anything off its allowed list, weights that are
+`HF_TOKEN` only; the same commit deletes the Space's files under `assets/` and `trailcam/` that
+it no longer lists, so a photo taken out of `assets/` stops being shown. It refuses anything under `data/`, anything off its allowed list, weights that are
 not a checkpoint of the config's model, and uncommitted changes to the Space's sources;
 `--dry-run` lists the files with no token and no network call. No arm is hard-coded: the
 weights are the run open question 7 picks.
@@ -343,9 +344,9 @@ Basic, then free ZeroGPU from about 2026-11-15. Item 11.02's text ("the free CPU
 predates this; this section wins.
 
 **ZeroGPU-ready** (item 11.01). The same `app.py` runs on both hardware settings: `spaces` is
-imported if present, else the handler is left as it is (locally); the model is placed on `cuda` at
-module level when CUDA is available, else on the CPU (ZeroGPU emulates CUDA outside GPU calls and
-wants models placed at startup); and the one GPU-dependent function, the button's handler
+imported first, before torch, if present, else the handler is left as it is (locally); the model
+is placed on `cuda` at module level when CUDA is available, else on the CPU (ZeroGPU emulates CUDA
+outside GPU calls and wants models placed at startup); and the one GPU-dependent function, the button's handler
 (prediction and Grad-CAM, which needs autograd), is wrapped in `spaces.GPU`, which has no effect
 off ZeroGPU. The torch wheel is the trade-off. CPU Basic runs the lock's CPU-only wheels
 (`+cpu`, from the PyTorch CPU index): a much smaller download and build, the wheels CI tests.
