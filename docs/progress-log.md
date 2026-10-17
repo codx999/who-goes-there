@@ -3576,9 +3576,9 @@ needs no code from this branch: the notebook calls only entry points that are al
     they returned. The markdown note is checked too.
 - `docs/review/invariants.md`. R03's rule text now lists the crop check as a second exception
   beside 8.07's photo grid, same terms: train photos, Kaggle only, no file name, outputs never
-  committed. **This is a rule-map change, for you to confirm.** The test cells of R03, R04, R06,
-  R07, R14, R17, R24, R38 and R41 now name the new tests. Items or paths were added to the where
-  columns of R04, R14, R17, R24, R38 and R41.
+  committed. This rule-map change was approved by the user, via the coordinator, 2026-10-17. The
+  test cells of R03, R04, R06, R07, R14, R17, R24, R38 and R41 now name the new tests. Items or
+  paths were added to the where columns of R04, R14, R17, R24, R38 and R41.
 - `docs/learning-journal.md`, topic 10: one entry for 8.08.
 
 Steps: `uv run pytest tests/test_evaluate_notebook.py` 47 passed. `uv run pytest tests/test_datavis.py
@@ -3610,3 +3610,20 @@ Notes, not fixed:
 **Next.** Review 8.08. Then you merge it, then 8.05 (photos) and 8.06 on Kaggle.
 
 Review: tier 2, `/review-session 8.08`
+
+Review: tier 2, ran `/review-session 8.08` (b64c486..4c4c594; code-reviewer Opus 5.5 xhigh on the
+range, risk-reviewer Fable 5.1 high on the two notebooks and two test files). Nothing found by
+either, so no fix round. Scenarios R01, R03, R04, R06, R07, R14, R16, R17, R24, R27 (not
+applicable, nothing trains), R37, R38 and R41 to R45 held. Spec changed: none; R03's rule text in
+`docs/review/invariants.md` changed, and the user approved its wording via the coordinator on
+2026-10-17. Noted by the reviewers, not fixed:
+
+- an arm B crop the sampler cannot draw would be titled "no usable box" and lower the printed
+  count (none on the fixture);
+- mypy run directly on the two test files reports 11 errors (tests are outside check.sh's mypy
+  scope);
+- Kaggle behaviour, the dataset mount path and whether GitHub's `main` holds b64c486 could not be
+  verified offline.
+
+Merged `main` at c4b1e56 (13.01) through the sync tool: one conflict, in this log; main's two
+13.01 entries kept first, then this one. `check.sh` green after the merge (943 passed).
