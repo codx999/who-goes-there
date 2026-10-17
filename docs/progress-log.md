@@ -3397,3 +3397,58 @@ a direct mypy run on `tests/test_space.py` flags `module.loaded = loaded` (tests
 check.sh's mypy scope); the Hub-side checks stay with 11.03. Merged `main` (8aa83bf, 13ecf46):
 plan.md open question 5 kept from this branch, 6 from main. Review: tier 2, ran both reviewers;
 fix round ran, clean.
+
+## 2026-10-17: session 13, item 13.01, the phase-2 plan (Opus 5.5)
+
+Items 13.01 and 13.02 added to `docs/progress.json` (session 13, owner claude; due 2026-10-24 and
+2026-10-28), the user's OK of 2026-10-17 through the coordinator. 13.02 (the phase-2
+infrastructure) is not implemented here. Docs only: no code, config or notebook changed.
+
+**Done.** `docs/phase2-plan.md`, "Phase 2: improving generalisation to new cameras", covering the
+ten agreed points: the goal and baseline (arm A, 3 seeds); the phase-1 results as trans_val means
+(small CNN 0.6625 / 0.6216 val, 0.1965 / 0.0775 trans_val; arm A 0.8661 / 0.8557 and 0.3783 /
+0.3101; arm B 0.8537 / 0.8428 and 0.3337 / 0.3026, accuracy / macro-F1) and the noise (arm A
+seeds: val macro-F1 range 0.0027, trans_val accuracy 0.3525 to 0.4099, macro-F1 range 0.0285);
+screen, confirm and keep with numeric thresholds; the rules carried over with the honesty note;
+the hypothesis line; the eight-step ladder with change, hypothesis, needs and tier per step; the
+budget; the timing; 13.02's infrastructure; future work. `docs/plan.md` section 9 points to it
+(a paragraph, not a numbered open question, so it cannot collide with 8.08 or 9.03). Journal
+topic 15, "What we'd improve next, and how".
+
+Mid-item, the user's decision through the coordinator: a literature review of improvement methods
+for new-location shift will be done separately, as an external research pass, and later become
+Part 7 of `docs/research-report.md`. So the ladder (section 6) is marked provisional, to be
+re-ranked from that review's evidence, and step 4 (class-balanced loss) is marked low expected
+value, citing WILDS in the report's Part 3 (plain training not meaningfully beaten by CORAL, IRM
+or Group DRO) and Part 4 (reweighting did not help). No research done here.
+
+Found while writing, recorded in the plan (no code touched):
+
+- Step 1 (resolution) is not config-only: 224 px is a constant in the transforms, the attention
+  frame, Grad-CAM, the demo and the Space, so it needs a tier-2 code item. That makes the
+  pre-presentation option cost a code item plus 13.02 in the week of 9.02.
+- Adding any field to `Config` changes every phase-1 config hash (`config_hash` hashes all fields
+  but `arm` and `run_seed`), and `score_test.py` refuses a config whose hash no longer matches its
+  ledger row. Each code step that adds a setting must leave the phase-1 hashes unchanged, with a
+  test pinning them. Not in 13.02 as agreed; flagged for the user.
+- The phase-1 ledger checker refuses one model under two config hashes, a second reason for the
+  separate ledger; 13.02's checker has to allow it.
+- config.yaml is in the risk regex, so even config-only steps are tier 2 by the script.
+- Arm B's seeds spread about three times wider than arm A's on trans_val macro-F1 (range 0.088 vs
+  0.029), so the noise bands are per recipe.
+- Open questions for the user in the plan's section 11: the screen's val condition (as agreed it is
+  stricter than the keep rule's 1 point); the screen's trans_val condition (as agreed it passes
+  most no-effect changes, so the 5-hour cap, not the screen, likely ends the ladder); step 5 as one
+  change; the Space after phase 2; CLAUDE.md's and R17's "every choice on val".
+
+Checks: every path and relative link in the plan and the new journal topic resolves; every
+phase-1 number re-derived from `docs/ledger.md` (means, ranges, per-seed differences, standard
+deviations) and the data card (2,394 val images, about 212 batches per epoch); the journal's
+command (`uv run python -m trailcam.train.ledger --check docs/ledger.md`) exits 0; `check.sh`
+green.
+
+**Next.** 13.02 after the presentation; the open questions in `docs/phase2-plan.md` section 11 are
+the user's.
+
+Review: tier 0 (docs only), nothing to run. Spec changed: plan.md section 9 only, cited by no
+invariant row.
