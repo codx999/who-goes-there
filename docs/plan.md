@@ -304,7 +304,12 @@ methods. Mixed outcomes are reported as mixed. A negative result is a result.
   nothing and is run again from the start (user's decisions, review 9.01 and its fix round). On
   Kaggle it runs from `notebooks/kaggle_score_test.ipynb` (item 9.03), a notebook of its own, so
   the test sets can never be touched by accident from the training or evaluation notebooks. Its
-  `APPROVED_BY` starts empty, and the notebook refuses the scoring until the user fills it in.
+  `APPROVED_BY` starts empty, and the notebook refuses the scoring until the user fills it in. A
+  fresh Kaggle clone holds its commit's empty test ledger, so the run-once refusal above cannot
+  see an earlier scoring there: the notebook also fetches `main` and refuses once `main`'s
+  `docs/test-ledger.md` holds any row, and the user commits the rows to `main` right after the
+  run (user's decision, review 9.03). Between the run and that commit, only `APPROVED_BY`, set
+  back to empty, guards against a second scoring.
 
 ## 8. Demo and deployment
 

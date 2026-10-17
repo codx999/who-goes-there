@@ -239,6 +239,7 @@ def test_parameters() -> None:
     assert p["ASSETS"] == "CLONE / 'assets'"
     assert p["OUT"] == "WORK / 'score'"  # --out /kaggle/working/score
     assert p["LOCAL_CACHE"] == "Path('/tmp/trailcam-cache')"  # local disk, not /kaggle/working
+    assert p["MAIN_TEST_LEDGER"] == "Path('/tmp/trailcam-main-test-ledger.md')"
 
 
 def test_the_cache_archive_is_the_training_notebook_s() -> None:
@@ -329,13 +330,14 @@ def test_the_go_ahead_comes_right_before_the_scoring() -> None:
 
 
 def test_the_cells_run_in_order() -> None:
-    """Parameters, clone, install, the code, GPU, unpacking, cache, checkpoints and their checks,
-    the go-ahead, the scoring, the rows, the zip."""
+    """Parameters, clone, install, the code, main's test ledger, GPU, unpacking, cache, checkpoints
+    and their checks, the go-ahead, the scoring, the rows, the zip."""
     order = [
         next(i for i, source in enumerate(CODE) if "COMMIT must be" in source),
         next(i for i, tree in enumerate(TREES) if "'git', 'clone'" in ast.unparse(tree)),
         next(i for i, tree in enumerate(TREES) if "'pip', 'install'" in ast.unparse(tree)),
         _imports_cell(),
+        _cell("MAIN_TEST_LEDGER.write_bytes"),
         _cell("check_gpu"),
         _cell("unpack_cache"),
         _cell("check_images"),
@@ -587,6 +589,12 @@ def world(tmp_path_factory: pytest.TempPathFactory) -> World:
     return _build_world(tmp_path_factory.mktemp("score_notebook"))
 
 
+def _empty_test_ledger() -> str:
+    """The repo's test ledger up to its header, without the rows 9.02 pastes in."""
+    text = TEST_LEDGER_PATH.read_text(encoding="utf-8")
+    return text[: text.index(scoring_header()) + len(scoring_header())] + "\n"
+
+
 def _kaggle(world: World, root: Path) -> tuple[Path, Path]:
     """A clone with the fixture's config, ledger, an empty test ledger and the photo, and an
     input folder holding the checkpoints as Kaggle mounts a dataset (links to the files)."""
@@ -596,7 +604,7 @@ def _kaggle(world: World, root: Path) -> tuple[Path, Path]:
     (clone / "assets").mkdir()
     shutil.copy(world.config_file, clone / "config.yaml")
     shutil.copy(world.ledger, clone / "docs" / "ledger.md")
-    shutil.copy(TEST_LEDGER_PATH, clone / "docs" / "test-ledger.md")
+    (clone / "docs" / "test-ledger.md").write_text(_empty_test_ledger(), encoding="utf-8")
     shutil.copy(world.photo, clone / "assets" / "photo.jpg")
     mount = kaggle_input / "datasets" / "someone" / "trailcam-checkpoints" / "models"
     mount.mkdir(parents=True)
@@ -749,6 +757,51 @@ def test_the_clone_may_differ_from_commit_in_the_test_ledger_only(tmp_path: Path
         _run(clone_cell, names)
 
 
+def _origin(root: Path) -> Path:
+    """A local stand-in for the public repo: a clone of this one whose `main` is the default
+    COMMIT, so its test ledger holds no row."""
+    origin = root / "origin"
+    subprocess.run(["git", "clone", "--quiet", str(ROOT), str(origin)], check=True)
+    commit = str(_parameters()["COMMIT"])
+    subprocess.run(
+        ["git", "-C", str(origin), "checkout", "--quiet", "-B", "main", commit], check=True
+    )
+    return origin
+
+
+def test_a_scoring_recorded_on_main_stops_the_notebook_before_score_test(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Review 9.03 (the user's decision): a fresh clone at COMMIT holds that commit's empty test
+    ledger, so the cell after the imports reads origin/main's, fetched first, and refuses when it
+    holds any row. Run in notebook order, the cells stop there: before the cache is unpacked and
+    before the scoring cell. A clone reused in the session sees a row committed to main after the
+    clone was made."""
+    origin = _origin(tmp_path)
+    names = _namespace(
+        tmp_path / "working",
+        tmp_path / "input",
+        REPO_URL=str(origin),
+        MAIN_TEST_LEDGER=tmp_path / "main-test-ledger.md",
+    )
+    (clone_cell,) = [i for i, tree in enumerate(TREES) if "'git', 'clone'" in ast.unparse(tree)]
+    main_cell = _cell("MAIN_TEST_LEDGER.write_bytes")
+    assert _imports_cell() < main_cell < _cell("unpack_cache") < _scoring_cell()
+    _run(clone_cell, names)
+    _run(main_cell, names)
+    assert "holds no row" in capsys.readouterr().out
+
+    with (origin / "docs" / "test-ledger.md").open("a", encoding="utf-8") as ledger:
+        ledger.write(ledger_line(dict.fromkeys(TEST_LEDGER_COLUMNS, "x")) + "\n")
+    git = ["git", "-C", str(origin), "-c", "user.name=t", "-c", "user.email=t@example.com"]
+    git += ["-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false"]
+    subprocess.run([*git, "commit", "--quiet", "-am", "the final scoring's rows"], check=True)
+    with pytest.raises(RuntimeError, match="already been recorded on main, and it runs once"):
+        for cell in range(main_cell, _scoring_cell() + 1):
+            _run(cell, names)
+    assert "command" not in names and "exit_code" not in names  # the scoring cell never ran
+
+
 def test_the_only_pip_install_is_the_clone() -> None:
     """R38: one `pip install`, of the clone at COMMIT, that may not upgrade what Kaggle ships."""
     pip_calls = [
@@ -853,6 +906,8 @@ def test_markdown_says_once_part_way_and_never_save_and_run_all() -> None:
         "touched by accident",
         "`APPROVED_BY` starts empty",
         never,
+        "So section 3 also reads `origin/main`'s `docs/test-ledger.md` and refuses if it holds any "
+        "row",
         "## If it stops part way",
         "run again from the start with a new `--out`, the recovery `score_test.py` documents",
         "If it stopped after `appended ... rows`, the scoring has run: never run it again.",
@@ -881,7 +936,8 @@ def test_how_to_run_says_import_attach_rehearse_then_run_once() -> None:
         "The one run, when the user means it",
         "Save Version > Save & Run All (Commit)",
         "paste the rows section 7 prints into `docs/test-ledger.md`, once",
-        "download `score.zip`",
+        "and commit them to `main`: from then on section 3 refuses every run",
+        "Download `score.zip`",
     ]
     positions = [FLAT.find(step) for step in steps]
     assert -1 not in positions, [s for s, i in zip(steps, positions, strict=True) if i == -1]

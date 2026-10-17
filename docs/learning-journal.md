@@ -399,9 +399,9 @@ uv run pytest -q tests/test_score_test.py -k "approver or scored_again or run_se
 
 **Added by 9.03, the scoring notebook.** The scoring runs from its own Kaggle notebook,
 [kaggle_score_test.ipynb](../notebooks/kaggle_score_test.ipynb), so no slip in the training or
-evaluation notebooks can reach a test split. `APPROVED_BY` starts empty since a fresh clone cannot
-know the scoring ran: empty, Run All checks everything and stops before anything is loaded. A run
-that stops part way has appended nothing: rerun from the start with a new `--out` (same scores).
+evaluation notebooks can reach a test split. A fresh clone cannot see an earlier run, so it refuses
+once `main`'s test ledger holds a row, and `APPROVED_BY` starts empty: Run All then checks all and
+stops. A run that stops part way has appended nothing: rerun from the start with a new `--out`.
 
 ## 10. Evaluation pieces built so far
 

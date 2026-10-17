@@ -3607,3 +3607,61 @@ Steps:
 names 9.01 and `score_test.py` but not this notebook, so it reports tier 2 by itself; the
 tier-3 option, `/code-review ultra`, is the user's. Then 9.02, the user's single run with this
 notebook.
+
+## 2026-10-17: review 9.03: one low fixed, `main`'s test ledger read too (Opus 5.5, xhigh)
+
+Review (`/review-session b64c486..HEAD 9.03`, the user's start): code-reviewer (Opus 5.5 xhigh)
+on the range, risk-reviewer (Fable 5.1 high) on its two high-stakes files, the notebook and its
+tests. Tier 2 by the command's rule (it names 9.01 and `score_test.py`), tier 3 by CLAUDE.md (the
+final scoring). Scenarios R03, R06, R07, R16, R17, R27, R37, R38, R40, R41 and R42 hold in both
+reports. Spec changed: plan.md section 7 and the test cells of R06, R07, R16, R17, R38, R40 and
+R41; both reviewers traced them, no conflict. One finding:
+
+- Low (risk-reviewer; code-reviewer listed it under "could not verify" as a design limit): the
+  run-once refusal never fires on Kaggle, since a fresh clone at `COMMIT` holds that commit's empty
+  test ledger. Once the rows are on `main`, an `APPROVED_BY` left filled in would let a later Save
+  & Run All score every checkpoint again.
+
+Notes, not findings: mypy run directly on the test file reports 3 type errors (tests are outside
+`check.sh`'s mypy scope); the markdown says to set `COMMIT` at or after 9.03's merge while the
+default is earlier (harmless: `trailcam/` is the same across the range).
+
+The user's decisions, via the coordinator on 2026-10-17: (1) fix the low; (2) no ultra review for
+9.03: it is a thin wrapper over `score_test.py`, which had its own ultra review, so this item gets
+the two standard reviewers and the fix round; (3) bring the branch up to date with `main`.
+
+Merged `main` at c4b1e56 (13.01, the phase-2 plan) with the sync tool, as 014c19d. The conflict was
+in this log only; both sides kept, 13.01's entries first. `check.sh` green after the merge (937
+passed).
+
+Fix:
+
+- A new code cell right after the imports (section 3) fetches `origin/main` into the clone, writes
+  its `docs/test-ledger.md` to `MAIN_TEST_LEDGER` (under `/tmp`, a new constant of the parameter
+  cell) and reads it with `score_test.py`'s `read_test_ledger`. Any row refuses: "the final
+  scoring has already been recorded on main, and it runs once". It comes before the GPU check and
+  the unpacking, so it fails in seconds; every existing refusal stays.
+- Markdown: "This runs once", How-to-run steps 5 and 7 (commit the rows to `main` right after the
+  run), and section 3. plan.md section 7's run-once wording (the user's OK); R17's and R40's test
+  cells; the journal's 9.03 lines.
+- Tests (45 in the file). The new one uses a local stand-in for the public repo whose `main` is the
+  default `COMMIT`: the cell passes. After a row is committed to that `main`, the reused clone
+  fetches it, and the cells run in notebook order stop at the new cell, before the unpacking and the
+  scoring cell. The order test includes the new cell. The fixtures' clone now gets the repo's test
+  ledger cut at its header (`_empty_test_ledger`), so these tests still pass once 9.02's rows are
+  in `docs/test-ledger.md`.
+- Mutation checks, each restored by copying: the check disabled, the cell deleted, the fetch
+  removed, `COMMIT`'s ledger read instead of `main`'s, and the cell moved after the scoring: 5 of 5
+  killed. The earlier 23 rerun on the fixed notebook: 28 of 28 killed.
+- `nbconvert --clear-output` leaves the notebook unchanged; ruff clean.
+
+Found, not fixed (outside this item): the fixture of `tests/test_score_test.py` copies the repo's
+`docs/test-ledger.md` as its empty test ledger (`_build_world` and `fresh`). Once 9.02's rows are
+pasted there, its scoring tests see 7 rows and fail, so `check.sh` goes red when the rows are
+committed. The same cut-at-the-header fix applies; it needs the user's OK (9.01's tests, a
+high-stakes file) before 9.02's rows are committed.
+
+The fix touches a high-stakes file and modifies test lines, so one fix round runs on the fix range.
+`check.sh` green (938 passed).
+
+**Next.** Fix round: `/review-session 014c19d..HEAD 9.03`. Then 9.02, the user's single run.
