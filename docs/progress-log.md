@@ -3494,3 +3494,113 @@ command exits 0; `check.sh` green.
 
 Review: tier 0 (docs only), nothing to run. Spec changed: plan.md section 9 only (in 79c1a10),
 cited by no invariant row.
+
+## 2026-10-17: session 13, item 13.02, the phase-2 infrastructure and config-only variants (Opus 5.5)
+
+The user's decisions of 2026-10-17, through the coordinator: phase 2 runs this week, before the
+presentation (10-18 infrastructure and arm C's code, 10-19 screen, 10-20 confirm, 10-21 stack,
+10-22 freeze); exactly one phase-2 test scoring, on 10-22, of the frozen final recipe only, written
+into the plan before any phase-2 result; 13.02's description and due date (now 2026-10-18)
+updated in `docs/progress.json` with the user's approval. Base `c4b1e56`.
+
+**Done.**
+
+- `docs/ledger-phase2.md`: its own text, then the 16-column header of `docs/ledger.md`, no rows.
+  `trailcam/train/ledger.py` checks a ledger named `ledger-phase2.md` as phase 2: every cell
+  check, a `p2_` config on every row, several config hashes per model but one per config, one
+  split seed for the whole ledger, and a summary grouped by config first. Any other ledger
+  refuses a `p2_` row, so one pasted into `docs/ledger.md` fails `check.sh` and the final
+  scoring's read.
+- `trailcam/train/train.py`: `check_ledger_phase` refuses a `p2_` config with any ledger but
+  `docs/ledger-phase2.md`, and a phase-1 config with that one, before training (with `preflight`)
+  and again in `append_row`; `PHASE2_LEDGER_NAME`, `PHASE2_LEDGER_PATH`. The config's
+  `input_size` reaches `TrainTransform(arm, size=...)` and `EvalTransform(size)`. The loop, the
+  optimizer, the schedule, early stopping and the AMP path (its scheduler warning included) are
+  unchanged.
+- `notebooks/kaggle_train.ipynb`: parameter `LEDGER = "docs/ledger.md"` (or
+  `"docs/ledger-phase2.md"`), passed to `--ledger` as `CLONE / LEDGER`; the first check cell
+  refuses a `LEDGER` other than the two and a config of the other phase, before the clone; phase-1
+  names stay an explicit list, `p2_` names match `p2_[a-z0-9_]+` and an unknown one fails at
+  `load_config` after the install, before the cache is unpacked. Outputs cleared.
+- `trailcam/train/config.py`: field `input_size` (at least 32; 224 for `small_cnn`, whose head is
+  sized for it); `HASH_NEUTRAL = {"input_size": 224}`, left out of `config_hash` at that value, so
+  the phase-1 hashes are unchanged; `PHASE2_PREFIX = "p2_"` and `is_phase2`.
+- `trailcam/data/dataset.py`: both transforms take a `size`, 224 by default; `eval_resize(size)`
+  keeps 256/224's margin (366 for 320). `trailcam/data/loaders.py`: `make_loaders` takes the eval
+  transform and refuses a train transform of another size.
+- `trailcam/model/`: `resnet50`, torchvision's `IMAGENET1K_V1` weights, head `fc` (2048 to 12),
+  Grad-CAM layer `layer4`.
+- `trailcam/evaluate/attention.py`: `load_checkpoint`, which every evaluation tool, the demo and
+  the Space use, refuses a config whose `input_size` is not 224 before reading the file, so a
+  320 px model is never scored at 224. Phase-1 configs are all 224, so nothing they do changes.
+- `config.yaml`: `input_size: 224` in `common`; `p2_baseline` (arm A exactly, config hash
+  `483aa055…`, arm A's), `p2_head3` (`head_only_epochs: 3`, body trains 7 of 10; `a21b04f0…`),
+  `p2_res320` (`input_size: 320`; `5a20cf07…`), `p2_r50` (`model: resnet50`; `05a685a9…`).
+- Tests: `tests/test_config.py` (`P2_CHANGES`: each `p2_` config is `resnet18_arm_a` with exactly
+  its named change; R31's recipe check narrowed to the phase-1 configs, now with 224 px; the
+  phase-1 hashes pinned to every `docs/ledger.md` row; `input_size` hash-neutral at 224 only; the
+  phase is the name); `tests/test_ledger.py` (the real phase-2 ledger passes, from the shell too; a
+  `p2_` row pasted into a copy of `docs/ledger.md` fails; a phase-1 row in the phase-2 ledger
+  fails; several hashes per model pass, two per config and two split seeds fail; the shared checks
+  hold; the summary groups by config); `tests/test_train.py` (the mix-ups stop before training
+  and `append_row` refuses them; a phase-2 run appends to the phase-2 ledger; the input size
+  reaches both transforms; the real phase-2 ledger's shape); `tests/test_notebook.py` (`LEDGER`
+  default; the check cell run as written accepts each phase's pair and refuses 8 mix-ups);
+  `tests/test_models.py` (ResNet-50's `/review-shapes` table, 23,532,620 parameters, V1 weights by
+  spy, both ResNets at 320 px); `tests/test_dataset.py`, `tests/test_loaders.py`,
+  `tests/test_gradcam.py`, `tests/test_attention.py`, `tests/test_boxcrop.py` (the arms still
+  differ in the sampler alone, at one size).
+- Docs: `docs/phase2-plan.md` (this week's timeline; the control re-run; screen in parallel,
+  confirm, then stack; a pinned commit per batch; the pre-declared test scoring and 13.06; the
+  phase-2 transform exception, CLAUDE.md and `.claude/rules/` unchanged for phase 1; steps 3 to 5
+  now config-only; the budget; section 9 as built; open question 7 answered, 8 and 9 new);
+  `docs/plan.md` section 9's phase-2 paragraph (it said phase 2 waits for the presentation);
+  phase-2 lines in R17, R20, R25, R30, R31 and R40; journal topic 15 (five lines).
+
+**Training-path files changed since `61f1ecc`**, phase 1's training commit: the modules
+`trailcam.train.train` imports (arm B's sampler included), plus `config.yaml`, the notebook,
+`pyproject.toml` and `uv.lock`, diffed with git.
+
+- Before this item (`61f1ecc..c4b1e56`): `trailcam/data/cache.py` (docstring only),
+  `trailcam/evaluate/metrics.py` (`timed_forward` and `per_camera_scores` added; `accuracy` and
+  `macro_f1` unchanged), `notebooks/kaggle_train.ipynb` (the archive's default path and two
+  messages), `pyproject.toml` (the demo and deploy dependency groups, outside the wheel),
+  `uv.lock`.
+- This item: `config.yaml`, `notebooks/kaggle_train.ipynb`, `trailcam/data/dataset.py`,
+  `trailcam/data/loaders.py`, `trailcam/model/backbone.py`, `trailcam/model/factory.py`,
+  `trailcam/train/config.py`, `trailcam/train/train.py`.
+- Unchanged: `trailcam/data/boxcrop.py`, `classes.py`, `metadata.py`, `split.py`, `synthetic.py`,
+  `trailcam/model/small_cnn.py` and the packages' `__init__.py` files. `p2_baseline` seed 0 is
+  the GPU check that none of it moved arm A (the plan's section 3).
+
+**Choices made here, for the user to see.**
+
+- ResNet-50's weights are `IMAGENET1K_V1` (76.1% ImageNet top-1), not the default `V2` (80.9%,
+  a newer, heavier-augmented recipe): ResNet-18 has only V1, so V2 would be a second change.
+- The evaluation tools refuse a non-224 config rather than read the size from the checkpoint:
+  `load_checkpoint` refuses any checkpoint key beyond the three `train.py` writes, so the format
+  stays. This touches the final scoring's code path (`score_test.py` calls it) with a refusal no
+  phase-1 config can meet.
+- Every pair is with `p2_baseline` at the same commit, its seeds 1 and 2 re-run on 10-20 (open
+  question 8); the control check uses section 2's bands around phase 1's arm A seed 0.
+- A stacked config will need a named exception in `test_config.py`'s one-change rule.
+- `p2_head3` keeps one warmup epoch, so the body joins in epoch 4 at about 0.88 of its peak rate.
+- Item 13.06 (`score_test.py`'s phase-2 mode) is named in the plan but not added to
+  `docs/progress.json`: a new item needs the user's OK.
+- This week's worst case is about 8 GPU hours against the plan's 5-hour cap (open question 9).
+
+Checks: `uv run python -m trailcam.train.ledger --check docs/ledger-phase2.md` exits 0 ("phase-2
+ledger: 0 rows, every check passed"), and on `docs/ledger.md` 0 (7 rows); `/dryrun`'s command
+(resnet18 arm B, fixture) trained one epoch, logits (2, 12), train loss 2.6539, val loss 2.4667,
+row printed and not appended; `docs/ledger.md` unchanged; the phase-1 config blocks unchanged
+(`common` gained `input_size: 224`, the value phase 1 hard-coded; hashes pinned by the test);
+`bash scripts/check.sh` green.
+
+**Next.** Merge, then 13.04's `p2_arm_c` adds its `P2_CHANGES` line; before the 10-19 screen,
+one commit with every variant's hypothesis line, pinned as the notebook's `COMMIT`. Open
+questions 8 and 9 and item 13.06 are the user's.
+
+Review: tier 2 (config, notebook, ledger checker and `train.py` are high-stakes; the
+`load_checkpoint` refusal is on the final scoring's path, see above). Command: `/review-session
+13.02`. Spec changed: `docs/plan.md` section 9 (R31), `docs/phase2-plan.md` (now cited by R17,
+R20, R25, R30, R31, R40).

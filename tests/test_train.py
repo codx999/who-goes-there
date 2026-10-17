@@ -1,6 +1,7 @@
 """trailcam/train/train.py: the training loop, its command line and the ledger row (plan.md
 section 5; R16 leakage alarms, R17 selection on val only, R25 the arm and the overrides, R27 the
-run seed, R31 the recipe, R37 the dry run, R40 the ledger).
+run seed, R31 the recipe, R37 the dry run, R40 the ledger; item 13.02, phase 2: a config's input
+size reaches both transforms, and a `p2_` row goes to docs/ledger-phase2.md and nowhere else).
 
 The loop tests train a random-weight ResNet-18 on 32 px random tensors, so they are quick; the
 early-stopping tests replace the val scoring with a scripted sequence of macro-F1 values. The
@@ -46,6 +47,7 @@ from trailcam.train.ledger import check_ledger
 from trailcam.train.train import (
     LEDGER_COLUMNS,
     LEDGER_PATH,
+    PHASE2_LEDGER_PATH,
     EarlyStopping,
     LeakageError,
     Scores,
@@ -327,12 +329,18 @@ def test_the_score_alarms(val: float, trans: float, fired: int) -> None:
 
 
 @pytest.mark.parametrize(
-    ("name", "sampler"),
-    [("resnet18_arm_a", ControlCropSampler), ("resnet18_arm_b", BoxCropSampler)],
+    ("name", "sampler", "size"),
+    [
+        ("resnet18_arm_a", ControlCropSampler, 224),
+        ("resnet18_arm_b", BoxCropSampler, 224),
+        ("p2_res320", ControlCropSampler, 320),
+    ],
 )
 def test_the_config_arm_builds_its_crop_sampler(
-    monkeypatch: pytest.MonkeyPatch, fixture_split: Any, name: str, sampler: type
+    monkeypatch: pytest.MonkeyPatch, fixture_split: Any, name: str, sampler: type, size: int
 ) -> None:
+    """The arm picks the sampler; the config's input size (224 in phase 1, 320 for
+    `p2_res320`) reaches the training and the eval transform alike."""
     split, root, meta = fixture_split
     seen: dict[str, Any] = {}
 
@@ -349,6 +357,8 @@ def test_the_config_arm_builds_its_crop_sampler(
         train.train_run(name, load_config(name), meta, root, Path("unused"), log=lambda _: None)
     assert seen["train_transform"].arm == load_config(name).arm
     assert isinstance(seen["train_transform"].sampler, sampler)
+    assert seen["train_transform"].size == seen["eval_transform"].size == size
+    assert isinstance(seen["eval_transform"], EvalTransform)
     assert (seen["num_workers"], seen["pin_memory"]) == (4, True)
 
 
@@ -436,6 +446,21 @@ def test_the_ledger_file_is_its_text_then_the_header_then_rows_that_pass_the_che
     assert len(rows) == len(lines) - start - 2
 
 
+def test_the_phase2_ledger_is_beside_the_phase1_one_with_the_same_header() -> None:
+    """Item 13.02: docs/ledger-phase2.md holds its own text, the header of `LEDGER_COLUMNS` and
+    zero or more rows that pass the phase-2 checks; the phase is the file name."""
+    assert PHASE2_LEDGER_PATH == LEDGER_PATH.parent / "ledger-phase2.md"
+    assert train.is_phase2_ledger(PHASE2_LEDGER_PATH) and not train.is_phase2_ledger(LEDGER_PATH)
+    lines = PHASE2_LEDGER_PATH.read_text().splitlines()
+    header = ledger_header().splitlines()
+    start = lines.index(header[0])
+    assert lines[start : start + 2] == header
+    assert not any(line.lstrip().startswith("|") for line in lines[:start])
+    rows, problems = check_ledger(PHASE2_LEDGER_PATH)
+    assert problems == []
+    assert len(rows) == len(lines) - start - 2
+
+
 def test_the_header_follows_the_plan_with_the_config_hash_after_the_config() -> None:
     """The plan's columns (section 5) with the config hash after the config (review 5.02) and
     trans_val macro-F1 after trans_val accuracy (review 5.03)."""
@@ -491,6 +516,66 @@ def test_append_row_refuses_a_missing_ledger_or_another_header(tmp_path: Path) -
     other.write_text(ledger_header().replace("| arm | config |", "| config | arm |") + "\n")
     with pytest.raises(ValueError):
         append_row(other, ledger_row(values()))
+
+
+# A phase-2 config with a phase-1 ledger, or a phase-1 config with the phase-2 ledger, is
+# refused before training and at the append (item 13.02).
+PHASE_MIXUPS = [
+    ("p2_head3", "ledger.md"),
+    ("p2_baseline", "other.md"),
+    ("resnet18_arm_a", "ledger-phase2.md"),
+]
+
+
+@pytest.mark.parametrize(("name", "ledger_name"), PHASE_MIXUPS)
+def test_a_config_of_the_other_phase_than_the_ledger_stops_before_training(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    name: str,
+    ledger_name: str,
+) -> None:
+    monkeypatch.setattr(train, "load_metadata", _no_training)
+    monkeypatch.setattr(train, "train_run", _no_training)
+    ledger = tmp_path / ledger_name
+    ledger.write_text(LEDGER_PATH.read_text())
+    argv = [f"--config-name={name}", f"--data-root={tmp_path}", f"--out-dir={tmp_path / 'out'}"]
+    with pytest.raises(SystemExit) as exit_info:
+        train.main([*argv, f"--ledger={ledger}"])
+    assert exit_info.value.code == 2
+    err = capsys.readouterr().err
+    assert "before training" in err and "phase-2" in err
+    assert ledger.read_text() == LEDGER_PATH.read_text()
+
+
+@pytest.mark.parametrize(("name", "ledger_name"), PHASE_MIXUPS)
+def test_append_row_refuses_a_row_of_the_other_phase(
+    tmp_path: Path, name: str, ledger_name: str
+) -> None:
+    ledger = tmp_path / ledger_name
+    ledger.write_text(LEDGER_PATH.read_text())
+    with pytest.raises(ValueError, match="phase-2"):
+        append_row(ledger, ledger_row(values(config=name)))
+    assert ledger.read_text() == LEDGER_PATH.read_text()
+    with pytest.raises(ValueError, match="cells"):
+        append_row(ledger, "| p2_head3 |")
+
+
+def test_a_phase2_run_appends_to_the_phase2_ledger(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    row = values(config="p2_head3")
+    monkeypatch.setattr(train, "load_metadata", lambda *a, **k: None)
+    monkeypatch.setattr(train, "train_run", lambda *a, **k: SimpleNamespace(alarms=()))
+    monkeypatch.setattr(train, "ledger_values", lambda r: row)
+    ledger = tmp_path / "ledger-phase2.md"
+    ledger.write_text(PHASE2_LEDGER_PATH.read_text())
+    argv = ["--config-name=p2_head3", f"--data-root={tmp_path}", f"--out-dir={tmp_path / 'out'}"]
+    assert train.main([*argv, f"--ledger={ledger}"]) == 0
+    assert ledger.read_text().splitlines() == [
+        *PHASE2_LEDGER_PATH.read_text().splitlines(),
+        ledger_row(row),
+    ]
 
 
 # A real run fails before training on a bad out dir or ledger, and its alarms always show

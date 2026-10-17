@@ -5,7 +5,8 @@ run its one unpacking cell on a tiny tar (item 6.08). Every code cell parses as 
 magics) and defines nothing, so the logic stays in `trailcam`
 (R41 outputs cleared; R38 the one pip install, of the clone; R37 and R25 the real-run entry point
 with no dry-run or recipe flags; R17 no test split; R16 an alarm fails the cell; R27 seeds only
-through the config and `--run-seed`; R06 the licence and citation).
+through the config and `--run-seed`; R06 the licence and citation; item 13.02: the `LEDGER`
+parameter, and a config of the other phase than `LEDGER`'s refused in the first check cell).
 """
 
 import ast
@@ -25,7 +26,7 @@ import pytest
 from trailcam.data.cache import CACHE_TOP, archive_files, sidecar_folders, unpack_cache
 from trailcam.data.metadata import DAY_NIGHT_SIDECAR
 from trailcam.train import device, train
-from trailcam.train.config import load_configs
+from trailcam.train.config import PHASE2_PREFIX, is_phase2, load_configs
 
 ROOT = Path(__file__).resolve().parents[1]
 NOTEBOOK = ROOT / "notebooks" / "kaggle_train.ipynb"
@@ -37,7 +38,8 @@ OLDEST_COMMIT = "17ca508d420cccf10f4ed83d8df849a1dde153cd"
 # Item 6.09: the archive of item 6.08, attached as the user's packing notebook's output (made a
 # dataset, Kaggle extracted it); verified 2026-10-15, one file of 3,213,506,560 bytes.
 KAGGLE_ARCHIVE = "Path('/kaggle/input/notebooks/codx888/notebook2b5a4bf6ad/cct20_512.tar')"
-PARAMETERS = {"CONFIG_NAME", "RUN_SEED", "COMMIT", "CACHE_ARCHIVE", "DATA_ROOT"}
+PARAMETERS = {"CONFIG_NAME", "RUN_SEED", "LEDGER", "COMMIT", "CACHE_ARCHIVE", "DATA_ROOT"}
+LEDGERS = ("docs/ledger.md", f"docs/{train.PHASE2_LEDGER_NAME}")  # phase 1, phase 2
 
 _spec = importlib.util.spec_from_file_location("guard_data", ROOT / "scripts" / "guard_data.py")
 assert _spec is not None and _spec.loader is not None
@@ -113,17 +115,92 @@ def test_parameters() -> None:
     assert p["RUN_SEED"] is None  # the config's run seed unless the user overrides it (R27)
     training = {name for name, c in load_configs().items() if not c.fixture}
     assert p["CONFIG_NAME"] == "small_cnn" and p["CONFIG_NAME"] in training  # 6.04 first
+    assert p["LEDGER"] == "docs/ledger.md" == LEDGERS[0]  # phase 1's, unless a p2_ config runs
+    assert ROOT / str(p["LEDGER"]) == train.LEDGER_PATH
     assert p["DATA_ROOT"] == KAGGLE_DATA_ROOT
     assert p["CACHE_ARCHIVE"] == KAGGLE_ARCHIVE
     assert p["LOCAL_CACHE"] == "Path('/tmp/trailcam-cache')"  # local disk, not /kaggle/working
-    # The check cell's list of config names is the training configs of config.yaml.
+    # The check cell's list of config names is the phase-1 training configs of config.yaml; the
+    # phase-2 ones are matched by their prefix, so a new p2_ config needs no notebook edit.
     (listed,) = [
         ast.literal_eval(n.comparators[0])
         for tree in TREES
         for n in ast.walk(tree)
         if isinstance(n, ast.Compare) and ast.unparse(n.left) == "CONFIG_NAME"
     ]
-    assert set(listed) == training
+    assert set(listed) == {name for name in training if not is_phase2(name)}
+    phase2 = {name for name in training if is_phase2(name)}
+    assert phase2 and all(re.fullmatch(r"p2_[a-z0-9_]+", name) for name in phase2)
+
+
+def _check_cell() -> int:
+    (cell,) = [i for i, source in enumerate(CODE) if "CONFIG_NAME must be" in source]
+    return cell
+
+
+def _run_check_cell(
+    monkeypatch: pytest.MonkeyPatch, config_name: str, ledger: str
+) -> dict[str, object]:
+    """The first check cell run as written with `CONFIG_NAME` and `LEDGER`; the GPU pin it sets
+    is undone after the test."""
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", device.VISIBLE_DEVICES)
+    names: dict[str, object] = {
+        **{key: value for key, value in _parameters().items() if key in PARAMETERS},
+        "Path": Path,
+        "CONFIG_NAME": config_name,
+        "LEDGER": ledger,
+    }
+    exec(compile(TREES[_check_cell()], "check cell", "exec"), names)
+    return names
+
+
+@pytest.mark.parametrize(
+    ("config_name", "ledger"),
+    [("small_cnn", LEDGERS[0]), ("resnet18_arm_b", LEDGERS[0]), ("p2_head3", LEDGERS[1])],
+)
+def test_the_check_cell_takes_a_config_with_the_ledger_of_its_phase(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    config_name: str,
+    ledger: str,
+) -> None:
+    _run_check_cell(monkeypatch, config_name, ledger)
+    assert f"CONFIG_NAME {config_name}, RUN_SEED None, LEDGER {ledger}," in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    ("config_name", "ledger", "message"),
+    [
+        ("p2_head3", LEDGERS[0], "are of different phases"),
+        ("p2_baseline", LEDGERS[0], "are of different phases"),
+        ("resnet18_arm_a", LEDGERS[1], "are of different phases"),
+        ("small_cnn", LEDGERS[1], "are of different phases"),
+        ("small_cnn", "docs/test-ledger.md", "LEDGER must be"),
+        ("p2_head3", "/kaggle/working/ledger-phase2.md", "LEDGER must be"),
+        ("resnet18", LEDGERS[0], "CONFIG_NAME must be"),
+        ("p2_Head3", LEDGERS[1], "CONFIG_NAME must be"),
+    ],
+)
+def test_the_check_cell_refuses_a_config_of_the_other_phase_than_the_ledger(
+    monkeypatch: pytest.MonkeyPatch, config_name: str, ledger: str, message: str
+) -> None:
+    """Item 13.02: a `p2_` config with docs/ledger.md, or a phase-1 config with the phase-2
+    ledger, fails in the first check cell, before the clone, the install and training;
+    `train.py` refuses it again (tests/test_train.py)."""
+    with pytest.raises(ValueError, match=message):
+        _run_check_cell(monkeypatch, config_name, ledger)
+
+
+def test_the_phase_check_comes_first_and_names_the_packages_ledgers() -> None:
+    """The check cell runs before the clone and `train.main`, and its ledger names and prefix
+    are the package's: `train.py`'s phase-2 ledger name and `config.py`'s `p2_`."""
+    (clone,) = [i for i, tree in enumerate(TREES) if "'git', 'clone'" in ast.unparse(tree)]
+    (training,) = [i for i, tree in enumerate(TREES) if _calls_in(tree, "train.main")]
+    assert _check_cell() < clone < training
+    source = CODE[_check_cell()]
+    assert f'LEDGER not in ("{LEDGERS[0]}", "{LEDGERS[1]}")' in source
+    assert f'CONFIG_NAME.startswith("{PHASE2_PREFIX}") != (LEDGER == "{LEDGERS[1]}")' in source
+    assert 'r"p2_[a-z0-9_]+"' in source and PHASE2_PREFIX == "p2_"
 
 
 def test_the_default_commit_has_the_gpu_check() -> None:
@@ -331,9 +408,11 @@ def test_training_is_one_real_run_with_the_clone_paths() -> None:
     assert len(_calls("train.main")) == 1
     p = _parameters()
     assert p["WORK"] == "Path('/kaggle/working')" and p["OUT_DIR"] == "WORK / 'models'"
-    assert 'LEDGER = CLONE / "docs" / "ledger.md"' in ALL_CODE
+    assert "ledger_path = CLONE / LEDGER" in ALL_CODE
     assert '"--config", str(CLONE / "config.yaml")' in ALL_CODE
-    assert '"--ledger", str(LEDGER)' in ALL_CODE
+    assert '"--ledger", str(ledger_path)' in ALL_CODE
+    (clone,) = [source for source in CODE if "git" in source and "clone" in source]
+    assert 'not line.endswith(f" {LEDGER}")' in clone  # a rerun's own ledger row, nothing else
     assert '"--out-dir", str(OUT_DIR)' in ALL_CODE
     flags = set(re.findall(r'"(--[a-z-]+)"', ALL_CODE)) - {"--quiet", "--detach", "--porcelain"}
     flags -= {"--untracked-files=no"}

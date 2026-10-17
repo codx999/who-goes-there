@@ -447,3 +447,15 @@ def test_a_checkpoint_of_another_model_or_class_map_is_refused(tmp_path: Path) -
     torch.save({"model": "small_cnn", "classes": classes, "state_dict": state}, other)
     with pytest.raises(ValueError, match="class map"):
         attention.load_checkpoint(other, config)
+
+
+def test_a_config_of_another_input_size_is_refused_before_the_checkpoint_is_read(
+    tmp_path: Path,
+) -> None:
+    """Item 13.02: every evaluation tool, the demo and the Space load through `load_checkpoint`
+    and run at 224 px, so a phase-2 config of another input size (`p2_res320`) is refused, not
+    scored at the wrong size; the file is not even opened."""
+    config = load_config("p2_res320")
+    assert config.input_size == 320
+    with pytest.raises(ValueError, match="input size is 320 px"):
+        attention.load_checkpoint(tmp_path / "never-read.pt", config)

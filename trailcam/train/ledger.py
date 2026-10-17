@@ -34,6 +34,21 @@ sorted by those keys and never by a score; a group of rows shows their means, an
 with more than one row gets a line of the mean over all of them.
 trans_val is shown beside them as reported, never ranked or picked by. Problems and the summary
 hold column names, line numbers, run ids, seeds, hashes and scores only (R03).
+
+Phase 2 (`docs/phase2-plan.md`, item 13.02). A ledger named `ledger-phase2.md`
+(`PHASE2_LEDGER_NAME` of `train.py`) is checked as the phase-2 ledger, any other as a phase-1
+one. The config of every phase-1 row must not start with `p2_` (`PHASE2_PREFIX`), and that of
+every phase-2 row must, so a phase-2 row pasted into `docs/ledger.md` fails its check, and with
+it `check.sh` and the final scoring, which reads only a ledger that passes. The phase-2 ledger
+gets every cell check and the cross-row checks that hold for one recipe, but not the two that
+make one model one recipe: every phase-2 step is a new recipe of the same model, so the rows of
+one model, or of one model and run seed, may carry several config hashes. In their place, the
+rows of one config share its config hash (a config edited between its seeds fails), and every
+row shares one split seed, since each comparison is paired by run seed on phase 1's split. A
+phase-2 arm pair (arm C against arm A, item 13.04) has configs that differ in `arm` alone, so its
+rows share the config hash, which `tests/test_config.py` checks on the configs. The phase-2
+summary groups by config first, then model, arm and seeds; phase 2 keeps or drops a step on val
+and trans_val (the plan's section 3), while training still selects on val alone.
 """
 
 from __future__ import annotations
@@ -51,8 +66,8 @@ from typing import Final
 
 from trailcam.data.dataset import ARMS
 from trailcam.model.factory import MODEL_NAMES
-from trailcam.train.config import DRY_RUN, SCHEDULERS
-from trailcam.train.train import LEDGER_COLUMNS, LEDGER_PATH, ledger_header
+from trailcam.train.config import DRY_RUN, PHASE2_PREFIX, SCHEDULERS, is_phase2
+from trailcam.train.train import LEDGER_COLUMNS, LEDGER_PATH, is_phase2_ledger, ledger_header
 
 HASH_COLUMNS: Final = ("config hash", "split hash", "checkpoint sha256")
 SCORE_COLUMNS: Final = (
@@ -122,8 +137,9 @@ def read_table(text: str) -> tuple[list[Row], list[str]]:
     return rows, problems
 
 
-def _cell_problems(row: Row) -> list[str]:
-    """What is wrong with the cells of one row, column by column."""
+def _cell_problems(row: Row, phase2: bool) -> list[str]:
+    """What is wrong with the cells of one row, column by column; `phase2` for the phase-2
+    ledger."""
     empty = [column for column in LEDGER_COLUMNS if not row[column]]
     if empty:
         return [f"empty column {column!r}" for column in empty]
@@ -145,6 +161,16 @@ def _cell_problems(row: Row) -> list[str]:
     expect(bool(_CONFIG_NAME.fullmatch(row["config"])), "config", "a config name")
     if row["config"] == DRY_RUN:
         found.append(f"config {DRY_RUN!r}: the dry run never appends a row")
+    if phase2 and not is_phase2(row["config"]):
+        found.append(
+            f"config {row['config']!r} is not a phase-2 config ({PHASE2_PREFIX}...): its rows go "
+            "to docs/ledger.md"
+        )
+    if not phase2 and is_phase2(row["config"]):
+        found.append(
+            f"config {row['config']!r} is a phase-2 config: its rows go to "
+            "docs/ledger-phase2.md, never to this ledger"
+        )
     expect(bool(_SCHEDULER.fullmatch(row["scheduler"])), "scheduler", "'<name> warmup <epochs>'")
     if _WHOLE.fullmatch(row["epochs run"]) and _WHOLE.fullmatch(row["best epoch"]):
         if not 1 <= int(row["best epoch"]) <= int(row["epochs run"]):
@@ -188,13 +214,13 @@ def _disagreements(
     return found
 
 
-def check_rows(rows: Sequence[Row]) -> tuple[list[Row], list[str]]:
+def check_rows(rows: Sequence[Row], phase2: bool = False) -> tuple[list[Row], list[str]]:
     """The rows whose cells are well formed, and every problem of the rows: cell by cell, then
-    across the well-formed rows."""
+    across the well-formed rows; `phase2` for the phase-2 ledger's checks."""
     problems: list[str] = []
     good: list[Row] = []
     for row in rows:
-        found = _cell_problems(row)
+        found = _cell_problems(row, phase2)
         problems += [f"line {row.line}: {problem}" for problem in found]
         if not found:
             good.append(row)
@@ -215,18 +241,29 @@ def check_rows(rows: Sequence[Row]) -> tuple[list[Row], list[str]]:
     problems += _disagreements(
         good, lambda r: (r["split hash"],), ("split seed",), lambda k: "the rows of one split hash"
     )
-    problems += _disagreements(
-        good,
-        lambda r: (r["model"], r["run seed"]),
-        SHARED_BY_SEED,
-        lambda k: f"the rows of {k[0]} run seed {k[1]} (arm A and arm B alike)",
-    )
-    problems += _disagreements(
-        good,
-        lambda r: (r["model"],),
-        ("config hash",),
-        lambda k: f"the rows of {k[0]} (every split seed, run seed and arm)",
-    )
+    if phase2:
+        problems += _disagreements(
+            good,
+            lambda r: (r["config"],),
+            ("config hash",),
+            lambda k: f"the rows of config {k[0]!r} (every run seed)",
+        )
+        problems += _disagreements(
+            good, lambda r: (), ("split seed",), lambda k: "the rows of the phase-2 ledger"
+        )
+    else:
+        problems += _disagreements(
+            good,
+            lambda r: (r["model"], r["run seed"]),
+            SHARED_BY_SEED,
+            lambda k: f"the rows of {k[0]} run seed {k[1]} (arm A and arm B alike)",
+        )
+        problems += _disagreements(
+            good,
+            lambda r: (r["model"],),
+            ("config hash",),
+            lambda k: f"the rows of {k[0]} (every split seed, run seed and arm)",
+        )
     problems += _disagreements(
         good,
         lambda r: (r["config hash"],),
@@ -237,23 +274,26 @@ def check_rows(rows: Sequence[Row]) -> tuple[list[Row], list[str]]:
 
 
 def check_ledger(path: Path) -> tuple[list[Row], list[str]]:
-    """The rows of the ledger at `path` and its problems; no problems means the ledger passes."""
+    """The rows of the ledger at `path` and its problems; no problems means the ledger passes.
+    A ledger named `ledger-phase2.md` gets the phase-2 checks."""
     if not path.is_file():
         return [], [f"no ledger at {path}"]
     try:
         rows, problems = read_table(path.read_text(encoding="utf-8"))
     except LedgerError as error:
         return [], [str(error)]
-    good, found = check_rows(rows)
+    good, found = check_rows(rows, phase2=is_phase2_ledger(path))
     return good, problems + found
 
 
-def summary(rows: Sequence[Row]) -> str:
+def summary(rows: Sequence[Row], phase2: bool = False) -> str:
     """A markdown table of the scores per model, arm, split seed and run seed, sorted by those
     keys (R17: never by a score); under the seeds of a model and arm with more than one row, the
-    mean over all of them."""
-    head = ("model", "arm", "split seed", "run seed", "rows", *SCORE_COLUMNS)
-    lines = [f"ledger: {len(rows)} rows, every check passed"]
+    mean over all of them. With `phase2`, the config comes first: per config, model and arm."""
+    keys = ("config", "model", "arm") if phase2 else ("model", "arm")
+    head = (*keys, "split seed", "run seed", "rows", *SCORE_COLUMNS)
+    name = "phase-2 ledger" if phase2 else "ledger"
+    lines = [f"{name}: {len(rows)} rows, every check passed"]
     if not rows:
         return "\n".join(lines)
     lines += ["", "| " + " | ".join(head) + " |", "|" + " --- |" * len(head)]
@@ -262,21 +302,25 @@ def summary(rows: Sequence[Row]) -> str:
         scores = [f"{fmean(float(row[column]) for row in group):.4f}" for column in SCORE_COLUMNS]
         return "| " + " | ".join([*keys, str(len(group)), *scores]) + " |"
 
-    by_arm: dict[tuple[str, str], list[Row]] = defaultdict(list)
+    by_arm: dict[tuple[str, ...], list[Row]] = defaultdict(list)
     for row in rows:
-        by_arm[(row["model"], row["arm"])].append(row)
-    for (model, arm), arm_rows in sorted(by_arm.items()):
+        by_arm[tuple(row[key] for key in keys)].append(row)
+    for group_keys, arm_rows in sorted(by_arm.items()):
         by_seed: dict[tuple[int, int], list[Row]] = defaultdict(list)
         for row in arm_rows:
             by_seed[(int(row["split seed"]), int(row["run seed"]))].append(row)
         for (split_seed, run_seed), group in sorted(by_seed.items()):
-            lines.append(line((model, arm, str(split_seed), str(run_seed)), group))
+            lines.append(line((*group_keys, str(split_seed), str(run_seed)), group))
         if len(arm_rows) > 1:
-            lines.append(line((model, arm, "all", "all"), arm_rows))
-    lines += [
-        "",
-        "Scores of a group of rows are means. trans_val is reported, never selected on (R17).",
-    ]
+            lines.append(line((*group_keys, "all", "all"), arm_rows))
+    if phase2:
+        note = (
+            "Training selects on val alone; a phase-2 step is kept or dropped on val and "
+            "trans_val (docs/phase2-plan.md section 3)."
+        )
+    else:
+        note = "trans_val is reported, never selected on (R17)."
+    lines += ["", f"Scores of a group of rows are means. {note}"]
     return "\n".join(lines)
 
 
@@ -305,7 +349,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         count = f"{len(problems)} problem{'s' if len(problems) > 1 else ''}"
         print(f"ledger check: {count} in {args.check}", file=sys.stderr)
         return 1
-    print(summary(rows))
+    print(summary(rows, phase2=is_phase2_ledger(args.check)))
     return 0
 
 

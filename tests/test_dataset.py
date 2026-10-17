@@ -32,6 +32,7 @@ from trailcam.data.dataset import (
     EvalTransform,
     ImageReadError,
     TrainTransform,
+    eval_resize,
 )
 from trailcam.data.metadata import Box, load_metadata
 from trailcam.data.split import Split, make_split
@@ -226,6 +227,35 @@ def test_eval_transform_resizes_the_shorter_side_then_centre_crops() -> None:
     assert EVAL_RESIZE == 256
     assert bool((out[:, :, 20] < 0).all())  # black, normalised
     assert bool((out[:, :, 33] > 0).all())  # white, normalised
+
+
+def test_the_default_size_is_phase_1s_224_and_another_keeps_the_margin() -> None:
+    """Item 13.02: both transforms output 224 unless given another size (a phase-2 config's
+    `input_size`); the eval resize keeps 256's margin over 224, so 320 resizes to 366."""
+    assert (EvalTransform().size, TrainTransform().size) == (INPUT_SIZE, INPUT_SIZE) == (224, 224)
+    assert (eval_resize(224), eval_resize(320)) == (EVAL_RESIZE, 366) == (256, 366)
+    image = Image.new("RGB", (512, 373), (90, 120, 60))
+    torch.manual_seed(0)
+    assert tuple(TrainTransform(size=320)(image, ()).shape) == (3, 320, 320)
+    assert tuple(TrainTransform("B", size=320)(image, ()).shape) == (3, 320, 320)
+    for bad in (0, -1):
+        with pytest.raises(ValueError, match="size must be at least 1"):
+            EvalTransform(bad)
+        with pytest.raises(ValueError, match="size must be at least 1"):
+            TrainTransform(size=bad)
+
+
+def test_the_eval_transform_at_320_resizes_to_366_then_centre_crops() -> None:
+    """The 384 x 192 image of the test above, black left third: resized to 732 x 366 and
+    centre-cropped at columns 206 to 526, the edge (column 244 of the resized image) lands at
+    column 38 of the 320 px crop. A direct 320 x 320 resize would put it at 106.7."""
+    image = Image.new("RGB", (384, 192), (255, 255, 255))
+    image.paste((0, 0, 0), (0, 0, 128, 192))
+    out = EvalTransform(320)(image)
+    assert tuple(out.shape) == (3, 320, 320)
+    assert bool((out[:, :, 32] < 0).all())  # black, normalised
+    assert bool((out[:, :, 44] > 0).all())  # white, normalised
+    assert torch.equal(out, EvalTransform(320)(image))  # deterministic
 
 
 def test_normalisation_uses_imagenet_mean_and_std() -> None:

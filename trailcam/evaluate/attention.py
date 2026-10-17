@@ -537,7 +537,15 @@ def write_report(
 
 
 def load_checkpoint(path: Path, config: Config) -> nn.Module:
-    """The model of a `train.py` checkpoint; refuses one of another model or class map."""
+    """The model of a `train.py` checkpoint; refuses one of another model or class map, and a
+    config of another input size than the 224 px every evaluation tool, the demo and the Space
+    use (a phase-2 config such as `p2_res320`; its val and trans_val scores are `train.py`'s, and
+    its test scoring is item 13.06's)."""
+    if config.input_size != INPUT_SIZE:
+        raise ValueError(
+            f"the config's input size is {config.input_size} px; the evaluation tools, the demo "
+            f"and the Space run at {INPUT_SIZE} px only (docs/phase2-plan.md section 4)"
+        )
     saved = torch.load(path, map_location="cpu", weights_only=True)
     if not isinstance(saved, dict) or set(saved) != {"model", "classes", "state_dict"}:
         raise ValueError(f"{path.name} is not a checkpoint written by trailcam.train.train")
