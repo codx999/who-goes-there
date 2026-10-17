@@ -28,7 +28,7 @@ no tunnel.
 from __future__ import annotations
 
 import argparse
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Final
 
@@ -40,6 +40,9 @@ from trailcam.demo.predict import DEFAULT_CONFIG, PHOTO_SUFFIXES, TOP_K, load_mo
 from trailcam.evaluate.gradcam import ASSETS_DIR, ZeroMapError, assets_image, overlay_photo
 from trailcam.model.factory import build_model
 from trailcam.train.config import CONFIG_PATH, load_config
+
+Result = tuple[dict[str, float], str, Image.Image | None]  # scores, seconds, overlay or None
+Handler = Callable[[Image.Image | None, bool], Result]  # the photo and the Grad-CAM switch
 
 CITATION: Final = (
     "Photos: Caltech Camera Traps (CCT20). Sara Beery, Grant Van Horn, Pietro Perona, "
@@ -57,9 +60,7 @@ def example_photos(assets_root: Path = ASSETS_DIR) -> list[Path]:
     return sorted(assets_image(photo, root) for photo in photos)
 
 
-def classify(
-    model: nn.Module, photo: Image.Image | None, show_gradcam: bool
-) -> tuple[dict[str, float], str, Image.Image | None]:
+def classify(model: nn.Module, photo: Image.Image | None, show_gradcam: bool) -> Result:
     """The app's handler: the top-3 scores for `gr.Label`, the seconds as text, and the Grad-CAM
     overlay or None. Runs outside `torch.inference_mode()`, which Grad-CAM's autograd needs."""
     if photo is None:
@@ -76,8 +77,12 @@ def classify(
         return scores, seconds, None
 
 
-def build_app(model: nn.Module, examples: Sequence[Path] = ()) -> gr.Blocks:
-    """The interface around `model`; `examples` are `assets/` photos, and may be empty."""
+def build_app(
+    model: nn.Module, examples: Sequence[Path] = (), handler: Handler | None = None
+) -> gr.Blocks:
+    """The interface around `model`; `examples` are `assets/` photos, and may be empty. The button
+    runs `handler`, by default `classify` on `model`; the Space (`space/app.py`) passes its own,
+    the same call wrapped in `spaces.GPU`, so both share this one interface."""
     # No telemetry: with analytics off, Gradio skips its version check and analytics calls too.
     app = gr.Blocks(title="Who Goes There", analytics_enabled=False)
     with app:
@@ -100,12 +105,12 @@ def build_app(model: nn.Module, examples: Sequence[Path] = ()) -> gr.Blocks:
             gr.Examples(examples=[[str(path)] for path in examples], inputs=[photo])
         gr.Markdown(CITATION)
 
-        def handle(
-            image: Image.Image | None, gradcam: bool
-        ) -> tuple[dict[str, float], str, Image.Image | None]:
+        def handle(image: Image.Image | None, gradcam: bool) -> Result:
             return classify(model, image, gradcam)
 
-        run.click(handle, inputs=[photo, show_gradcam], outputs=[scores, seconds, heatmap])
+        run.click(
+            handler or handle, inputs=[photo, show_gradcam], outputs=[scores, seconds, heatmap]
+        )
     return app
 
 

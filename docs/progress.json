@@ -174,7 +174,7 @@
     {"id": "11.01", "session": 11, "owner": "claude", "due": "2026-10-21",
      "description": "space/app.py (imports the predict function, same UI as 10.01), space/README.md with the Spaces header (sdk gradio, CPU), space/requirements.txt exported with `uv export --no-dev --no-hashes` and trimmed to the app's imports, and scripts/deploy_space.py that uploads app.py, requirements.txt, README.md, assets examples and the weights file of the arm chosen in open question 7 with huggingface_hub, token from HF_TOKEN; --dry-run lists what it would upload",
      "steps": "`uv run python scripts/deploy_space.py --dry-run --weights <path>` lists exactly the files above and nothing under data/; space/requirements.txt pins torch, torchvision and gradio (grad-cam only if open question 5 is decided in favour); scripts/deploy_space.py is listed in the mypy files in pyproject.toml and in check.sh; `bash scripts/check.sh` green; the Space weights path is covered by .gitignore (`git check-ignore space/model.pt` prints it)",
-     "passes": false},
+     "passes": true},
     {"id": "11.02", "session": 11, "owner": "user", "due": "2026-10-21",
      "description": "Create the Hugging Face account and a public Gradio Space on the free CPU tier; create a write token and export it as HF_TOKEN locally (never in the repo)",
      "steps": "manual: the Space URL exists and is recorded in docs/plan.md section 8 and README.md; `uv run python scripts/guard_data.py --all` passes (its Hugging Face token pattern covers every tracked file)",

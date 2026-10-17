@@ -33,12 +33,17 @@ only-include = ["trailcam", "README.md", "LICENSE"]
 
 # gradio is the demo's alone (item 10.01): a group, not a runtime dependency, so the wheel's
 # Requires-Dist and pip on Kaggle never see it, while `uv sync` installs it with dev.
+# huggingface_hub is scripts/deploy_space.py's alone (item 11.01): its own group, so neither the
+# wheel nor the Space's requirements export (`--group demo`) carries it.
 [tool.uv]
-default-groups = ["dev", "demo"]
+default-groups = ["dev", "demo", "deploy"]
 
 [dependency-groups]
 demo = [
     "gradio>=6.30.0",
+]
+deploy = [
+    "huggingface-hub>=2.2.0",
 ]
 dev = [
     "mypy>=2.4.0",
@@ -71,6 +76,8 @@ files = [
     "scripts/guard_data.py",
     "scripts/kaggle_prepare_cct20.py",
     "scripts/kaggle_pack_cache.py",
+    "scripts/deploy_space.py",
+    "space/app.py",
 ]
 
 # torchvision ships no type information (no py.typed); its names are typed Any. torch, timm and

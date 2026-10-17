@@ -3286,3 +3286,69 @@ parametrised test checks the collector sees eight import forms. Planting `import
 trailcam.data.metadata`, `from json import load as ...`, `import importlib` or `__import__('json')`
 into `sort.py` fails it. R17's test cell now says the check guards the file, and the open spy the
 behaviour. `check.sh` green.
+
+## 2026-10-16: item 11.01: the Space's files and the deploy script (Opus 5.5)
+
+Done (11.01, Opus 5.5 high): `space/app.py`, `space/README.md`, `space/requirements.txt`,
+`scripts/deploy_space.py`, `tests/test_space.py` (12 tests), `tests/test_deploy_space.py` (28).
+The user's decisions of 2026-10-16 (through the coordinator) are in plan.md section 8: hosting
+(PRO and CPU Basic from about 10-20, free ZeroGPU from about 11-15), the ZeroGPU-ready app, Grad-CAM
+in the Space and off by default (open question 5 closed), and `--weights <path>` with no arm named
+(open question 7 noted). progress.json items are not edited; the user rewords 11.02.
+
+- **Same UI.** `build_app` of `trailcam/demo/app.py` gained an optional `handler` (the only change
+  to 10.01 code); the Space passes its own and otherwise builds the identical interface, analytics
+  off. `app.py` holds no prediction code: `classify` calls `predict`; a test refuses a class list,
+  transform, timer or softmax in it. 10.01 never set `GRADIO_ANALYTICS_ENABLED`, so neither does
+  the Space.
+- **ZeroGPU-ready.** `import spaces` in a `try`, falling back to the bare handler; the model goes
+  to `cuda` at module level when CUDA is available, else the CPU; the button's handler (prediction
+  and Grad-CAM) is wrapped in `spaces.GPU`, takes the photo and the switch only, and reads the
+  model from the module, so a ZeroGPU call never passes the model.
+- **Torch wheel: CPU now.** The requirements carry the lock's `+cpu` wheels with the PyTorch CPU
+  index line: a much smaller download and build, the wheels CI tests. ZeroGPU needs CUDA torch, so
+  the switch is: drop the index line and the `+cpu` suffixes, put torch at a version ZeroGPU lists
+  (its docs listed 2.8.0 to 2.13.0 today; the lock has 2.14.1, so 2.13.0 and torchvision 0.28.0
+  unless 2.14 is listed by then), set the hardware to ZeroGPU, redeploy. `spaces` comes from
+  Hugging Face (not in the lock); check it imports there, and that a Grad-CAM `gr.Warning` still
+  shows from inside a GPU call.
+- **How the Space gets `trailcam`: uploaded, not a `git+https` pin.** The deploy uploads the
+  package's tracked modules at their repo paths. Why: the Space always runs the code of the commit
+  it was deployed from (the deploy refuses uncommitted or untracked changes under `space/`,
+  `trailcam/`, `config.yaml` and `assets/`, and names HEAD in the Space's commit message), with no
+  pin to bump after every fix and no dependency on what is pushed; the requirements file is then
+  the whole environment; and `CONFIG_PATH` and `ASSETS_DIR` find `config.yaml` and `assets/` at the
+  Space's root unchanged. Cost: the dry run lists 33 package modules, training code included.
+- **Requirements**: `uv export --no-dev --no-hashes --group demo` trimmed to torch, torchvision,
+  gradio, Pillow, NumPy, matplotlib and PyYAML; timm is out (imported only for EfficientNet, add it
+  if the fallback is ever used). A test follows every module the app loads at startup and checks the
+  file names exactly those distributions, each line an export line of the lock.
+- **README header**: `sdk: gradio`, `sdk_version: 6.30.0` and `python_version: "3.12"` (tested
+  against the lock and `.python-version`), `suggested_hardware: cpu-basic`, citation and licences.
+- **Deploy script**: an allowed list of Space paths (`app.py`, `requirements.txt`, `README.md`,
+  `config.yaml`, `model.pt`, photos directly under `assets/`, `trailcam/**/*.py`); refuses a file
+  under this checkout's, the main checkout's or `TRAILCAM_DATA_ROOT`'s `data/` (links followed,
+  before any file is loaded), a non-weights file outside the repo, weights that are not a `.pt`
+  checkpoint of `DEFAULT_CONFIG`'s model, and untracked examples. Token from `HF_TOKEN` only (no
+  `--token`), passed to `HfApi` and never printed; `--dry-run` reads no token, never imports
+  `huggingface_hub` and opens no socket. One commit with `create_commit`; files no longer listed
+  stay in the Space. `huggingface_hub` is in a new `deploy` group (default groups, not the wheel,
+  not the `demo` export).
+- `config.yaml` is uploaded (the user's OK) and found by `CONFIG_PATH` at the Space's root.
+- Mypy lists: `scripts/deploy_space.py` and `space/app.py` in pyproject.toml and check.sh;
+  `tests/test_control_plane.py` updated. Invariants R02, R05 to R07, R20, R21, R23, R33 to R36,
+  R38: test cells filled. Learning journal section 14: the 11.01 lines.
+
+Checks: planted faults (data check off, commit check off, a partial token print, dry run
+uploading, weights unchecked, non-`.py` package files, no `@gpu`, CPU-only device, the Space's
+handler dropped, a gradio pin off the lock, timm added, matplotlib dropped) each fail a test; the
+partial-print case first passed, so the token test now looks for any six characters of it.
+`space/app.py` built locally with a random ResNet-18 at `space/model.pt` (removed after): CPU,
+three scores, a 224 x 224 Grad-CAM. `git check-ignore space/model.pt` prints it. Dry run on the
+real repo before the commit: refused (4 uncommitted files), as designed; after the commit (with a random ResNet-18 `.pt`, no `HF_TOKEN`): exit 0, 38 files: `README.md`,
+`app.py`, `config.yaml`, `model.pt`, `requirements.txt` and 33 `trailcam/**/*.py` modules (the
+only `data/` in the list is the `trailcam/data/` package); no examples, since `assets/` has none
+yet (the user picks them, item 8.05).
+`check.sh` green (889 passed).
+
+Next: review (tier 2), then 11.02 and 11.03 (the user).

@@ -1988,7 +1988,7 @@ wheels = [
 name = "trailcam"
 version = "0.1.0"
 source = { editable = "." }
-default-groups = ["demo", "dev"]
+default-groups = ["demo", "deploy", "dev"]
 dependencies = [
     { name = "matplotlib" },
     { name = "pillow" },
@@ -2003,6 +2003,9 @@ dependencies = [
 [package.dev-dependencies]
 demo = [
     { name = "gradio" },
+]
+deploy = [
+    { name = "huggingface-hub" },
 ]
 dev = [
     { name = "mypy" },
@@ -2025,6 +2028,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 demo = [{ name = "gradio", specifier = ">=6.30.0" }]
+deploy = [{ name = "huggingface-hub", specifier = ">=2.2.0" }]
 dev = [
     { name = "mypy", specifier = ">=2.4.0" },
     { name = "pytest", specifier = ">=9.1.1" },

@@ -1,0 +1,14 @@
+# The Space's packages: `uv export --no-dev --no-hashes --group demo` (the lock's versions) trimmed
+# to what app.py and the trailcam modules it loads import (tests/test_space.py checks both). The
+# trailcam package itself is uploaded beside app.py by scripts/deploy_space.py, not installed.
+# CPU Basic: the lock's CPU-only torch wheels, from the PyTorch CPU index. At the switch to
+# ZeroGPU (plan.md section 8): drop the index line and the two `+cpu` suffixes (PyPI's Linux wheels
+# are the CUDA builds), with torch at a version ZeroGPU lists.
+--extra-index-url https://download.pytorch.org/whl/cpu
+gradio==6.30.0
+matplotlib==3.11.2
+numpy==2.5.4
+pillow==12.3.0
+pyyaml==6.0.3
+torch==2.14.1+cpu
+torchvision==0.29.1+cpu
