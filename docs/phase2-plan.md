@@ -26,9 +26,11 @@ of milliseconds on the CPU (to be measured at 11.03), so the CPU is not the bloc
 the CPU's after the Space moves to ZeroGPU, so the model also runs on the free fallback and on a
 laptop.
 
-Baseline: phase 1's `resnet18_arm_a`, run seeds 0, 1 and 2 (section 2), re-run unchanged at the
-phase-2 commit as `p2_baseline` (section 3). Phase 2 measures "trans" on trans_val (section 4,
-the honesty note); its one test scoring, of the frozen final recipe only, is declared in section 4.
+Baseline: phase 1's `resnet18_arm_a`, run seeds 0, 1 and 2 (section 2). Seed 0 re-ran unchanged at
+the phase-2 commit as `p2_baseline` and reproduced phase 1's run bit for bit, so seeds 1 and 2 are
+phase 1's own runs, not re-run (section 3, open question 8). Phase 2 measures "trans" on trans_val
+(section 4, the honesty note); its one test scoring, of the frozen final recipe only, is declared in
+section 4.
 
 ## 2. Phase-1 results so far, and the noise they show
 
@@ -78,9 +80,11 @@ boundary at camera 125 and nothing more.
 
 ## 3. How a change is judged: screen, confirm, keep
 
-Every comparison is paired by run seed: the change's seed k against the baseline's seed k at
-the same commit, on phase 1's split (split seed 42, split hash `c78a9c10…`). The baseline is
-`p2_baseline`, which is `resnet18_arm_a` exactly (same fields, same config hash).
+Every comparison is paired by run seed: the change's seed k against the baseline's seed k, on phase
+1's split (split seed 42, split hash `c78a9c10…`). The baseline is `p2_baseline`, which is
+`resnet18_arm_a` exactly (same fields, same config hash). Its seed 0 ran at the phase-2 commit; its
+seeds 1 and 2 are phase 1's arm A seeds 1 and 2, paired across commits (section 4's exception, open
+question 8).
 
 **The control re-run.** The code has moved since phase 1's training commit `61f1ecc` (item
 13.02's progress-log entry lists the training-path files changed). So `p2_baseline` seed 0 runs
@@ -135,7 +139,8 @@ winner's own confirm shows that).
 
 **Kept changes stack.** The kept changes are combined into one recipe (a config with several
 changes, so `tests/test_config.py`'s one-change rule needs a named exception for it) and run on
-seeds 0, 1 and 2; the stack is kept by the same rule against `p2_baseline`. If it fails, the final
+seeds 0, 1 and 2; the stack is kept by the same rule against the baseline (`p2_baseline` seed 0,
+phase 1's arm A seeds 1 and 2). If it fails, the final
 recipe is chosen on 10-22 among the single kept changes and `p2_baseline`, by the same rule. If a
 kept recipe's spread is clearly wider than the bands above, the bands are re-measured from it and
 the progress log says so. The goal's val limit is cumulative: the stacked recipe stays within
@@ -162,7 +167,11 @@ only a rough estimate.
   is the notebook's `COMMIT` for every run of the batch, `p2_baseline`'s included, and the batch's
   progress-log entry quotes it. A variant run at a later commit than its `p2_baseline` seed is
   paired with it only if no training-path file changed between the two commits (the diff 13.02's
-  log takes from `61f1ecc`); otherwise that `p2_baseline` seed re-runs at the later commit.
+  log takes from `61f1ecc`); otherwise that `p2_baseline` seed re-runs at the later commit. One
+  exception (open question 8, the user's decision of 2026-10-18): the baseline's seeds 1 and 2 are
+  phase 1's arm A seeds 1 and 2 at `61f1ecc`, paired across commits although training-path files
+  changed since, because `p2_baseline` seed 0 at the phase-2 commit reproduced arm A seed 0 bit for
+  bit. So the confirm and the stack re-run no baseline seed; the rule holds as written for seed 0.
 - **Each run is a row in `docs/ledger-phase2.md`** (built in 13.02), with the header and columns
   of `docs/ledger.md`, and never in `docs/ledger.md`. The final scoring
   (`trailcam/evaluate/score_test.py`) relies on `docs/ledger.md` holding exactly the
@@ -466,11 +475,12 @@ review (13.02's review covers steps 3 to 5).
 
 This week, from the multipliers below and about 12 minutes a ResNet-18 run: the 10-19 screen is
 five runs (`p2_baseline`, `p2_head3`, `p2_res320`, `p2_r50`, `p2_arm_c`), about 90 minutes, plus
-SWA's screen, about 13; the 10-20 confirm is `p2_baseline`'s two seeds and two per winner, from
-about 25 minutes (no winner) to about 3.5 hours (every variant wins); the 10-21 stack is three runs,
-about 40 minutes for a ResNet-18 stack and nearly 3 hours if it holds 320 px and ResNet-50 (about
-55 minutes a run). The worst case, about 8 GPU hours, is above the 5-hour cap of the rule below:
-open question 9.
+SWA's screen, about 13; the 10-20 confirm is two runs per winner, `p2_baseline`'s seeds 1 and 2
+being phase 1's (open question 8), from nothing (no winner) to about 3 hours (every variant wins);
+the 10-21 stack is three runs, about 40 minutes for a ResNet-18 stack and nearly 3 hours if it holds
+320 px and ResNet-50 (about 55 minutes a run). The worst case, about 8 GPU hours as first
+estimated (about 7.5 without the baseline's two confirm runs), is above the 5-hour cap of the rule
+below: open question 9.
 
 Run time, measured in phase 1 and estimated after: a ResNet-18 run at 224 px took about 12
 minutes, start-up included (the gaps between consecutive start times in item 7.03's run ids). The
@@ -511,7 +521,8 @@ Phase 2 runs this week, before the presentation on 2026-10-26, not after (the us
 
 Screening independent one-change variants in parallel against the same baseline, then stacking
 the winners, keeps one change per comparison: every screen and every confirm compares a variant
-with `p2_baseline` and nothing else, and only the stack combines changes, once, after each has
+with the baseline (`p2_baseline`, its seeds 1 and 2 phase 1's arm A runs) and nothing else, and
+only the stack combines changes, once, after each has
 been confirmed alone (section 3).
 
 Phase 1's own items are unchanged and run beside it: the evaluation on val and trans_val (8.06),

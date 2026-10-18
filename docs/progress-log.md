@@ -4793,3 +4793,39 @@ the fix: 1,181 passed.
 
 **Next.** The fix round. Then sync again before reporting ready to merge, since main moves when
 13.08 merges.
+
+## 2026-10-18: fix round 13.05: one low fixed in the plan; main merged at af9ceb5 (Opus 5.5)
+
+Review: tier 2. The user ran `/review-session daa97f9..73fbf2a 13.05`: code-reviewer (Opus 5.5,
+xhigh) on the fix commit's range, risk-reviewer (Fable 5.1, high) on `trailcam/evaluate/slices.py`
+and `tests/test_phase2_eval.py`. Neither found anything high. All 8 scenarios held for both: R03,
+R04, R05, R17, R20, R26, R32 and R42. Both confirmed the fix: every checkpoint is checked before
+the metadata or any image is read, and the new test fails on the pre-fix `slices.py`. The
+code-reviewer's `check.sh` was green (1,181 passed, none skipped).
+
+- **Fixed: low, code-reviewer.** `docs/phase2-plan.md` gave two pairing rules. The confirm bullet,
+  section 9 and open question 8 recorded the user's answer (the baseline's seeds 1 and 2 are phase
+  1's arm A runs). But section 1, section 3's opening and its stack rule, section 4's pinned-commit
+  rule and section 8 still described a same-commit `p2_baseline` re-run. Applied as written,
+  section 4 would have required re-running the seeds the user decided not to re-run. Now all of
+  them agree. Section 4 names the exception: seeds 1 and 2 pair across commits with phase 1's arm
+  A at `61f1ecc`, because `p2_baseline` seed 0 reproduced arm A seed 0 bit for bit, and the rule
+  holds as written for seed 0. The stack is judged against `p2_baseline` seed 0 and arm A seeds 1
+  and 2. Section 7's budget drops the baseline's two confirm runs. Docs only; no code or test
+  depends on this text.
+- Noted, not checked by the reviewer: "bit for bit" is 13.08's finding; its ledger row's scores
+  match arm A seed 0's to four decimals.
+
+Merged `main` at af9ceb5 (item 13.08: four phase-2 ledger rows, `p2_arm_c_p25`, its tests and plan
+notes) through the sync tool as 43dc928. Three conflicts, each two appended blocks, all kept:
+- this log: 13.08's three entries first, then 13.05's;
+- the journal's topic 15: 13.08's lines, then 13.05's;
+- `docs/progress.json`: 13.05, then 13.08.
+
+`docs/phase2-plan.md` merged without conflict; 13.08's screen notes under steps 1 and 4 and every
+13.05 passage are both in it.
+
+No further round: the fix touches `docs/phase2-plan.md` only, which is not high-stakes. `check.sh`
+green after the merge and the fix: 1,188 passed.
+
+**Next.** Ready to merge; sync again first if main has moved.
