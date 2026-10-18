@@ -23,6 +23,7 @@ from trailcam.data.dataset import ARMS, INPUT_SIZE, TrainTransform
 from trailcam.data.metadata import Box
 from trailcam.model import factory
 from trailcam.train import config as config_module
+from trailcam.train import train as train_module
 from trailcam.train.config import (
     CONFIG_PATH,
     DRY_RUN,
@@ -49,6 +50,7 @@ P2_BASE = "resnet18_arm_a"
 P2_CHANGES: dict[str, dict[str, object]] = {
     "p2_baseline": {},  # the control re-run at the phase-2 commit
     "p2_arm_c": {"arm": "C", "paste_p": 0.5},  # copy-paste (item 13.04): the arm and its setting
+    "p2_arm_c_p25": {"arm": "C", "paste_p": 0.25},  # arm C's pre-declared follow-up (item 13.08)
     "p2_head3": {"head_only_epochs": 3},  # the body trains 7 of the 10 epochs
     "p2_res320": {"input_size": 320},  # eval resize round(320 * 256 / 224) = 366
     "p2_r50": {"model": "resnet50"},
@@ -185,6 +187,41 @@ def test_the_phase1_config_hashes_are_the_ledgers(configs: dict[str, Config]) ->
         assert config_hash(config) == row["config hash"] == PHASE1_HASHES[row["config"]]
 
 
+# The config hashes of docs/ledger-phase2.md's configs (item 13.08, review 13.08): the configs with
+# rows and the pre-declared ones, so a config edited after its run, or before it, fails here.
+PHASE2_HASHES = {
+    "p2_baseline": PHASE1_HASHES["resnet18_arm_a"],  # input_size 224 and paste_p None: neutral
+    "p2_arm_c": "5c7c51c2faea18b8f814eb58cb54ca34ade489302e2689781092ab633c313b51",
+    "p2_arm_c_p25": "42d47bfda80f99a821b0257a1f1c74543d93587cf2f5966a735899df54410fb9",
+    "p2_head3": "a21b04f00a14b244a72e0cc425c575dfebafc7e263ab803e145fa78af8073b56",
+    "p2_res320": "5a20cf0771a6e3f81b2fbf4ee1a23bbb19738fcca761bf87ef07e7cf825febfd",
+    "p2_r50": "05a685a9c19ef0b43693be03373de08dce8af240c1c02c1f99ff1fa3427a78ed",
+}
+
+
+def test_the_phase2_config_hashes_are_the_ledgers(configs: dict[str, Config]) -> None:
+    """Review 13.08, R25's phase-2 line: the phase-2 checker compares rows with each other only,
+    so this ties each docs/ledger-phase2.md row to today's config.yaml, as the phase-1 test does:
+    the row's config at the row's run seed hashes to the row's config hash. `p2_baseline` rows
+    carry arm A's phase-1 hash (`input_size` 224 and `paste_p` None are hash-neutral); arm C's
+    rows do not (a set `paste_p` is hashed). Every phase-2 config's hash is pinned too."""
+    assert set(PHASE2_HASHES) == set(P2_CHANGES)
+    for name, digest in PHASE2_HASHES.items():
+        assert config_hash(configs[name]) == digest, name
+    rows, problems = check_ledger(train_module.PHASE2_LEDGER_PATH)
+    assert problems == [] and rows
+    for row in rows:
+        config = with_overrides(
+            row["config"], configs[row["config"]], {"run_seed": int(row["run seed"])}
+        )
+        assert config_hash(config) == row["config hash"] == PHASE2_HASHES[row["config"]], row[
+            "run id"
+        ]
+    by_config = {row["config"]: row["config hash"] for row in rows}
+    assert by_config["p2_baseline"] == PHASE1_HASHES["resnet18_arm_a"]
+    assert by_config["p2_arm_c"] != PHASE1_HASHES["resnet18_arm_a"]
+
+
 def test_input_size_is_left_out_of_the_hash_at_224_only(configs: dict[str, Config]) -> None:
     """`HASH_NEUTRAL`: at 224 the hash is the one of the fields without `input_size`, as before
     the field existed; any other value changes it."""
@@ -224,6 +261,24 @@ def test_arm_c_is_arm_a_with_arm_c_and_its_paste_probability(configs: dict[str, 
     assert is_phase2("p2_arm_c") and "p2_arm_c" in P2_CHANGES
     for name, config in configs.items():
         assert (config.paste_p is not None) == (config.arm == "C"), name
+
+
+def test_arm_c_p25_is_p2_arm_c_at_a_quarter_paste_probability(configs: dict[str, Config]) -> None:
+    """Item 13.08, arm C's pre-declared follow-up: it loads as a phase-2 config, differs from
+    `p2_baseline` in `arm` and `paste_p` alone (one change, as `p2_arm_c` does) and from
+    `p2_arm_c` in `paste_p` alone, and its hashed `paste_p` gives it a config hash of its own, so
+    its rows never pass as `p2_arm_c`'s. Its refusal against docs/ledger.md is in
+    tests/test_train.py (`PHASE_MIXUPS`) and tests/test_notebook.py."""
+    assert load_config("p2_arm_c_p25") == configs["p2_arm_c_p25"]
+    assert is_phase2("p2_arm_c_p25")
+    base, c, p25 = (asdict(configs[n]) for n in ("p2_baseline", "p2_arm_c", "p2_arm_c_p25"))
+    assert [key for key in FIELDS if base[key] != p25[key]] == ["arm", "paste_p"]
+    assert [key for key in FIELDS if c[key] != p25[key]] == ["paste_p"]
+    assert (p25["arm"], p25["paste_p"], p25["input_size"]) == ("C", 0.25, 224)
+    assert "input_size" not in _raw()["configs"]["p2_arm_c_p25"]  # from common
+    digests = [config_hash(configs[n]) for n in ("p2_baseline", "p2_arm_c", "p2_arm_c_p25")]
+    assert len(set(digests)) == 3
+    assert config_hash(replace(configs["p2_arm_c_p25"], paste_p=0.5)) == digests[1]
 
 
 def test_the_model_names_are_the_factorys() -> None:
@@ -378,7 +433,9 @@ def test_a_phase_2_field_may_be_left_out_but_arm_c_needs_paste_p() -> None:
     """The phase-1 configs name no phase-2 field and load with it None; arm C without its paste
     probability is refused, as is the field written out as null."""
     for name in (*PHASE1, *P2_CHANGES):
-        assert ("paste_p" in _raw()["configs"][name]) == (name == "p2_arm_c"), name
+        assert ("paste_p" in _raw()["configs"][name]) == ("paste_p" in P2_CHANGES.get(name, {})), (
+            name
+        )
     raw = _raw()
     del raw["configs"]["p2_arm_c"]["paste_p"]  # type: ignore[attr-defined]
     with pytest.raises(ConfigError, match=r"p2_arm_c\.arm: arm C needs paste_p"):

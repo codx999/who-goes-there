@@ -800,6 +800,16 @@ burst's or a trans camera's, or trans_val would score a camera the model trained
 uv run pytest -q tests/test_copypaste.py -k "pool or eval"
 ```
 
+**Added by 13.08, the first screens.** Arm C lifted trans_val macro-F1 by almost 0.10 and still
+stopped at the screen: val fell 0.030, ten times its noise, and the rule written before the run
+never trades val for trans_val (one camera, which misled in phase 1). Bending the rule after the
+result would let the result pick its own test. The honest next step is a variant declared before
+it runs (`p2_arm_c_p25`, half the paste rate), hypothesis first, judged by the same rule. Try:
+
+```bash
+uv run python -m trailcam.train.ledger --check docs/ledger-phase2.md
+```
+
 **Added by 13.05, evaluating phase 2.** A model trained on 320 px crops learned what an animal looks
 like at that scale; shown 224 px crops, every animal is about 30% smaller in pixels than anything it
 was trained on, so its score would measure the size mismatch, not the recipe. So evaluation now uses
