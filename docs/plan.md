@@ -341,6 +341,39 @@ methods. Mixed outcomes are reported as mixed. A negative result is a result.
     `attention_val_*` (small CNN, arm A and arm B seed 0), `features_by_species_val_seed0.png`
     and `features_by_camera_val_seed0.png` (val and trans_val features cluster by camera), and
     `slices_val_seed0.md`. No Grad-CAM overlays yet: `assets/` has no photos until item 8.05.
+- **Test results (item 9.02, the one final scoring, 2026-10-18)**: `notebooks/kaggle_score_test.ipynb`
+  at commit `364e851`, approved by codx999, scored at 20261018T193117Z. All 7 checkpoints of
+  `docs/ledger.md` were scored once on cis_test (14,478 images, the cis cameras at other times)
+  and trans_test (21,473 images, 9 cameras never seen). No leakage alarm fired. The rows are in
+  `docs/test-ledger.md`, and the full table is in `docs/figures/headline_test.md`.
+
+  | model | cis_test accuracy | cis_test macro-F1 | trans_test accuracy | trans_test macro-F1 | accuracy gap | macro-F1 gap |
+  | --- | --- | --- | --- | --- | --- | --- |
+  | small CNN, seed 0 | 0.5026 | 0.4504 | 0.3140 | 0.2041 | 0.1886 | 0.2463 |
+  | ResNet-18 arm A, mean of 3 seeds | 0.6708 | 0.6216 | 0.5137 | 0.4127 | 0.1571 | 0.2089 |
+  | ResNet-18 arm B, mean of 3 seeds | 0.6808 | 0.6361 | 0.5387 | 0.4309 | 0.1422 | 0.2051 |
+
+  - **The research question.** Arm B beats arm A on trans_test on every seed: accuracy +3.0,
+    +1.1 and +3.3 points, macro-F1 +2.9, +1.2 and +1.3 (seeds 0, 1, 2). The mean gains are +2.5
+    accuracy and +1.8 macro-F1, and the accuracy gap shrinks from 0.157 to 0.142. The gain is
+    small but consistent. trans_val had pointed the other way (section 7, val results); it is one
+    camera, and trans_test's nine cameras overturned it.
+  - Attention-in-box on trans_test (an even map scores 0.137): arm A 0.230, 0.232, 0.232; arm B
+    0.232, 0.234, 0.234. B is higher on every seed, but by about 0.002.
+  - Animal-removed test on trans_test, boxes blanked: accuracy falls from about 0.57 to 0.61, to
+    0.22 to 0.29 (chance 0.083), for both arms. The background still carries a large share of
+    the predictions; arm B's crops did not remove the shortcut. That motivates phase 2's arm C.
+  - The day/night mix does not explain the gap: re-weighting trans_test to the cis night share
+    changes the gap by about 0.01 or less (`slices_test.md`).
+  - cis_test is far below val (accuracy 0.67 against 0.87, the same cameras). Val was drawn
+    from the same weeks as training, cis_test from other times, so val is optimistic about time
+    shift as well as location shift. No leakage alarm fired.
+  - Pretraining: the ResNet-18 arms beat the small CNN by about 20 points of trans_test accuracy.
+  - Figures in `docs/figures/` (seed 0, as for val): `test_trans_confusion_matrix_*` (small
+    CNN, arm A, arm B), `test_trans_per_class_arm_{a,b}_seed0.png`,
+    `test_trans_per_camera_arm_{a,b}_seed0.png`, `attention_test_arm_{a,b}_seed0.png`,
+    `features_by_{species,camera}_test.png`, `slices_test.md` and `headline_test.md`.
+  - The Space serves arm B seed 2, chosen on val (section 11, open question 7).
 
 ## 8. Demo and deployment
 
@@ -524,8 +557,12 @@ session below also updates the setup it touches, in the same commit as the code:
    meeting item 7.02's gate): seeds 1 and 2 run for both arms (item 7.03), on the same pinned
    commit. One run per arm cannot tell an arm difference from run-to-run noise. The four runs cost
    about 35 GPU minutes.
-7. **Which arm the Space serves.** Decided after the final scoring (session 9). The deploy
-   script takes the chosen run's checkpoint as `--weights` and names no arm (item 11.01).
+7. **Which arm the Space serves.** Decided on 2026-10-18, after the final scoring (the user's
+   decision): **arm B**, because it beat arm A on trans_test on all three seeds (section 7, test
+   results). The seed is chosen on val, never on a test score: **arm B seed 2**
+   (`resnet18_arm_b-seed2-20261017T162445Z`), the arm B run with the best val macro-F1 (0.8472
+   in `docs/ledger.md`). The deploy script takes its checkpoint as `--weights` and names no arm
+   (item 11.01).
 
 ## 12. Sources
 
