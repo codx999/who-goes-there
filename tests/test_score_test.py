@@ -11,6 +11,7 @@ the passes over the images and the metadata loader with functions that fail, so 
 to come before any test image is read.
 """
 
+import ast
 import contextlib
 import dataclasses
 import hashlib
@@ -177,6 +178,14 @@ class World:
         return argv
 
 
+def _empty_test_ledger(path: Path) -> Path:
+    """A test ledger with the header of `TEST_LEDGER_COLUMNS` and no row, built from
+    `scoring_header`: never a copy of docs/test-ledger.md, which holds the final scoring's rows
+    once item 9.02 has run (a copy would then hold them too)."""
+    path.write_text("# Test ledger\n\n" + score_test.scoring_header() + "\n", encoding="utf-8")
+    return path
+
+
 def _build_world(root: Path) -> World:
     built = root / "built"
     fixture = synthetic.write_synthetic_fixture(built)
@@ -196,8 +205,7 @@ def _build_world(root: Path) -> World:
         rows[name] = _ledger_values(name, seed, file_sha256(path), config_file, split.hash)
     ledger = _write_ledger(root / "ledger.md", list(rows.values()))
     assert check_ledger(ledger)[1] == []  # the rows pass trailcam.train.ledger's check
-    test_ledger = root / "test-ledger.md"
-    test_ledger.write_text(TEST_LEDGER_PATH.read_text(encoding="utf-8"), encoding="utf-8")
+    test_ledger = _empty_test_ledger(root / "test-ledger.md")
     assets = root / "assets"
     return World(
         root=root,
@@ -509,8 +517,7 @@ def _forbid_reading(monkeypatch: pytest.MonkeyPatch) -> None:
 def fresh(world: World, tmp_path: Path) -> World:
     """`world` with an empty test ledger of its own, so refusal tests do not depend on the full
     run's rows."""
-    test_ledger = tmp_path / "test-ledger.md"
-    test_ledger.write_text(TEST_LEDGER_PATH.read_text(encoding="utf-8"), encoding="utf-8")
+    test_ledger = _empty_test_ledger(tmp_path / "test-ledger.md")
     return World(**{**world.__dict__, "test_ledger": test_ledger})
 
 
@@ -930,9 +937,40 @@ def test_only_the_test_records_are_returned(world: World) -> None:
 
 
 def test_the_repo_test_ledger_reads() -> None:
-    """docs/test-ledger.md holds the header of `TEST_LEDGER_COLUMNS` once and only rows after it."""
+    """docs/test-ledger.md holds the header of `TEST_LEDGER_COLUMNS` once and only rows after it;
+    none yet, or the final scoring's once item 9.02 has run."""
     score_test.read_test_ledger(TEST_LEDGER_PATH)
     assert TEST_LEDGER_PATH.read_text().count(score_test.scoring_header()) == 1
+
+
+def test_the_fixtures_hold_no_row_when_the_repo_test_ledger_has_rows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review 9.03 (the trap of item 6.04, when a 5.03 test assumed an empty ledger): with
+    docs/test-ledger.md holding a row, as it will after 9.02, the reader still takes the repo's
+    file, and the fixtures' test ledgers still start with no row, so the suite stays green. No
+    fixture or helper reads the repo's file: only the two tests that check it name it."""
+    row = dict.fromkeys(TEST_LEDGER_COLUMNS, "x") | {"run id": "r", "checkpoint sha256": sha("r")}
+    filled = tmp_path / "test-ledger.md"
+    text = TEST_LEDGER_PATH.read_text(encoding="utf-8")
+    filled.write_text(text.rstrip("\n") + "\n" + score_test.ledger_line(row) + "\n", "utf-8")
+    assert score_test.read_test_ledger(filled)[-1] == row  # after any rows the repo holds
+    assert filled.read_text().count(score_test.scoring_header()) == 1
+    monkeypatch.setitem(globals(), "TEST_LEDGER_PATH", filled)
+    monkeypatch.setattr(score_test, "TEST_LEDGER_PATH", filled)
+    world = _build_world(tmp_path / "world")
+    assert score_test.read_test_ledger(world.test_ledger) == []
+    assert score_test.read_test_ledger(_empty_test_ledger(tmp_path / "fresh.md")) == []
+    tree = ast.parse(Path(__file__).read_text(encoding="utf-8"))
+    naming = {
+        node.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and "TEST_LEDGER_PATH" in ast.unparse(node)
+    }
+    assert naming == {
+        "test_the_repo_test_ledger_reads",
+        "test_the_fixtures_hold_no_row_when_the_repo_test_ledger_has_rows",
+    }
 
 
 def test_a_row_with_another_run_seed_gets_that_seed(world: World) -> None:

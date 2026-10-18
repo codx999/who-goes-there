@@ -3628,6 +3628,240 @@ applicable, nothing trains), R37, R38 and R41 to R45 held. Spec changed: none; R
 Merged `main` at c4b1e56 (13.01) through the sync tool: one conflict, in this log; main's two
 13.01 entries kept first, then this one. `check.sh` green after the merge (943 passed).
 
+## 2026-10-17: session 9, item 9.03, the final scoring's notebook (Opus 5.5, xhigh)
+
+New item, approved by the user via the coordinator on 2026-10-17 and added to
+`docs/progress.json` as 9.03 (session 9, owner claude, due 2026-10-19). Main at b64c486. Built and
+tested on the synthetic fixture only: no real checkpoint was loaded and no real cis_test or
+trans_test was scored (that is 9.02, the user's single run on Kaggle).
+
+**Done.** `notebooks/kaggle_score_test.ipynb` (22 cells, outputs cleared) and
+`tests/test_score_notebook.py` (44 tests).
+
+- Parameter cell: `COMMIT` (default b64c486, main at the session start, whose ledger holds the 7
+  rows), `CACHE_ARCHIVE` (the training notebook's default), `CHECKPOINTS_ROOT = None`,
+  `APPROVED_BY = ""`, `RUN_SEEDS = (0, 1, 2)`, and the fixed paths: the clone's `config.yaml`,
+  `docs/ledger.md`, `docs/test-ledger.md` and `assets/`, and `OUT = /kaggle/working/score`.
+- Sections 1 to 3 follow the training notebook: the parameter check and `CUDA_VISIBLE_DEVICES=0`,
+  the clone at `COMMIT`, the one `pip install` keeping Kaggle's torch, the stale-import guard, the
+  installed modules compared with the clone byte for byte, `check_gpu`, `unpack_cache` (the loose
+  dataset refused in an interactive session), and the cache check with `check_images`.
+- Section 4 finds the `trailcam-checkpoints` folder under `/kaggle/input` (any depth, links
+  followed, two mounts of one folder counted once; none or several refused with the folders that
+  hold `.pt` files) and calls `score_test.py`'s own checks, the ones its `prepare` runs first:
+  `resolve_checkpoints` with `read_ledger`, `read_test_ledger` and `check_run_seeds`. So a missing
+  or changed checkpoint, an incomplete ledger or a test ledger with a row fails the rehearsal,
+  before any weights are read. Nothing is duplicated; the scoring repeats every check.
+- Section 5, the go-ahead, is the code cell right before the scoring: `check_approver(APPROVED_BY)`,
+  re-raised as "the final scoring needs the user's go-ahead ... nothing has been scored". A Run All
+  with `APPROVED_BY` empty is therefore a full rehearsal that loads nothing.
+- Section 6: one `subprocess.Popen` of `python -m trailcam.evaluate.score_test` with
+  `--approved-by=<APPROVED_BY>` (the `=` form, so a name starting with a dash parses),
+  `--run-seeds`, every checked checkpoint, `--data-root`, `--config`, `--ledger`,
+  `--test-ledger`, `--out`, `--assets` and one `--overlay` per photo directly under the clone's
+  `assets/`. Output streamed line by line (`PYTHONUNBUFFERED`, `errors="replace"`, so a decoding
+  error cannot close the pipe mid-run). Exit 0 or 3 goes on; any other exit raises, saying what
+  to do.
+- Section 7: the clone's test ledger read back with `read_test_ledger`, checked one row per
+  checkpoint by sha256, and printed under `scoring_header()` for pasting; then `OUT` zipped to
+  `/kaggle/working/score.zip`.
+- Markdown: this runs once; `APPROVED_BY` starts empty (the rehearsal); never Save & Run All with
+  it filled in until the user means it (said at the top and over the go-ahead cell); set it back
+  to `""` right after the run; if it stops before `appended ... rows`, rerun from the start with a
+  new `--out` (a new version starts with an empty `/kaggle/working`); if it stopped after, never
+  run it again. Licence and citation.
+- plan.md section 7 (Protocol): one sentence naming the notebook and the empty `APPROVED_BY`.
+  invariants.md: R06, R07, R16, R17 (and 9.03 in its items), R38, R40 and R41 test cells name
+  `tests/test_score_notebook.py`. Learning journal topic 9: five lines.
+
+Decisions to review:
+
+- The clone may differ from `COMMIT` in `docs/test-ledger.md` only (the training notebook lets
+  `docs/ledger.md` differ). A session that has scored then reaches the run-once refusal in
+  section 4, rather than being told to factory-reset into a fresh clone whose test ledger is
+  empty again.
+- Exit 3 (a leakage alarm on the test scores) does not raise, unlike the training notebook. The
+  rows are appended by then and the scoring cannot run again, and I have not verified that Kaggle
+  keeps a failed version's output. So the cell reports the alarm on stderr and again after the
+  zip, and the outputs are kept. R16's test cell says so.
+- Overlays carry no class (`--overlay <photo>` only), so their titles show the predicted class
+  without a correct or wrong verdict. `assets/` is empty until 8.05, so there are none yet. A true
+  class per photo would need another parameter; that is the user's call.
+
+Not covered here (limits):
+
+- A fresh clone at the same `COMMIT` cannot know that the scoring ran until the rows are committed
+  to `docs/test-ledger.md`. Until then only `APPROVED_BY` guards a second run, hence the "set it
+  back" step. A possible follow-up, the user's call: the notebook could also refuse when
+  `origin/main`'s `docs/test-ledger.md` holds a row.
+- Kaggle-side facts not checked: where the `trailcam-checkpoints` dataset mounts (the search
+  covers any depth), the scoring's run time on a T4, and Kaggle's handling of a failed version's
+  output.
+
+Steps:
+
+- `uv run pytest tests/test_score_notebook.py`: 44 passed, covering outputs cleared and the guard
+  (`content_problems`, `path_problems`); `APPROVED_BY` defaults to `""`, and the go-ahead cell
+  refuses `""`, blanks, `None`, `|` and line breaks, and comes right before the scoring cell;
+  exactly one code cell runs score_test (the module named once, one `Popen`, not in a loop, no
+  other process but git and pip); the exact names imported from `trailcam` (from `score_test.py`
+  no `main`, `prepare`, `load_models` or `score_checkpoint`), no dynamic code, and `trailcam.` used
+  for `__file__` only; no cell imports, names or calls evaluate, attention, slices or train, or
+  any `main`; only the parameter cell binds the parameters and paths; `RUN_SEEDS` (0 1 2, 0, 2 0)
+  reaches `--run-seeds`, as score_test's own parser reads the command; the default COMMIT's
+  ledger, test ledger and configs pass score_test's checks for 0 1 2.
+- The cells as written on the fixture of `tests/test_score_test.py` (random weights): the
+  rehearsal passes every check and stops at the go-ahead, with `torch.load`, `Image.open` and
+  `subprocess.Popen` replaced by functions that fail; a missing or changed checkpoint, a test
+  ledger with a row and a missing seed are refused in section 4; a full run through
+  `python -m trailcam.evaluate.score_test` exits 3 (random weights fire the alarm, as intended),
+  appends 3 rows in ledger order with the approver, prints them under the header, zips 34 files,
+  and a second run is refused. The clone cell, run on a local clone of this repo, lets a changed
+  test ledger through and refuses a changed ledger.
+- Mutation checks, each restored by copying the notebook back, each failing a test: 23 of 23
+  killed. The refusal paths: `APPROVED_BY` defaulted to a name; the check removed; the check
+  bypassed (`APPROVED_BY or "nobody"`); the refusal printed instead of raised; the go-ahead cell
+  moved after the scoring; deleted. A second scoring: the scoring cell duplicated; `main(argv)`
+  imported from score_test; `subprocess.run(command)`; the `Popen` in a loop;
+  `trailcam.evaluate.score_test.main` by attribute. An evaluate call: `-m trailcam.evaluate.evaluate`;
+  `predict` imported from evaluate; `attention_pass` through score_test; `train.main`. Others: the
+  seeds hard-coded; the approver hard-coded; `RUN_SEEDS` rebound in the scoring cell; the clone
+  check excluding `docs/ledger.md`; a failed exit not raised; the pre-check given no test ledger;
+  an output left in a cell. One survived at first (the scoring cell falling back to a stale
+  `approver` when `APPROVED_BY` is empty); a new test now checks that the command carries
+  `APPROVED_BY` itself, which score_test refuses.
+- `uvx --from nbconvert jupyter nbconvert --clear-output --inplace notebooks/kaggle_score_test.ipynb`
+  leaves it unchanged (`cmp`); `uv run python scripts/guard_data.py --all` passes; ruff lints and
+  formats the notebook cleanly.
+
+`check.sh` green (937 passed).
+
+**Next.** Review, tier 3 (the final scoring): `/review-session b64c486..HEAD 9.03`. Its tier rule
+names 9.01 and `score_test.py` but not this notebook, so it reports tier 2 by itself; the
+tier-3 option, `/code-review ultra`, is the user's. Then 9.02, the user's single run with this
+notebook.
+
+## 2026-10-17: review 9.03: one low fixed, `main`'s test ledger read too (Opus 5.5, xhigh)
+
+Review (`/review-session b64c486..HEAD 9.03`, the user's start): code-reviewer (Opus 5.5 xhigh)
+on the range, risk-reviewer (Fable 5.1 high) on its two high-stakes files, the notebook and its
+tests. Tier 2 by the command's rule (it names 9.01 and `score_test.py`), tier 3 by CLAUDE.md (the
+final scoring). Scenarios R03, R06, R07, R16, R17, R27, R37, R38, R40, R41 and R42 hold in both
+reports. Spec changed: plan.md section 7 and the test cells of R06, R07, R16, R17, R38, R40 and
+R41; both reviewers traced them, no conflict. One finding:
+
+- Low (risk-reviewer; code-reviewer listed it under "could not verify" as a design limit): the
+  run-once refusal never fires on Kaggle, since a fresh clone at `COMMIT` holds that commit's empty
+  test ledger. Once the rows are on `main`, an `APPROVED_BY` left filled in would let a later Save
+  & Run All score every checkpoint again.
+
+Notes, not findings: mypy run directly on the test file reports 3 type errors (tests are outside
+`check.sh`'s mypy scope); the markdown says to set `COMMIT` at or after 9.03's merge while the
+default is earlier (harmless: `trailcam/` is the same across the range).
+
+The user's decisions, via the coordinator on 2026-10-17: (1) fix the low; (2) no ultra review for
+9.03: it is a thin wrapper over `score_test.py`, which had its own ultra review, so this item gets
+the two standard reviewers and the fix round; (3) bring the branch up to date with `main`.
+
+Merged `main` at c4b1e56 (13.01, the phase-2 plan) with the sync tool, as 014c19d. The conflict was
+in this log only; both sides kept, 13.01's entries first. `check.sh` green after the merge (937
+passed).
+
+Fix:
+
+- A new code cell right after the imports (section 3) fetches `origin/main` into the clone, writes
+  its `docs/test-ledger.md` to `MAIN_TEST_LEDGER` (under `/tmp`, a new constant of the parameter
+  cell) and reads it with `score_test.py`'s `read_test_ledger`. Any row refuses: "the final
+  scoring has already been recorded on main, and it runs once". It comes before the GPU check and
+  the unpacking, so it fails in seconds; every existing refusal stays.
+- Markdown: "This runs once", How-to-run steps 5 and 7 (commit the rows to `main` right after the
+  run), and section 3. plan.md section 7's run-once wording (the user's OK); R17's and R40's test
+  cells; the journal's 9.03 lines.
+- Tests (45 in the file). The new one uses a local stand-in for the public repo whose `main` is the
+  default `COMMIT`: the cell passes. After a row is committed to that `main`, the reused clone
+  fetches it, and the cells run in notebook order stop at the new cell, before the unpacking and the
+  scoring cell. The order test includes the new cell. The fixtures' clone now gets the repo's test
+  ledger cut at its header (`_empty_test_ledger`), so these tests still pass once 9.02's rows are
+  in `docs/test-ledger.md`.
+- Mutation checks, each restored by copying: the check disabled, the cell deleted, the fetch
+  removed, `COMMIT`'s ledger read instead of `main`'s, and the cell moved after the scoring: 5 of 5
+  killed. The earlier 23 rerun on the fixed notebook: 28 of 28 killed.
+- `nbconvert --clear-output` leaves the notebook unchanged; ruff clean.
+
+Found, not fixed (outside this item): the fixture of `tests/test_score_test.py` copies the repo's
+`docs/test-ledger.md` as its empty test ledger (`_build_world` and `fresh`). Once 9.02's rows are
+pasted there, its scoring tests see 7 rows and fail, so `check.sh` goes red when the rows are
+committed. The same cut-at-the-header fix applies; it needs the user's OK (9.01's tests, a
+high-stakes file) before 9.02's rows are committed.
+
+The fix touches a high-stakes file and modifies test lines, so one fix round runs on the fix range.
+`check.sh` green (938 passed).
+
+**Next.** Fix round: `/review-session 014c19d..HEAD 9.03`. Then 9.02, the user's single run.
+
+## 2026-10-17: fix round 9.03: one high-by-rule and one low fixed, and 9.01's fixture trap (Opus 5.5, xhigh)
+
+Merged `main` twice more with the sync tool, as the coordinator asked: dc19821 (8.08) as 8fbfb8e,
+with conflicts in this log and in rows R06, R07, R17, R38 and R41 of invariants.md (both items had
+added a test-file clause; `main`'s rows kept and each 9.03 clause added whole, so every row names
+`tests/test_evaluate_notebook.py` and `tests/test_score_notebook.py`, and R17's items read "8.08,
+... 9.03"); then 05cd17a (8.06) as a0bbbaf, with a conflict in plan.md section 7 (the run-once
+sentences kept, 8.06's "Val results" bullet after them). `check.sh` green after each (988
+passed).
+
+Fix round (`/review-session 9.03`, the user's start; range dc19821..HEAD, the whole item against
+today's `main`, its first commit reviewed before): code-reviewer (Opus 5.5 xhigh), risk-reviewer
+(Fable 5.1 high) on the notebook and its tests. Scenarios R06, R07, R16, R17, R27, R37, R38, R40,
+R41 and R42 hold in both reports; R03 breaks for the code-reviewer (finding 1). Findings:
+
+- High by R03's rule, nothing leaked yet (code-reviewer; the risk-reviewer saw the same print and
+  judged it allowed, since `assets/` photos are not from `data/`): the scoring cell printed
+  `shlex.join(command)` with every `--overlay <clone>/assets/<photo>` path. R03, as approved in
+  8.08, counts an `assets/` photo's name in printed output as a breach (a photo's name may be an
+  image id), and the evaluation notebook counts its photos instead. `assets/` is empty until 8.05.
+- Low (code-reviewer): "committed to `main`" in the notebook and plan.md section 7; the check
+  fetches `main` from GitHub, so a local commit blocks nothing until it is pushed.
+
+The user's decisions ("go", via the coordinator, 2026-10-17): fix both, and fix the trap reported
+in the review 9.03 entry above (9.01's tests copying `docs/test-ledger.md`). These are the fix
+round's fixes: no third round unless the user asks.
+
+Fixes:
+
+- A. The scoring cell prints its command without the `--overlay` arguments, plus " and N --overlay
+  photos of assets/"; the overlays reach `Popen` only (`[*command, *overlays]`). Section 6's
+  markdown says why. Tests: the cell alone with a stand-in `Popen` prints the count and not the
+  photo's name; the cells on the fixture, with the real scoring and a photo named like an image id,
+  print the count and the name nowhere in stdout or stderr. R03's test cell names them.
+- B. "committed and pushed to `main` on GitHub" in the notebook's "This runs once" section,
+  How-to-run step 7 and section 3, and in plan.md section 7 ("Between the run and that push").
+  R40's test cell too.
+- C. `tests/test_score_test.py`: `_empty_test_ledger` writes the header of `TEST_LEDGER_COLUMNS`
+  (`scoring_header`) and no row; `_build_world` and `fresh` use it, never a copy of
+  `docs/test-ledger.md`, and `tests/test_score_notebook.py` imports it in place of its own.
+  `test_the_repo_test_ledger_reads` already accepts rows (docstring says so). New test: a copy of
+  the repo's test ledger with a valid row reads through the reader, and with `TEST_LEDGER_PATH`
+  pointed at it the fixtures still start with no row; only the two tests that check the repo's
+  file name it. Proved by hand: with a row added to the repo's `docs/test-ledger.md`, the whole
+  suite passed except the new test itself, which had assumed the repo file had no row (fixed to
+  read the appended row last); both files then passed with the row in place (103 passed). The file
+  was restored by copying and checked with `cmp`. R40's test cell names the rule.
+- Mutation checks, each restored by copying: the photo names printed again (killed by the cell's
+  test); `_build_world` and `fresh` copying the repo's test ledger again (each killed by the new
+  test): 3 of 3, rerun after the test's fix.
+- Journal: a timeline entry, "the 6.04 trap, a second time".
+- `nbconvert --clear-output` leaves the notebook unchanged; ruff clean.
+
+Not verified (both reviewers): Kaggle-side behaviour (dataset mounts, whether Factory reset clears
+`/kaggle/working`, the live fetch from GitHub) and the run time: whether 7 checkpoints with the
+Grad-CAM attention pass over both test splits fit in one 12-hour GPU session. 8.06's val run is
+the nearest timing.
+
+`check.sh` green (989 passed).
+
+**Next.** Ready to merge (this merges first, before 13.02 and 13.04). Then 9.02 on 2026-10-19:
+the user's single run with this notebook.
+
 ## 2026-10-17: session 13, item 13.02, the phase-2 infrastructure and config-only variants (Opus 5.5)
 
 The user's decisions of 2026-10-17, through the coordinator: phase 2 runs this week, before the
@@ -3865,7 +4099,28 @@ checkpoints (risk-reviewer). Not findings, left as they are: three docstrings st
 seven real phase-1 checkpoints or the Space's `model.pt`; both are three-key files by the old
 save line and the old exact-key loader, which loaded them in 8.06.
 
-**Next.** 13.02 merges after 9.03 and before 13.04 (the coordinator's order); sync again if
-`main` has moved by then.
+Merged `main` at 364e851 (9.03) through the sync tool: conflicts in this log (9.03's three
+entries kept first, then 13.02's four, all dated 2026-10-17) and in `docs/review/invariants.md`,
+merged cell by cell against 05cd17a. R17's "where" and test cells and R40's test cell changed on
+both sides; 13.02 had only appended to each, so each is 9.03's text followed by 13.02's addition.
+9.03's edits to R03, R06, R07, R16, R38 and R41 are kept as they are.
+
+The merged tree then failed one test, 1 of 1055:
+`tests/test_score_notebook.py::test_the_default_commit_holds_the_ledger_the_scoring_accepts`. It
+reads the scoring notebook's default `COMMIT` (b64c486, older than 13.02) config.yaml with today's
+code, which requires `input_size`: "dryrun: missing fields ['input_size']". On Kaggle the notebook
+installs the code of the same commit as its config.yaml, so the scoring itself is not affected.
+The user chose a test-only fix over defaulting the field in `config.py`: the test reads an old
+config.yaml as today's code does, with `input_size: 224` added to `common` (`_read_as_today`),
+what its code hard-coded and what `HASH_NEUTRAL` leaves out of the hash. Prototyped first: all 7
+phase-1 rows of that commit hash to their ledger rows. Mutation check: with the bridge but
+`batch_size` changed too, the test fails on "no longer matches its ledger row (config hash)", so
+the hash check still bites. `check.sh` green after the merge.
+
+The fix modifies an existing test in a high-stakes file, so one fix round is due on the merge's
+own changes (`git show --remerge-diff` of the merge commit: this helper and the two conflict
+resolutions); the user starts it.
+
+**Next.** 13.02 merges after 9.03 and before 13.04 (the coordinator's order).
 
 Review: tier 2, ran both reviewers; fix round ran (a94b482..10e53b1), both reviewers clean.

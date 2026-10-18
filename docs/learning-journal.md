@@ -397,6 +397,12 @@ would already be a look. Rows go to [test-ledger.md](test-ledger.md); look at
 uv run pytest -q tests/test_score_test.py -k "approver or scored_again or run_seeds"
 ```
 
+**Added by 9.03, the scoring notebook.** The scoring runs from its own Kaggle notebook,
+[kaggle_score_test.ipynb](../notebooks/kaggle_score_test.ipynb), so no slip in the training or
+evaluation notebooks can reach a test split. A fresh clone cannot see an earlier run, so it refuses
+once `main`'s test ledger holds a row, and `APPROVED_BY` starts empty: Run All then checks all and
+stops. A run that stops part way has appended nothing: rerun from the start with a new `--out`.
+
 ## 10. Evaluation pieces built so far
 
 **What we did.** By 2026-10-15 these are built and tested (none run on real checkpoints yet):
@@ -880,6 +886,11 @@ Dated, oldest first. Each: what happened, how it was caught, the lesson.
 - **2026-10-16. The weekly Claude budget ran low.** 72% used with 5 days left, shared with other
   projects. *Caught by* the usage page. *Lesson:* budget it like the Kaggle GPU quota: must-have
   items first, the rest after the reset, and cut waste, not checks.
+- **2026-10-17. The 6.04 trap, a second time.** The final scoring's tests copied the real
+  `docs/test-ledger.md` as their empty test ledger, so pasting 9.02's rows would have turned
+  main red, as 6.04's first ledger row did. *Caught by* reviewing 9.03's fixtures, and proved by
+  running the suite with a row added to the file. *Lesson:* a fixture builds its empty file from
+  the header, never from a repo file that a later run fills.
 
 ---
 
