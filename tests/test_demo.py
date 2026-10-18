@@ -62,18 +62,59 @@ def _count_forwards(model: nn.Module) -> list[int]:
     return calls
 
 
-def button_handler(app: gr.Blocks) -> Callable[..., Any]:
-    """The function the Classify button's click runs, found by its trigger: Gradio adds handlers
-    of its own (the examples' loader when `assets/` holds photos), so neither the position nor
-    the number of the app's handlers says which one is the button's."""
+def _click(app: gr.Blocks) -> tuple[int, str]:
+    """The trigger of the Classify button's click: the button's id and `click`."""
     (button,) = [
         block
         for block in app.blocks.values()
         if isinstance(block, gr.Button) and block.value == "Classify"
     ]
-    (handler,) = [fn.fn for fn in app.fns.values() if (button._id, "click") in fn.targets]
+    return button._id, "click"
+
+
+def button_handler(app: gr.Blocks) -> Callable[..., Any]:
+    """The function the Classify button's click runs, found by its trigger: Gradio adds handlers
+    of its own (the examples' loader when `assets/` holds photos), so neither the position nor
+    the number of the app's handlers says which one is the button's."""
+    (handler,) = [fn.fn for fn in app.fns.values() if _click(app) in fn.targets]
     assert handler is not None
     return handler
+
+
+def other_handlers(app: gr.Blocks) -> list[Callable[..., Any]]:
+    """The app's Python handlers other than the button's click."""
+    click = _click(app)
+    return [fn.fn for fn in app.fns.values() if fn.fn is not None and click not in fn.targets]
+
+
+def handlers_of_our_own(handlers: list[Callable[..., Any]]) -> list[Callable[..., Any]]:
+    """The handlers that are not Gradio's: one of these would run the model outside the button
+    (and, on the Space, outside `spaces.GPU`)."""
+    return [handler for handler in handlers if not handler.__module__.startswith("gradio")]
+
+
+def record_examples(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
+    """Every `gr.Examples` the app builds, so a test can read whether its examples are cached."""
+    made: list[Any] = []
+    create = gr.Examples
+
+    def recording(*args: Any, **kwargs: Any) -> Any:
+        examples = create(*args, **kwargs)
+        made.append(examples)
+        return examples
+
+    monkeypatch.setattr(gr, "Examples", recording)
+    return made
+
+
+def photo_assets(tmp_path: Path, count: int = 3) -> Path:
+    """An `assets/` folder holding `count` synthetic fixture photos, never the repo's."""
+    root = synthetic.write_synthetic_fixture(tmp_path / "fixture").image_root
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    for index, source in enumerate(sorted(root.rglob("*.jpg"))[:count]):
+        shutil.copyfile(source, assets / f"example_{index}.jpg")
+    return assets
 
 
 def example_names(app: gr.Blocks) -> list[str]:
@@ -219,7 +260,9 @@ def test_the_ui_calls_the_probabilities_confidence_never_accuracy() -> None:
 
 
 def test_the_app_builds_with_and_without_examples(model: nn.Module, tmp_path: Path) -> None:
-    assert isinstance(build_app(model, []), gr.Blocks)
+    built = build_app(model, [])
+    assert isinstance(built, gr.Blocks)
+    assert len(built.fns) == 1  # without examples, the button's is the only handler
     assets = tmp_path / "assets"
     assets.mkdir()
     Image.new("RGB", (8, 8)).save(assets / "a.jpg")
@@ -227,29 +270,73 @@ def test_the_app_builds_with_and_without_examples(model: nn.Module, tmp_path: Pa
 
 
 def test_with_photos_in_assets_the_button_still_runs_the_handler(
-    model: nn.Module, photo: Image.Image, tmp_path: Path
+    model: nn.Module, photo: Image.Image, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Item 8.05: with photos in `assets/` (synthetic ones here), the app shows them as examples
     and Gradio adds the examples' loader; the button still runs the handler it is given, or by
-    default `classify` on the model."""
-    root = synthetic.write_synthetic_fixture(tmp_path / "fixture").image_root
-    assets = tmp_path / "assets"
-    assets.mkdir()
-    for index, source in enumerate(sorted(root.rglob("*.jpg"))[:3]):
-        shutil.copyfile(source, assets / f"example_{index}.jpg")
-    examples = example_photos(assets)
+    default `classify` on the model, and every other handler is Gradio's. The examples are not
+    cached, even with caching switched on as on Hugging Face, and the build writes nothing into
+    the working folder."""
+    examples = example_photos(photo_assets(tmp_path))
     assert len(examples) == 3
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    monkeypatch.chdir(cwd)
+    monkeypatch.setenv("GRADIO_CACHE_EXAMPLES", "true")
+    made = record_examples(monkeypatch)
 
     def handler(image: Image.Image | None, gradcam: bool) -> app.Result:
         return classify(model, image, gradcam)
 
     built = build_app(model, examples, handler)
-    assert example_names(built) == [path.name for path in examples] and len(built.fns) > 1
+    assert example_names(built) == [path.name for path in examples]
     assert button_handler(built) is handler
-    default = button_handler(build_app(model, examples))
-    scores, _, heatmap = default(photo, False)
+    assert other_handlers(built) and handlers_of_our_own(other_handlers(built)) == []
+    default = build_app(model, examples)
+    assert handlers_of_our_own(other_handlers(default)) == []
+    scores, _, heatmap = button_handler(default)(photo, False)
     expected, _, _ = classify(model, photo, False)
     assert list(scores) == list(expected) and heatmap is None
+    assert [examples.cache_examples for examples in made] == [False, False]
+    assert os.listdir(cwd) == []
+
+
+def test_a_second_handler_of_our_own_is_caught(model: nn.Module, tmp_path: Path) -> None:
+    """The review's finding (code-reviewer, 2026-10-18): a handler of our own on another event,
+    here `classify` on upload, would run the model outside the button (on the Space, outside
+    `spaces.GPU`). The checks above catch it, with and without examples."""
+    for examples in ([], example_photos(photo_assets(tmp_path))):
+        built = build_app(model, examples)
+
+        def extra(image: Image.Image | None) -> app.Result:
+            return classify(model, image, False)
+
+        (image,) = [
+            block
+            for block in built.blocks.values()
+            if isinstance(block, gr.Image) and block.label == "Camera-trap photo"
+        ]
+        with built:
+            image.upload(extra, inputs=[image], outputs=[])
+        assert handlers_of_our_own(other_handlers(built)) == [extra]
+        assert len(built.fns) != 1
+        assert button_handler(built) is not extra
+
+
+def test_the_caching_check_sees_examples_that_get_a_handler(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The review's finding (risk-reviewer, 2026-10-18): examples given a handler and outputs
+    are cached where caching is switched on, as on Hugging Face, and the cache is written at
+    launch into the working folder. `record_examples` sees it, so the check above is not empty."""
+    monkeypatch.setenv("GRADIO_CACHE_EXAMPLES", "true")
+    made = record_examples(monkeypatch)
+    photo = str(example_photos(photo_assets(tmp_path, count=1))[0])
+    with gr.Blocks(analytics_enabled=False):
+        image = gr.Image(type="pil")
+        label = gr.Textbox()
+        gr.Examples(examples=[[photo]], inputs=[image], fn=lambda _: "cached", outputs=[label])
+    assert [examples.cache_examples for examples in made] == [True]
 
 
 def test_the_app_is_built_with_analytics_off(

@@ -10,6 +10,7 @@ lock and against the imports `app.py` loads at startup; the README's header agai
 import ast
 import importlib.util
 import inspect
+import os
 import shutil
 import subprocess
 import sys
@@ -27,7 +28,13 @@ import yaml
 from PIL import Image
 from torch import nn
 
-from tests.test_demo import button_handler, example_names
+from tests.test_demo import (
+    button_handler,
+    example_names,
+    handlers_of_our_own,
+    other_handlers,
+    record_examples,
+)
 from trailcam.data import synthetic
 from trailcam.demo import predict
 from trailcam.demo.app import classify
@@ -157,6 +164,7 @@ def test_without_spaces_the_handler_is_classify_on_the_space_model(
     assert space.spaces is None
     assert example_names(space.demo) == []
     assert button_handler(space.demo) is space.classify_on_device
+    assert len(space.demo.fns) == 1  # no handler of its own besides the button's
     scores, seconds, overlay = space.classify_on_device(photo, False)
     expected, _, _ = classify(space.loaded.model, photo, False)
     assert list(scores) == list(expected)
@@ -187,23 +195,38 @@ def test_with_spaces_the_button_runs_the_handler_wrapped_in_spaces_gpu(
     assert list(inspect.signature(wrapped[0]).parameters) == ["photo", "show_gradcam"]
     handler = button_handler(space.demo)
     assert handler is space.classify_on_device and getattr(handler, "on_gpu", False)
+    assert len(space.demo.fns) == 1  # no handler outside spaces.GPU
     _, _, overlay = handler(photo, True)
     assert isinstance(overlay, Image.Image)
 
 
 @pytest.mark.parametrize("installed", [False, True], ids=["without_spaces", "with_spaces"])
 def test_with_photos_in_assets_the_space_shows_them_and_the_button_still_runs_its_handler(
-    monkeypatch: pytest.MonkeyPatch, photo: Image.Image, assets: Path, installed: bool
+    monkeypatch: pytest.MonkeyPatch,
+    photo: Image.Image,
+    assets: Path,
+    tmp_path: Path,
+    installed: bool,
 ) -> None:
     """Item 8.05: once `assets/` holds the demo photos, Gradio adds the examples' loader to the
     app's handlers; the button still runs `classify_on_device` (wrapped in `spaces.GPU` where
-    `spaces` is installed), and the examples are the folder's photos."""
+    `spaces` is installed), every other handler is Gradio's, and the examples are the folder's
+    photos. They are not cached, though Hugging Face switches caching on, and loading the Space
+    writes nothing into the working folder (the review's findings, 2026-10-18)."""
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    monkeypatch.chdir(cwd)
+    monkeypatch.setenv("GRADIO_CACHE_EXAMPLES", "true")
+    made = record_examples(monkeypatch)
     wrapped: list[Callable[..., Any]] = []
     space = load_space(
         monkeypatch, spaces=fake_spaces(wrapped) if installed else None, assets=assets
     )
     assert example_names(space.demo) == [f"example_{index}.jpg" for index in range(EXAMPLES)]
-    assert len(space.demo.fns) > 1  # the examples' loader is there too
+    assert other_handlers(space.demo)  # the examples' loader is there too
+    assert handlers_of_our_own(other_handlers(space.demo)) == []
+    assert [examples.cache_examples for examples in made] == [False]
+    assert os.listdir(cwd) == []
     handler = button_handler(space.demo)
     assert handler is space.classify_on_device
     assert getattr(handler, "on_gpu", False) is installed and len(wrapped) == int(installed)

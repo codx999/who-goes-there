@@ -4512,3 +4512,33 @@ under "Surprises and lessons".
 **For the user.** Commit the photos in main as planned; check.sh should stay green.
 
 **Review.** Tier 2 (`tests/` is high-stakes): `/review-session`.
+
+## 2026-10-18: item 8.05, review fixes for the assets/ test fix (Opus 5.5)
+
+The user's go on both low findings of the tier-2 review of `3c347ff`, relayed by the coordinator.
+
+**Fixed.**
+
+- *code-reviewer (Opus 5.5 xhigh), low: the Space tests no longer caught a second handler that
+  runs the model.* The tests without photos assert again that the app has exactly one handler
+  (the Space's two, and the local demo's build without examples). The tests with photos assert
+  that every handler besides the button's is Gradio's (`handlers_of_our_own(other_handlers(...))`
+  is empty). Regression test: `test_a_second_handler_of_our_own_is_caught` adds `classify` on
+  upload to a built app, with and without examples, and the checks find it.
+- *risk-reviewer (Fable 5.1 high), low: no test checked that building with examples writes
+  nothing into the repo.* The tests with photos (the Space, with and without `spaces`, and the
+  local demo) run in an empty working folder with `GRADIO_CACHE_EXAMPLES=true`, as on Hugging
+  Face, record every `gr.Examples` built, and assert caching is off and the folder is still
+  empty. Regression test: `test_the_caching_check_sees_examples_that_get_a_handler` shows the
+  recorder sees caching once examples get a handler and outputs (Gradio writes that cache at
+  launch, not at the build, so the caching flag is the check that catches it).
+
+**Verified.** Mutation checks on `trailcam/demo/app.py`, each restored, each run against the new
+tests and against the committed ones (`3c347ff`): an extra `photo.upload(handle, ...)`, 7 new
+tests fail, the old ones pass; the examples given `fn` and `outputs`, 3 fail, the old ones pass;
+the build copying an example into the working folder, 3 fail. With the 10 photos back in
+`assets/`, `test_space.py`, `test_demo.py` and `test_deploy_space.py` pass (68), and the photos
+are removed again. check.sh green without them (the commit).
+
+**Review.** Fix round on the fix range only, as the playbook asks: the fix changes existing test
+lines in `tests/test_space.py` and `tests/test_demo.py`.
