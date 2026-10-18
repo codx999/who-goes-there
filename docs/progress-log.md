@@ -3765,3 +3765,50 @@ leakage boundary like the split (`docs/phase2-plan.md` section 6, open question 
 13.04`, then `/code-review ultra`. Spec changed: `docs/review/invariants.md` (R03's rule text,
 which needs your approval; R23 and R25 extended; R28 new; sources and id ranges);
 `docs/phase2-plan.md` sections 6 and 9, now cited as P2 by R23, R25 and R28.
+
+## 2026-10-17: review 13.04: two lows, one fixed; the user's decisions, R03 wording approved (Opus 5.5)
+
+Review: tier 2, ran `/review-session 13.04` on dc19821..6c91d35 (code-reviewer Opus 5.5 xhigh on
+the range, risk-reviewer Fable 5.1 high on the 15 high-stakes files). Neither found anything high,
+and all 28 scenarios held for both: R01, R03, R05, R06, R07, R10, R14, R15, R16, R17, R20, R21,
+R23, R24, R25, R27, R28, R31, R32, R37, R38, R40, R41, R42, R43, R44, R45. The code-reviewer's own
+`check.sh` was green (1,013 passed). Tier 3 (`/code-review ultra`) was recommended and skipped:
+the user's decision. Spec changed: `docs/phase2-plan.md` sections 6 and 9 (P2, the source of
+R23, R25 and R28); the rule text of R03, R23 and R25, and the new R28.
+
+The two lows:
+
+- **Both reviewers.** Before 13.02, a command-line run of `p2_arm_c` would append its row to
+  `docs/ledger.md`: `train.py` refuses no `p2_` config, and `append_row` checks only the header.
+  Both confirmed the guards that hold today: the training notebook refuses `p2_arm_c`, and a
+  pasted row fails `check.sh`. Not fixed here: the user assigned the refusal to 13.02
+  (`check_ledger_phase` in `train.py`).
+- **Code-reviewer.** Three sources of R23 and R25 still describe arm B alone: CLAUDE.md's ground
+  rule, `.claude/rules/data.md` ("(arm B)") and `.claude/rules/training.md` (the arm "selects the
+  training crop sampler and nothing else"). **Fixed** with the minimal wording the user approved,
+  relayed by the coordinator and confirmed by the user in this session (CLAUDE.md and `.claude/`
+  are the user's files). CLAUDE.md's ground rule and `data.md` now read "(arm B; in phase 2, arm
+  C)". `training.md` adds "in phase 2, arm C also adds a paste step before arm A's crop".
+
+The user's decisions on 13.04's list ("go", 2026-10-17, relayed by the coordinator):
+
+1. The stricter pool: the 995 empty frames of the official cis_val file only, never a cis_test
+   file empty. As built.
+2. `paste_p` is hashed, so `p2_arm_c` has its own config hash. As built.
+3. The placement: Mesnage's random x with the segment's bottom in the lower half, no scale or
+   rotation. As built.
+4. Boxes travel with the composite. As built.
+5. R03's wording, the third eye-check exception (arm C's composites), approved by the user via
+   the coordinator on 2026-10-17. `docs/review/invariants.md` now reads "approved for items 8.07,
+   8.08 and 13.04".
+6. The wording of CLAUDE.md, `data.md` and `training.md`: done, see the second low above.
+7. The `p2_` refusal: in 13.02.
+
+Merged `main` at 05cd17a (8.06) through the sync tool as e44bb33: a clean merge, since 8.06
+touched only `docs/figures/` and `docs/plan.md`. `check.sh` was green after it (1,013 passed).
+This commit is the fix: the wording edit, the R03 wording and this entry; no code or test changed.
+It touches CLAUDE.md and `.claude/rules/`, which are high-stakes paths, so the playbook calls for
+one fix round on this commit's range. The user starts it.
+
+**Next.** The fix round, if the user starts it. Then the merge, after 9.03 and 13.02, syncing again
+if main has moved.
