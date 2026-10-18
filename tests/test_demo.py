@@ -6,10 +6,13 @@ photo is a synthetic-fixture JPEG: no trained run and no dataset image is needed
 
 import inspect
 import os
+import shutil
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import gradio as gr
 import gradio.analytics as gradio_analytics
@@ -57,6 +60,27 @@ def _count_forwards(model: nn.Module) -> list[int]:
     calls: list[int] = []
     model.register_forward_hook(lambda *_: calls.append(1))
     return calls
+
+
+def button_handler(app: gr.Blocks) -> Callable[..., Any]:
+    """The function the Classify button's click runs, found by its trigger: Gradio adds handlers
+    of its own (the examples' loader when `assets/` holds photos), so neither the position nor
+    the number of the app's handlers says which one is the button's."""
+    (button,) = [
+        block
+        for block in app.blocks.values()
+        if isinstance(block, gr.Button) and block.value == "Classify"
+    ]
+    (handler,) = [fn.fn for fn in app.fns.values() if (button._id, "click") in fn.targets]
+    assert handler is not None
+    return handler
+
+
+def example_names(app: gr.Blocks) -> list[str]:
+    """The file names of the example photos the app shows (the samples of `gr.Examples`'
+    dataset; Gradio serves a copy of each, under the same name)."""
+    datasets = [block for block in app.blocks.values() if isinstance(block, gr.Dataset)]
+    return [Path(sample[0]["path"]).name for dataset in datasets for sample in dataset.samples]
 
 
 def test_predict_on_a_fixture_image_returns_three_pairs_and_seconds(
@@ -200,6 +224,32 @@ def test_the_app_builds_with_and_without_examples(model: nn.Module, tmp_path: Pa
     assets.mkdir()
     Image.new("RGB", (8, 8)).save(assets / "a.jpg")
     assert isinstance(build_app(model, example_photos(assets)), gr.Blocks)
+
+
+def test_with_photos_in_assets_the_button_still_runs_the_handler(
+    model: nn.Module, photo: Image.Image, tmp_path: Path
+) -> None:
+    """Item 8.05: with photos in `assets/` (synthetic ones here), the app shows them as examples
+    and Gradio adds the examples' loader; the button still runs the handler it is given, or by
+    default `classify` on the model."""
+    root = synthetic.write_synthetic_fixture(tmp_path / "fixture").image_root
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    for index, source in enumerate(sorted(root.rglob("*.jpg"))[:3]):
+        shutil.copyfile(source, assets / f"example_{index}.jpg")
+    examples = example_photos(assets)
+    assert len(examples) == 3
+
+    def handler(image: Image.Image | None, gradcam: bool) -> app.Result:
+        return classify(model, image, gradcam)
+
+    built = build_app(model, examples, handler)
+    assert example_names(built) == [path.name for path in examples] and len(built.fns) > 1
+    assert button_handler(built) is handler
+    default = button_handler(build_app(model, examples))
+    scores, _, heatmap = default(photo, False)
+    expected, _, _ = classify(model, photo, False)
+    assert list(scores) == list(expected) and heatmap is None
 
 
 def test_the_app_is_built_with_analytics_off(

@@ -4471,3 +4471,44 @@ exists only after 11.03 (the user's decision in this session). Flip it once 11.0
 the user can then flip 9.02.
 
 **Review.** Tier 0, docs only (`README.md`, the journal and this log).
+
+## 2026-10-18: item 8.05, Space and demo tests independent of assets/ (Opus 5.5)
+
+A test fix the user approved on 2026-10-18 through the coordinator, logged under 8.05 with no new
+item. 8.05 stays the user's and is not flipped here.
+
+**Found.** With the user's 10 trans_test photos in `assets/` (uncommitted, copied into this
+worktree only), check.sh failed 2 tests in `tests/test_space.py`: both took the app's click
+handlers as a list and expected only the button's, but with photos present Gradio adds the
+examples' loader (`Examples.create.<locals>.load_example`). The Space was right; the tests
+assumed an empty `assets/`, the trap of 6.04 and 9.01 again. Reproduced before the fix: exactly
+those 2 failed.
+
+**Done.**
+
+- `button_handler` (in `tests/test_demo.py`, imported by `tests/test_space.py`) finds the function
+  the Classify button's click runs by its trigger, the button's id and `click`, then the tests
+  check it by identity (`is space.classify_on_device`). `example_names` lists the photos the
+  app's examples show.
+- `load_space` takes a required `assets` folder and points `gradcam.ASSETS_DIR` at it before
+  loading `space/app.py`, so no Space test reads the repo's `assets/`. The existing tests use a
+  missing folder and now also check that there are no examples.
+- New: the Space with 3 synthetic photos in a tmp `assets/`, with and without `spaces`, shows
+  those 3 as examples and the button still runs `classify_on_device` (wrapped by `spaces.GPU`
+  when installed); the local demo with photos runs the handler it is given, or `classify` by
+  default. Synthetic fixture images only, never the real photos.
+- `tests/test_deploy_space.py` already builds its own repo in a tmp folder; the other demo tests
+  that read the repo's `assets/` pass with the photos.
+
+**Verified.** check.sh green with the 10 photos in `assets/` (1,132 passed) and without them
+(the commit). Mutation checks, each restored: the helper back to "the app's only handler", 3
+tests fail; `load_space` ignoring its folder, 3 fail (with the photos present); `build_app`
+dropping the examples, 3 fail. The deploy dry-run, in a throwaway clone with the photos
+committed (untracked photos are refused, by design) and random ResNet-18 weights, lists 49 files,
+the 10 photos among them (577 kB in all), and nothing from `data/`; the guard passes there.
+The photos are removed from this worktree and never staged. The learning journal gains 5 lines
+under "Surprises and lessons".
+
+**For the user.** Commit the photos in main as planned; check.sh should stay green.
+
+**Review.** Tier 2 (`tests/` is high-stakes): `/review-session`.

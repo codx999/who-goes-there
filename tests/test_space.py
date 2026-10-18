@@ -1,14 +1,16 @@
 """The Hugging Face Space's files (item 11.01; R02, R05, R06, R20, R21, R23, R33 to R36, R38).
 
 `space/app.py` is loaded with `load_model` replaced by a small CNN with random weights, so no
-trained run, no `space/model.pt` and no network are needed. The requirements file is checked
-against `uv export` of the lock and against the imports `app.py` loads at startup; the README's
-header against the lock.
+trained run, no `space/model.pt` and no network are needed, and with `ASSETS_DIR` pointed at a
+temporary folder, missing or holding synthetic photos, so no test depends on what the repo's
+`assets/` holds (item 8.05 fills it). The requirements file is checked against `uv export` of the
+lock and against the imports `app.py` loads at startup; the README's header against the lock.
 """
 
 import ast
 import importlib.util
 import inspect
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -25,9 +27,11 @@ import yaml
 from PIL import Image
 from torch import nn
 
+from tests.test_demo import button_handler, example_names
 from trailcam.data import synthetic
 from trailcam.demo import predict
 from trailcam.demo.app import classify
+from trailcam.evaluate import gradcam
 from trailcam.evaluate.gradcam import ASSETS_DIR
 from trailcam.model.factory import build_model
 from trailcam.train.config import CONFIG_PATH
@@ -39,11 +43,35 @@ PINNED = {"torch", "torchvision", "gradio"}
 SPACE_PROVIDED = {"spaces"}  # on Hugging Face only; imported with a fallback
 
 
+EXAMPLES = 3  # synthetic photos in the `assets` fixture
+
+
 @pytest.fixture(scope="module")
-def photo(tmp_path_factory: pytest.TempPathFactory) -> Image.Image:
+def fixture_photos(tmp_path_factory: pytest.TempPathFactory) -> list[Path]:
     root = synthetic.write_synthetic_fixture(tmp_path_factory.mktemp("fixture")).image_root
-    with Image.open(sorted(root.rglob("*.jpg"))[0]) as image:
+    return sorted(root.rglob("*.jpg"))
+
+
+@pytest.fixture(scope="module")
+def photo(fixture_photos: list[Path]) -> Image.Image:
+    with Image.open(fixture_photos[0]) as image:
         return image.convert("RGB")
+
+
+@pytest.fixture
+def no_assets(tmp_path: Path) -> Path:
+    """A missing `assets/`: the Space is built without examples."""
+    return tmp_path / "assets"
+
+
+@pytest.fixture
+def assets(tmp_path: Path, fixture_photos: list[Path]) -> Path:
+    """An `assets/` folder holding synthetic fixture photos, never the repo's demo photos."""
+    folder = tmp_path / "assets"
+    folder.mkdir()
+    for index, source in enumerate(fixture_photos[:EXAMPLES]):
+        shutil.copyfile(source, folder / f"example_{index}.jpg")
+    return folder
 
 
 class Loaded:
@@ -56,8 +84,11 @@ class Loaded:
         self.model = build_model("small_cnn").eval()
 
 
-def load_space(monkeypatch: pytest.MonkeyPatch, *, spaces: types.ModuleType | None) -> Any:
-    """`space/app.py` as a fresh module, with `spaces` installed or not (`None`)."""
+def load_space(
+    monkeypatch: pytest.MonkeyPatch, *, spaces: types.ModuleType | None, assets: Path
+) -> Any:
+    """`space/app.py` as a fresh module, with `spaces` installed or not (`None`), and its
+    examples taken from `assets` instead of the repo's `assets/`."""
     loaded = Loaded()
     to = loaded.model.to
 
@@ -72,6 +103,7 @@ def load_space(monkeypatch: pytest.MonkeyPatch, *, spaces: types.ModuleType | No
         return loaded.model
 
     monkeypatch.setattr(predict, "load_model", fake_load_model)
+    monkeypatch.setattr(gradcam, "ASSETS_DIR", assets)  # app.py imports it when it is loaded
     monkeypatch.setitem(sys.modules, "spaces", spaces)  # None: the import raises ImportError
     spec = importlib.util.spec_from_file_location("space_app_under_test", APP)
     assert spec is not None and spec.loader is not None
@@ -98,15 +130,11 @@ def fake_spaces(wrapped: list[Callable[..., Any]]) -> types.ModuleType:
     return module
 
 
-def click_handlers(app: gr.Blocks) -> list[Callable[..., Any]]:
-    return [block_fn.fn for block_fn in app.fns.values() if block_fn.fn is not None]
-
-
 def test_the_space_loads_space_model_pt_with_the_default_config_on_the_cpu(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, no_assets: Path
 ) -> None:
     monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
-    space = load_space(monkeypatch, spaces=None)
+    space = load_space(monkeypatch, spaces=None, assets=no_assets)
     assert space.loaded.calls == [(SPACE / "model.pt", predict.DEFAULT_CONFIG, CONFIG_PATH)]
     assert space.loaded.devices == [torch.device("cpu")]
     assert isinstance(space.demo, gr.Blocks)
@@ -114,20 +142,21 @@ def test_the_space_loads_space_model_pt_with_the_default_config_on_the_cpu(
 
 
 def test_the_model_goes_to_cuda_at_module_level_when_cuda_is_available(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, no_assets: Path
 ) -> None:
     """ZeroGPU: the model is placed on cuda at startup, not inside the GPU call."""
     monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
-    space = load_space(monkeypatch, spaces=None)
+    space = load_space(monkeypatch, spaces=None, assets=no_assets)
     assert space.loaded.devices == [torch.device("cuda")]
 
 
 def test_without_spaces_the_handler_is_classify_on_the_space_model(
-    monkeypatch: pytest.MonkeyPatch, photo: Image.Image
+    monkeypatch: pytest.MonkeyPatch, photo: Image.Image, no_assets: Path
 ) -> None:
-    space = load_space(monkeypatch, spaces=None)
+    space = load_space(monkeypatch, spaces=None, assets=no_assets)
     assert space.spaces is None
-    assert click_handlers(space.demo) == [space.classify_on_device]
+    assert example_names(space.demo) == []
+    assert button_handler(space.demo) is space.classify_on_device
     scores, seconds, overlay = space.classify_on_device(photo, False)
     expected, _, _ = classify(space.loaded.model, photo, False)
     assert list(scores) == list(expected)
@@ -137,10 +166,10 @@ def test_without_spaces_the_handler_is_classify_on_the_space_model(
 
 
 def test_grad_cam_is_in_the_space_and_off_by_default(
-    monkeypatch: pytest.MonkeyPatch, photo: Image.Image
+    monkeypatch: pytest.MonkeyPatch, photo: Image.Image, no_assets: Path
 ) -> None:
     """Open question 5, closed 2026-10-16: included, off by default."""
-    space = load_space(monkeypatch, spaces=None)
+    space = load_space(monkeypatch, spaces=None, assets=no_assets)
     boxes = [c for c in space.demo.get_config_file()["components"] if c["type"] == "checkbox"]
     assert [box["props"]["value"] for box in boxes] == [False]
     _, _, overlay = space.classify_on_device(photo, True)
@@ -148,18 +177,38 @@ def test_grad_cam_is_in_the_space_and_off_by_default(
 
 
 def test_with_spaces_the_button_runs_the_handler_wrapped_in_spaces_gpu(
-    monkeypatch: pytest.MonkeyPatch, photo: Image.Image
+    monkeypatch: pytest.MonkeyPatch, photo: Image.Image, no_assets: Path
 ) -> None:
     """The one GPU-dependent function, prediction and Grad-CAM, is wrapped; it takes the photo
     and the switch only, so a ZeroGPU call never carries the model."""
     wrapped: list[Callable[..., Any]] = []
-    space = load_space(monkeypatch, spaces=fake_spaces(wrapped))
+    space = load_space(monkeypatch, spaces=fake_spaces(wrapped), assets=no_assets)
     assert len(wrapped) == 1
     assert list(inspect.signature(wrapped[0]).parameters) == ["photo", "show_gradcam"]
-    (handler,) = click_handlers(space.demo)
+    handler = button_handler(space.demo)
     assert handler is space.classify_on_device and getattr(handler, "on_gpu", False)
     _, _, overlay = handler(photo, True)
     assert isinstance(overlay, Image.Image)
+
+
+@pytest.mark.parametrize("installed", [False, True], ids=["without_spaces", "with_spaces"])
+def test_with_photos_in_assets_the_space_shows_them_and_the_button_still_runs_its_handler(
+    monkeypatch: pytest.MonkeyPatch, photo: Image.Image, assets: Path, installed: bool
+) -> None:
+    """Item 8.05: once `assets/` holds the demo photos, Gradio adds the examples' loader to the
+    app's handlers; the button still runs `classify_on_device` (wrapped in `spaces.GPU` where
+    `spaces` is installed), and the examples are the folder's photos."""
+    wrapped: list[Callable[..., Any]] = []
+    space = load_space(
+        monkeypatch, spaces=fake_spaces(wrapped) if installed else None, assets=assets
+    )
+    assert example_names(space.demo) == [f"example_{index}.jpg" for index in range(EXAMPLES)]
+    assert len(space.demo.fns) > 1  # the examples' loader is there too
+    handler = button_handler(space.demo)
+    assert handler is space.classify_on_device
+    assert getattr(handler, "on_gpu", False) is installed and len(wrapped) == int(installed)
+    scores, _, overlay = handler(photo, True)
+    assert len(scores) == predict.TOP_K and isinstance(overlay, Image.Image)
 
 
 def test_spaces_is_imported_before_torch() -> None:
