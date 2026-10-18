@@ -329,6 +329,21 @@ def test_weights_that_are_not_a_default_config_checkpoint_are_refused(
         deploy.plan(path, repo)
 
 
+def test_weights_of_another_input_size_are_refused(repo: Path, tmp_path: Path) -> None:
+    """Item 13.02, the review's low finding: a ResNet-18 checkpoint trained at 320 px (a
+    `p2_res320` run) has the Space model's weights, but records its input size, so the deploy's
+    load under the Space's 224 px config refuses it instead of serving it at 224."""
+    path = tmp_path / "res320.pt"
+    torch.manual_seed(0)
+    state = build_model("resnet18", pretrained=False).state_dict()
+    torch.save(
+        {"model": "resnet18", "classes": list(CLASSES), "state_dict": state, "input_size": 320},
+        path,
+    )
+    with pytest.raises(deploy.DeployError, match="trained at 320 px"):
+        deploy.plan(path, repo)
+
+
 def test_weights_must_be_a_pt_file(repo: Path, weights: Path, tmp_path: Path) -> None:
     other = tmp_path / "run.safetensors"
     shutil.copyfile(weights, other)

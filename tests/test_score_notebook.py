@@ -25,6 +25,7 @@ from typing import Any
 
 import pytest
 import torch
+import yaml
 from PIL import Image
 
 from tests.test_score_test import (
@@ -35,6 +36,7 @@ from tests.test_score_test import (
     _figures_snapshot,
 )
 from trailcam.data.cache import CACHE_TOP
+from trailcam.data.dataset import INPUT_SIZE
 from trailcam.evaluate import evaluate, score_test
 from trailcam.evaluate.score_test import (
     ALARM_EXIT,
@@ -50,6 +52,7 @@ from trailcam.evaluate.score_test import (
     scoring_header,
 )
 from trailcam.train import device
+from trailcam.train.config import HASH_NEUTRAL
 
 ROOT = Path(__file__).resolve().parents[1]
 NOTEBOOK = ROOT / "notebooks" / "kaggle_score_test.ipynb"
@@ -289,10 +292,26 @@ def test_the_parameter_cell_is_the_only_one_that_sets_a_parameter() -> None:
         assert shown in check
 
 
+def _read_as_today(config_text: bytes) -> bytes:
+    """A config.yaml from before item 13.02, as today's code reads it. Such a file has no
+    `input_size`: its code hard-coded 224 px, which 13.02 made a required field, left out of
+    the config hash at 224 (`HASH_NEUTRAL`). So `input_size: 224` is added to `common`, and
+    every config hashes as it did. On Kaggle the notebook installs the code of the same commit
+    as its config.yaml, so this only bridges the test's mix of today's code and an older file."""
+    raw = yaml.safe_load(config_text)
+    if "input_size" in raw["common"]:
+        return config_text
+    assert not any("input_size" in block for block in raw["configs"].values())
+    assert dict(HASH_NEUTRAL) == {"input_size": INPUT_SIZE} == {"input_size": 224}
+    raw["common"]["input_size"] = INPUT_SIZE
+    return yaml.safe_dump(raw, sort_keys=False).encode("utf-8")
+
+
 def test_the_default_commit_holds_the_ledger_the_scoring_accepts(tmp_path: Path) -> None:
     """The default COMMIT is on this branch's history, and score_test.py's checks pass on its
     ledger, test ledger and configs for the default RUN_SEEDS: the 7 rows of phase 1, complete for
-    seeds 0, 1 and 2, no test row (CI checks out the full history)."""
+    seeds 0, 1 and 2, no test row (CI checks out the full history). A config.yaml older than item
+    13.02 is read as today's code reads it (`_read_as_today`)."""
     p = _parameters()
     commit = str(p["COMMIT"])
     git = ["git", "-C", str(ROOT)]
@@ -302,6 +321,8 @@ def test_the_default_commit_holds_the_ledger_the_scoring_accepts(tmp_path: Path)
         shown = subprocess.run(
             [*git, "show", f"{commit}:{name}"], check=True, capture_output=True
         ).stdout
+        if name == "config.yaml":
+            shown = _read_as_today(shown)
         (tmp_path / Path(name).name).write_bytes(shown)
     rows = read_ledger(tmp_path / "ledger.md")
     assert len(rows) == 7

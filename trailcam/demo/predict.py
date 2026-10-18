@@ -49,8 +49,8 @@ class Prediction:
 
 
 def load_model(checkpoint: Path, config_name: str, config_path: Path = CONFIG_PATH) -> nn.Module:
-    """The model of `checkpoint`, in eval mode on the CPU; refuses one whose model is not the
-    config's, or whose class map is not `CLASSES`."""
+    """The model of `checkpoint`, in eval mode on the CPU; refuses one whose model or input size
+    is not the config's, or whose class map is not `CLASSES` (`load_checkpoint`)."""
     model = load_checkpoint(checkpoint, load_config(config_name, config_path))
     model.eval()
     return model

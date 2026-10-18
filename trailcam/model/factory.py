@@ -15,16 +15,16 @@ from torch import nn
 from torchvision.models import ResNet
 
 from trailcam.data import classes
-from trailcam.model.backbone import build_efficientnet_b0, build_resnet18
+from trailcam.model.backbone import build_efficientnet_b0, build_resnet18, build_resnet50
 from trailcam.model.small_cnn import SmallCNN
 
-MODEL_NAMES: Final = ("small_cnn", "resnet18", "efficientnet_b0")
+MODEL_NAMES: Final = ("small_cnn", "resnet18", "efficientnet_b0", "resnet50")  # resnet50: phase 2
 
 
 def build_model(name: str, *, pretrained: bool = True) -> nn.Module:
     """The named model with a head of `NUM_CLASSES` outputs.
 
-    `pretrained` loads the ImageNet-1k weights of the two backbones (the default for training);
+    `pretrained` loads the ImageNet-1k weights of the backbones (the default for training);
     the small CNN has none and is always built from random weights.
     """
     num_classes = classes.NUM_CLASSES
@@ -35,6 +35,8 @@ def build_model(name: str, *, pretrained: bool = True) -> nn.Module:
         model = build_resnet18(num_classes, pretrained=pretrained)
     elif name == "efficientnet_b0":
         model = build_efficientnet_b0(num_classes, pretrained=pretrained)
+    elif name == "resnet50":
+        model = build_resnet50(num_classes, pretrained=pretrained)
     else:
         raise ValueError(f"unknown model {name!r}; expected one of {', '.join(MODEL_NAMES)}")
     return model

@@ -733,12 +733,12 @@ uv run python scripts/deploy_space.py --dry-run --weights models/<run>.pt
 
 ## 15. What we'd improve next, and how
 
-**What we did.** Planned phase 2 (item 13.01), which starts after the presentation: a ladder of
-small changes meant to raise the scores on unseen cameras. A literature review re-ranked it the
-same day: first average the three seeds' weights or predictions (no training), then paste
-training animals onto empty frames from training cameras ("copy-paste", the strongest evidence),
-then weight averaging during training, a longer head-only phase, higher resolution, ResNet-50 and
-infrared-aware augmentation. Each change is tried alone, screened on one seed, confirmed on three
+**What we did.** Planned phase 2 (item 13.01), run in the week before the presentation (13.02): a
+ladder of small changes meant to raise the scores on unseen cameras. A literature review
+re-ranked it the same day: first average the three seeds' weights or predictions (no training),
+then paste training animals onto empty frames from training cameras ("copy-paste", the strongest
+evidence), then weight averaging during training, a longer head-only phase, higher resolution,
+ResNet-50 and infrared-aware augmentation. Each change is tried alone, screened on one seed, confirmed on three
 or five, and kept only if it beats the run-to-run noise without costing more than about 1 point on
 val.
 
@@ -762,6 +762,11 @@ val.
   run tests your understanding as well as the model. Copy-paste helped in a published study that
   pasted animals onto the test cameras' own backgrounds; our rules allow training cameras only, so
   the prediction is a smaller gain than theirs. A wrong guess is where the lesson is.
+- **A control re-run, then parallel screens, then the test scoring declared first** (13.02). The
+  code moved since phase 1's runs, so arm A runs again unchanged: within its seed noise, a
+  variant's gain is the variant's, not the code's. Each variant is one change from that same
+  baseline, so they can be screened side by side and only confirmed winners are stacked. Writing
+  "one recipe, scored once, on 10-22" before any result keeps the test set from picking anything.
 - **Leakage hides in augmentation too.** An empty frame from a test split, or from the same burst
   as a val photo, would smuggle that scene into training; so the background pool gets its own
   rules and tests, like the split.

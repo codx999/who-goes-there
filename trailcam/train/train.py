@@ -36,7 +36,15 @@ images) prints them and exits 0.
 
 Before a real run trains, `preflight` checks that `--out-dir` can be written and that `--ledger`
 exists with the header of `LEDGER_COLUMNS` (review 5.03), so a bad path fails in seconds instead
-of after the GPU hour.
+of after the GPU hour. `check_ledger_phase` refuses, before training and again at the append, a
+phase-2 config (`p2_`, `trailcam/train/config.py`) with any ledger but `docs/ledger-phase2.md`
+(`PHASE2_LEDGER_NAME`) and a phase-1 config with that one (item 13.02), so a phase-2 row never
+lands in `docs/ledger.md`.
+The config's `input_size` sets the side of the training crop and of the eval transform (224 for
+every phase-1 config; `trailcam/data/dataset.py`); the loop itself does not depend on it. The
+checkpoint holds the model name, the class list, the state dict and the input size, which
+`load_checkpoint` (`trailcam/evaluate/attention.py`) checks against the config it is loaded
+with; phase 1's checkpoints predate the size and load as 224 px.
 `train_run` then checks that the image of every kept record is under the image folder
 (`trailcam/data/cache.py`, item 6.07) before the split is drawn, so an incomplete cache fails in
 seconds too, with counts only.
@@ -82,7 +90,7 @@ from torch.optim.lr_scheduler import LambdaLR
 
 from trailcam.data.cache import check_images
 from trailcam.data.classes import CLASSES
-from trailcam.data.dataset import CCT20Dataset, TrainTransform
+from trailcam.data.dataset import CCT20Dataset, EvalTransform, TrainTransform
 from trailcam.data.loaders import Loader, make_loaders
 from trailcam.data.metadata import DAY_NIGHT_SIDECAR, Metadata, load_metadata
 from trailcam.data.split import Split, make_split
@@ -95,11 +103,14 @@ from trailcam.train.config import (
     Config,
     ConfigError,
     config_hash,
+    is_phase2,
     load_config,
     with_overrides,
 )
 
 LEDGER_PATH: Final = Path(__file__).resolve().parents[2] / "docs" / "ledger.md"
+PHASE2_LEDGER_NAME: Final = "ledger-phase2.md"  # the phase-2 runs' ledger (docs/phase2-plan.md)
+PHASE2_LEDGER_PATH: Final = LEDGER_PATH.with_name(PHASE2_LEDGER_NAME)
 LEDGER_COLUMNS: Final = (
     "run id",
     "model",
@@ -399,7 +410,8 @@ def train_run(
         config.batch_size,
         num_workers=config.num_workers,
         pin_memory=config.pin_memory,
-        train_transform=TrainTransform(config.arm),
+        train_transform=TrainTransform(config.arm, size=config.input_size),
+        eval_transform=EvalTransform(config.input_size),
         generator=generator,
     )
     loaders = {name: every[name] for name in USED_SPLITS}
@@ -412,7 +424,13 @@ def train_run(
     out_dir.mkdir(parents=True, exist_ok=True)
     checkpoint = out_dir / f"{run_id}.pt"
     state = {k: v.detach().cpu() for k, v in model.state_dict().items()}
-    torch.save({"model": config.model, "classes": list(CLASSES), "state_dict": state}, checkpoint)
+    saved = {
+        "model": config.model,
+        "classes": list(CLASSES),
+        "state_dict": state,
+        "input_size": config.input_size,  # item 13.02: load_checkpoint checks it against the config
+    }
+    torch.save(saved, checkpoint)
     digest = file_sha256(checkpoint)
     log(f"checkpoint {checkpoint.name}, sha256 {digest}")
 
@@ -465,6 +483,25 @@ def ledger_row(values: Mapping[str, str]) -> str:
     return "| " + " | ".join(cells) + " |"
 
 
+def is_phase2_ledger(ledger: Path) -> bool:
+    """Whether `ledger` is a phase-2 ledger, by its file name (`PHASE2_LEDGER_NAME`)."""
+    return ledger.name == PHASE2_LEDGER_NAME
+
+
+def check_ledger_phase(config_name: str, ledger: Path) -> None:
+    """Refuse a phase-2 config with a phase-1 ledger, and a phase-1 config with the phase-2 one."""
+    if is_phase2(config_name) and not is_phase2_ledger(ledger):
+        raise ValueError(
+            f"config {config_name} is a phase-2 config: its rows go to docs/{PHASE2_LEDGER_NAME}, "
+            f"not {ledger.name}"
+        )
+    if is_phase2_ledger(ledger) and not is_phase2(config_name):
+        raise ValueError(
+            f"{ledger.name} takes phase-2 configs only (p2_...), not {config_name}; phase-1 rows "
+            "go to docs/ledger.md"
+        )
+
+
 def check_ledger(ledger: Path) -> str:
     """The text of `ledger`; refuses a missing ledger, another header, or one that does not end
     with its table."""
@@ -480,7 +517,12 @@ def check_ledger(ledger: Path) -> str:
 
 
 def append_row(ledger: Path, row: str) -> None:
-    """Append `row` to the table that ends `ledger` (checked by `check_ledger`)."""
+    """Append `row` to the table that ends `ledger` (checked by `check_ledger`), if its config is
+    of the ledger's phase (`check_ledger_phase`)."""
+    cells = [cell.strip() for cell in row.strip()[1:-1].split("|")]
+    if len(cells) != len(LEDGER_COLUMNS):
+        raise ValueError(f"expected a row of {len(LEDGER_COLUMNS)} cells, got {len(cells)}")
+    check_ledger_phase(cells[LEDGER_COLUMNS.index("config")], ledger)
     text = check_ledger(ledger)
     ledger.write_text(text + ("" if text.endswith("\n") else "\n") + row + "\n", encoding="utf-8")
 
@@ -563,6 +605,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     name, config = resolve(args, parser)
     if not config.fixture:
         try:
+            check_ledger_phase(name, args.ledger)
             preflight(args.out_dir, args.ledger)
         except (OSError, ValueError) as error:
             parser.error(f"before training: {error}")

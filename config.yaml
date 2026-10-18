@@ -5,6 +5,11 @@
 # differ only in `arm` (R25, plan.md section 6); tests/test_config.py checks that and the recipe
 # values below (R31). Changing a value here changes a reported experiment: it needs the user's OK.
 #
+# Phase 2 (docs/phase2-plan.md, item 13.02): a config named p2_... is resnet18_arm_a with one
+# change, which tests/test_config.py names per config; its runs go to docs/ledger-phase2.md, never
+# docs/ledger.md. `input_size` is left out of the config hash at 224, so the phase-1 hashes in
+# docs/ledger.md are unchanged (a test pins them).
+#
 # Floats need a dot or YAML reads them as strings: 1.0e-4, not 1e-4 (the loader refuses a string).
 # `fixture: true` is the dry run: train.py writes the synthetic fixture into a temporary directory
 # and trains on it. Every other config reads the 512 px cache whose path train.py is given.
@@ -13,6 +18,7 @@ common:
   split_seed: 42          # the seed of the pinned split tests and the data card (item 3.04)
   run_seed: 0             # seeds 1 and 2 are per-run overrides (plan.md section 6)
   batch_size: 64
+  input_size: 224         # train crop and eval centre crop; the eval resize keeps 256/224's margin
   weight_decay: 1.0e-2    # AdamW, decoupled
   scheduler: cosine       # cosine annealing after a linear warmup
   warmup_epochs: 1
@@ -61,6 +67,50 @@ configs:
   resnet18_arm_b:
     model: resnet18
     arm: B
+    pretrained: true
+    max_epochs: 10
+    head_only_epochs: 1
+    lr_body: 1.0e-4
+    lr_head: 1.0e-3
+
+  # Phase 2 (docs/phase2-plan.md section 6): screened in parallel on run seed 0 against
+  # p2_baseline, each one change from resnet18_arm_a; tests/test_config.py checks that change.
+
+  # resnet18_arm_a exactly, re-run at the phase-2 commit: the control every variant is paired with.
+  p2_baseline:
+    model: resnet18
+    arm: A
+    pretrained: true
+    max_epochs: 10
+    head_only_epochs: 1
+    lr_body: 1.0e-4
+    lr_head: 1.0e-3
+
+  # Step 3: three head-only epochs inside the same 10, so the body trains 7.
+  p2_head3:
+    model: resnet18
+    arm: A
+    pretrained: true
+    max_epochs: 10
+    head_only_epochs: 3
+    lr_body: 1.0e-4
+    lr_head: 1.0e-3
+
+  # Step 4: train crop 320; eval resize round(320 x 256 / 224) = 366, centre crop 320.
+  p2_res320:
+    model: resnet18
+    arm: A
+    pretrained: true
+    max_epochs: 10
+    head_only_epochs: 1
+    lr_body: 1.0e-4
+    lr_head: 1.0e-3
+    input_size: 320
+
+  # Step 5: ResNet-50 with ImageNet-1k (V1) weights, the same recipe.
+  p2_r50:
+    model: resnet50
+    arm: A
     pretrained: true
     max_epochs: 10
     head_only_epochs: 1

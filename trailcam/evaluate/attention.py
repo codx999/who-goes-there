@@ -536,11 +536,40 @@ def write_report(
     return table, histogram
 
 
-def load_checkpoint(path: Path, config: Config) -> nn.Module:
-    """The model of a `train.py` checkpoint; refuses one of another model or class map."""
+# The keys of a `train.py` checkpoint (item 13.02 added `input_size`); phase 1's lack it.
+CHECKPOINT_KEYS: Final = frozenset({"model", "classes", "state_dict", "input_size"})
+PHASE1_CHECKPOINT_KEYS: Final = CHECKPOINT_KEYS - {"input_size"}
+
+
+def load_checkpoint(path: Path, config: Config, *, eval_size: int = INPUT_SIZE) -> nn.Module:
+    """The model of a `train.py` checkpoint, checked against `config`: the one loader of the
+    evaluation tools, the final scoring, the demo, the Space and its deploy script.
+
+    First, before the file is read, it refuses a config whose input size is not `eval_size`, the
+    side of the caller's eval transform. Every caller today uses `EvalTransform()` at 224 px and
+    passes none, so a phase-2 config such as `p2_res320` is refused there rather than scored at
+    the wrong size (its val and trans_val scores are `train.py`'s; its test scoring is item
+    13.06's). Then it refuses a checkpoint of another model, class map or input size. Since item
+    13.02 `train.py` saves the input size (`CHECKPOINT_KEYS`); a checkpoint without one holds
+    exactly `PHASE1_CHECKPOINT_KEYS`, as phase 1's do, and was trained at 224 px.
+    """
+    if config.input_size != eval_size:
+        raise ValueError(
+            f"the config's input size is {config.input_size} px; this tool's eval transform is "
+            f"{eval_size} px (the evaluation tools, the demo and the Space run at {INPUT_SIZE} px "
+            "only; docs/phase2-plan.md section 4)"
+        )
     saved = torch.load(path, map_location="cpu", weights_only=True)
-    if not isinstance(saved, dict) or set(saved) != {"model", "classes", "state_dict"}:
+    if not isinstance(saved, dict) or set(saved) not in (CHECKPOINT_KEYS, PHASE1_CHECKPOINT_KEYS):
         raise ValueError(f"{path.name} is not a checkpoint written by trailcam.train.train")
+    size = saved.get("input_size", INPUT_SIZE)
+    if type(size) is not int:
+        raise ValueError(f"{path.name} records an input size of {size!r}, not whole pixels")
+    if size != config.input_size:
+        raise ValueError(
+            f"{path.name} was trained at {size} px, but the config's input size is "
+            f"{config.input_size} px"
+        )
     if saved["model"] != config.model:
         raise ValueError(f"{path.name} holds a {saved['model']}, the config a {config.model}")
     if list(saved["classes"]) != list(CLASSES):

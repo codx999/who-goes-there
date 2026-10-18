@@ -1,5 +1,6 @@
 """trailcam/model: the small CNN, the backbones and the factory (plan.md section 4; R05 the head
-sized from the class map, R21 one normalisation for every model, R30 the two models).
+sized from the class map, R21 one normalisation for every model, R30 the two models, and phase
+2's ResNet-50 of `p2_r50`, item 13.02, with its `/review-shapes` table checked here).
 
 No test downloads weights: every model is built with `pretrained=False`, the default's ImageNet
 weights are checked by spying on the builders, and a module-wide fixture refuses any network
@@ -16,7 +17,7 @@ import pytest
 import timm
 import torch
 from torch import nn
-from torchvision.models import ResNet, ResNet18_Weights
+from torchvision.models import ResNet, ResNet18_Weights, ResNet50_Weights
 
 from trailcam.data import classes
 from trailcam.data.classes import CLASSES
@@ -49,7 +50,7 @@ def test_the_network_guard_refuses_the_connection_a_download_opens() -> None:
 
 
 def test_model_names() -> None:
-    assert MODEL_NAMES == ("small_cnn", "resnet18", "efficientnet_b0")
+    assert MODEL_NAMES == ("small_cnn", "resnet18", "efficientnet_b0", "resnet50")
 
 
 @pytest.mark.parametrize("name", MODEL_NAMES)
@@ -62,7 +63,7 @@ def test_a_batch_of_two_maps_to_two_rows_of_logits(models: dict[str, nn.Module],
 
 @pytest.mark.parametrize(
     ("name", "in_features"),
-    [("small_cnn", 32 * 28 * 28), ("resnet18", 512), ("efficientnet_b0", 1280)],
+    [("small_cnn", 32 * 28 * 28), ("resnet18", 512), ("efficientnet_b0", 1280), ("resnet50", 2048)],
 )
 def test_the_head_is_one_linear_layer_sized_from_the_class_map(
     models: dict[str, nn.Module], name: str, in_features: int
@@ -100,8 +101,9 @@ def test_the_parameter_groups_partition_every_parameter_once(
     assert set(head) == {id(p) for p in head_module(model).parameters()}
 
 
-def test_the_resnet18_head_group_is_fc() -> None:
-    model = build_model("resnet18", pretrained=False)
+@pytest.mark.parametrize("name", ["resnet18", "resnet50"])
+def test_the_resnet_head_group_is_fc(name: str) -> None:
+    model = build_model(name, pretrained=False)
     assert isinstance(model, ResNet)
     head_ids = {id(p) for p in parameter_groups(model).head}
     names = {n for n, p in model.named_parameters() if id(p) in head_ids}
@@ -109,8 +111,8 @@ def test_the_resnet18_head_group_is_fc() -> None:
 
 
 def test_unknown_names_are_refused() -> None:
-    with pytest.raises(ValueError, match="small_cnn, resnet18, efficientnet_b0"):
-        build_model("resnet50")
+    with pytest.raises(ValueError, match="small_cnn, resnet18, efficientnet_b0, resnet50"):
+        build_model("resnet101")
     with pytest.raises(TypeError):
         parameter_groups(nn.Sequential(nn.Linear(2, 2)))
 
@@ -127,6 +129,24 @@ def test_resnet18_loads_the_imagenet_1k_weights_by_default(monkeypatch: pytest.M
     build_model("resnet18")
     build_model("resnet18", pretrained=False)
     assert requested == [ResNet18_Weights.IMAGENET1K_V1, None]
+
+
+def test_resnet50_loads_the_imagenet_1k_v1_weights_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """V1, torchvision's original recipe, as ResNet-18's only weights are: V2's newer recipe
+    would be a second change in `p2_r50`."""
+    requested: list[object] = []
+    real = backbone.resnet50
+
+    def spy(*, weights: ResNet50_Weights | None) -> ResNet:
+        requested.append(weights)
+        return real(weights=None)
+
+    monkeypatch.setattr(backbone, "resnet50", spy)
+    build_model("resnet50")
+    build_model("resnet50", pretrained=False)
+    assert requested == [ResNet50_Weights.IMAGENET1K_V1, None]
 
 
 def test_efficientnet_b0_loads_the_imagenet_1k_weights_by_default(
@@ -155,6 +175,68 @@ def test_the_pretrained_weights_expect_the_dataset_normalisation(
     assert config["tag"] == "ra_in1k"
     assert tuple(config["mean"]) == IMAGENET_MEAN and tuple(config["std"]) == IMAGENET_STD
     assert backbone.RESNET18_WEIGHTS.meta["num_params"] == 11_689_512  # ImageNet-1k, 1000 classes
+    resnet50 = ResNet50_Weights.IMAGENET1K_V1.transforms()
+    assert tuple(resnet50.mean) == IMAGENET_MEAN and tuple(resnet50.std) == IMAGENET_STD
+    assert backbone.RESNET50_WEIGHTS.meta["num_params"] == 25_557_032
+
+
+# The `/review-shapes` table of the phase-2 models (item 13.02): layer, input shape, output shape
+# and parameters for a batch of two, traced by forward hooks on the top-level layers.
+RESNET50_224 = [
+    ("conv1", (2, 3, 224, 224), (2, 64, 112, 112), 9_408),
+    ("bn1", (2, 64, 112, 112), (2, 64, 112, 112), 128),
+    ("relu", (2, 64, 112, 112), (2, 64, 112, 112), 0),
+    ("maxpool", (2, 64, 112, 112), (2, 64, 56, 56), 0),
+    ("layer1", (2, 64, 56, 56), (2, 256, 56, 56), 215_808),
+    ("layer2", (2, 256, 56, 56), (2, 512, 28, 28), 1_219_584),
+    ("layer3", (2, 512, 28, 28), (2, 1024, 14, 14), 7_098_368),
+    ("layer4", (2, 1024, 14, 14), (2, 2048, 7, 7), 14_964_736),
+    ("avgpool", (2, 2048, 7, 7), (2, 2048, 1, 1), 0),
+    ("fc", (2, 2048), (2, 12), 2048 * 12 + 12),
+]
+
+
+def _shape_table(
+    model: nn.Module, side: int
+) -> list[tuple[str, tuple[int, ...], tuple[int, ...], int]]:
+    rows: list[tuple[str, tuple[int, ...], tuple[int, ...], int]] = []
+
+    def hook(name: str) -> Any:
+        def record(
+            module: nn.Module, inputs: tuple[torch.Tensor, ...], output: torch.Tensor
+        ) -> None:
+            params = sum(p.numel() for p in module.parameters())
+            rows.append((name, tuple(inputs[0].shape), tuple(output.shape), params))
+
+        return record
+
+    handles = [child.register_forward_hook(hook(n)) for n, child in model.named_children()]
+    try:
+        with torch.no_grad():
+            model(torch.randn(2, 3, side, side))
+    finally:
+        for handle in handles:
+            handle.remove()
+    return rows
+
+
+def test_the_resnet50_shape_table(models: dict[str, nn.Module]) -> None:
+    """`p2_r50`: the pooled 2048 features feed the 12-way head; 23,532,620 parameters in all,
+    the published 25,557,032 less the 1000-way head plus ours."""
+    model = models["resnet50"]
+    assert _shape_table(model, 224) == RESNET50_224
+    total = sum(p.numel() for p in model.parameters())
+    assert total == 25_557_032 - (2048 * 1000 + 1000) + (2048 * 12 + 12) == 23_532_620
+
+
+@pytest.mark.parametrize(("name", "features"), [("resnet18", 512), ("resnet50", 2048)])
+def test_the_resnets_take_320_px(models: dict[str, nn.Module], name: str, features: int) -> None:
+    """`p2_res320`: at 320 px the last feature map is 10 x 10 instead of 7 x 7, and the adaptive
+    pooling still gives the head its features, so the logits keep their shape."""
+    table = {row[0]: row for row in _shape_table(models[name], 320)}
+    assert table["layer4"][2] == (2, features, 10, 10)
+    assert table["avgpool"][2] == (2, features, 1, 1)
+    assert table["fc"][1:3] == ((2, features), (2, 12))
 
 
 def test_the_small_cnn_is_three_tinyvgg_blocks_and_a_linear_head() -> None:

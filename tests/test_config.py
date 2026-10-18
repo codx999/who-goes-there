@@ -1,16 +1,23 @@
 """trailcam/train/config.py and the root config.yaml (item 5.02; R25 arm A and arm B differ in
-`arm` alone, R31 the training recipe of plan.md section 5).
+`arm` alone, R31 the training recipe of plan.md section 5, for the phase-1 configs).
+
+Phase 2 (item 13.02, docs/phase2-plan.md): every `p2_` config is `resnet18_arm_a` with the one
+change `P2_CHANGES` names for it, so a phase-2 comparison changes one thing; `input_size`, the
+field phase 2 adds, leaves every phase-1 config hash as `docs/ledger.md` records it. A new `p2_`
+config (item 13.04's `p2_arm_c`) adds its line to `P2_CHANGES`.
 
 The first tests read the committed config.yaml; the rest feed `parse_configs` small texts built
 from it, so each refusal is checked against a file that is otherwise valid.
 """
 
+import hashlib
+import json
 from dataclasses import asdict, fields, replace
 
 import pytest
 import yaml
 
-from trailcam.data.dataset import ARMS, TrainTransform
+from trailcam.data.dataset import ARMS, INPUT_SIZE, TrainTransform
 from trailcam.model import factory
 from trailcam.train import config as config_module
 from trailcam.train.config import (
@@ -18,17 +25,36 @@ from trailcam.train.config import (
     DRY_RUN,
     FIELDS,
     HASH_EXCLUDED,
+    HASH_NEUTRAL,
     MODEL_NAMES,
+    PHASE2_PREFIX,
     Config,
     ConfigError,
     config_hash,
+    is_phase2,
     load_config,
     load_configs,
     parse_configs,
     with_overrides,
 )
+from trailcam.train.ledger import check_ledger
+from trailcam.train.train import LEDGER_PATH
 
-FULL = ("small_cnn", "resnet18_arm_a", "resnet18_arm_b")
+PHASE1 = ("small_cnn", "resnet18_arm_a", "resnet18_arm_b")  # the training configs R31 holds for
+P2_BASE = "resnet18_arm_a"
+P2_CHANGES: dict[str, dict[str, object]] = {
+    "p2_baseline": {},  # the control re-run at the phase-2 commit
+    "p2_head3": {"head_only_epochs": 3},  # the body trains 7 of the 10 epochs
+    "p2_res320": {"input_size": 320},  # eval resize round(320 * 256 / 224) = 366
+    "p2_r50": {"model": "resnet50"},
+}
+# The config hashes of docs/ledger.md's rows (items 6.04, 6.05, 7.02, 7.03); score_test.py
+# refuses a config whose hash no longer matches its row.
+PHASE1_HASHES = {
+    "small_cnn": "f40ed6e3960104f10a78e3d33a8f530cde82e23a555def76f694e19ab09a3e95",
+    "resnet18_arm_a": "483aa055ab221fe445add05623a061a980fdf728f63c819c78caccd5a94c6203",
+    "resnet18_arm_b": "483aa055ab221fe445add05623a061a980fdf728f63c819c78caccd5a94c6203",
+}
 
 
 @pytest.fixture(scope="module")
@@ -37,7 +63,7 @@ def configs() -> dict[str, Config]:
 
 
 def test_all_configs_load(configs: dict[str, Config]) -> None:
-    assert list(configs) == [DRY_RUN, *FULL]
+    assert list(configs) == [DRY_RUN, *PHASE1, *P2_CHANGES]
     assert all(isinstance(c, Config) for c in configs.values())
     assert load_config("resnet18_arm_b") == configs["resnet18_arm_b"]
 
@@ -58,8 +84,19 @@ def test_every_config_has_both_seeds(configs: dict[str, Config]) -> None:
         assert config.split_seed == 42  # the seed of the pinned split tests and the data card
 
 
+def test_the_phase_of_a_config_is_its_name(configs: dict[str, Config]) -> None:
+    """Phase 2 is named by the prefix alone: the unprefixed training configs are phase 1's, the
+    `p2_` ones are `P2_CHANGES`, and the dry run is neither."""
+    assert PHASE2_PREFIX == "p2_"
+    training = {name for name, c in configs.items() if not c.fixture}
+    assert {name for name in training if not is_phase2(name)} == set(PHASE1)
+    assert {name for name in configs if is_phase2(name)} == set(P2_CHANGES)
+    assert configs[DRY_RUN].fixture and not is_phase2(DRY_RUN)
+    assert is_phase2("p2_anything") and not is_phase2("resnet18_p2_")
+
+
 def test_every_config_has_loader_settings(configs: dict[str, Config]) -> None:
-    for name in FULL:
+    for name in (*PHASE1, *P2_CHANGES):
         assert (configs[name].num_workers, configs[name].pin_memory) == (4, True), name
         assert configs[name].fixture is False, name
 
@@ -72,11 +109,12 @@ def test_arm_a_and_arm_b_differ_in_arm_alone(configs: dict[str, Config]) -> None
 
 
 def test_the_full_configs_carry_the_recipe(configs: dict[str, Config]) -> None:
-    """R31: AdamW 1e-4 body / 1e-3 head, weight decay 1e-2, cosine with a one-epoch warmup,
-    patience 3, batch 64, mixed precision; up to 10 backbone epochs in all, the first of them
-    head-only (it counts inside max_epochs, item 5.03), up to 15 for the small CNN, which has no
-    pretrained body and trains it at the head's rate."""
-    for name in FULL:
+    """R31, for the phase-1 configs: AdamW 1e-4 body / 1e-3 head, weight decay 1e-2, cosine with
+    a one-epoch warmup, patience 3, batch 64 at 224 px, mixed precision; up to 10 backbone epochs
+    in all, the first of them head-only (it counts inside max_epochs, item 5.03), up to 15 for the
+    small CNN, which has no pretrained body and trains it at the head's rate. The phase-2 configs
+    are held to arm A's recipe with one change instead (`test_every_p2_config_...`)."""
+    for name in PHASE1:
         c = configs[name]
         assert (c.weight_decay, c.scheduler, c.warmup_epochs, c.patience) == (
             1e-2,
@@ -85,6 +123,7 @@ def test_the_full_configs_carry_the_recipe(configs: dict[str, Config]) -> None:
             3,
         ), name
         assert (c.batch_size, c.mixed_precision, c.lr_head) == (64, True, 1e-3), name
+        assert c.input_size == INPUT_SIZE == 224, name
     for name in ("resnet18_arm_a", "resnet18_arm_b"):
         c = configs[name]
         assert (c.model, c.pretrained, c.lr_body, c.max_epochs, c.head_only_epochs) == (
@@ -102,6 +141,54 @@ def test_the_full_configs_carry_the_recipe(configs: dict[str, Config]) -> None:
         15,
         0,
     )
+
+
+@pytest.mark.parametrize("name", list(P2_CHANGES))
+def test_every_p2_config_is_arm_a_with_its_one_change(
+    configs: dict[str, Config], name: str
+) -> None:
+    """Phase 2's one change per comparison: the config differs from `resnet18_arm_a` in exactly
+    the fields `P2_CHANGES` names, to exactly those values, and in nothing else."""
+    base, variant = asdict(configs[P2_BASE]), asdict(configs[name])
+    changed = {key: variant[key] for key in FIELDS if variant[key] != base[key]}
+    assert changed == P2_CHANGES[name]
+    assert len(changed) <= 1
+
+
+def test_the_p2_config_hashes(configs: dict[str, Config]) -> None:
+    """The control re-run shares arm A's config hash (it is arm A); every variant has its own,
+    so its rows can never pass as another recipe's."""
+    arm_a = config_hash(configs[P2_BASE])
+    assert config_hash(configs["p2_baseline"]) == arm_a
+    variants = [config_hash(configs[name]) for name in P2_CHANGES if name != "p2_baseline"]
+    assert len(set(variants)) == len(variants)
+    assert arm_a not in variants and config_hash(configs["small_cnn"]) not in variants
+
+
+def test_the_phase1_config_hashes_are_the_ledgers(configs: dict[str, Config]) -> None:
+    """Adding `input_size` left every phase-1 config hash as it was: each docs/ledger.md row's
+    config, at the row's run seed, still hashes to the row's config hash."""
+    for name, digest in PHASE1_HASHES.items():
+        assert config_hash(configs[name]) == digest, name
+    rows, problems = check_ledger(LEDGER_PATH)
+    assert problems == [] and rows
+    for row in rows:
+        config = with_overrides(
+            row["config"], configs[row["config"]], {"run_seed": int(row["run seed"])}
+        )
+        assert config_hash(config) == row["config hash"] == PHASE1_HASHES[row["config"]]
+
+
+def test_input_size_is_left_out_of_the_hash_at_224_only(configs: dict[str, Config]) -> None:
+    """`HASH_NEUTRAL`: at 224 the hash is the one of the fields without `input_size`, as before
+    the field existed; any other value changes it."""
+    assert dict(HASH_NEUTRAL) == {"input_size": INPUT_SIZE} == {"input_size": 224}
+    a = configs[P2_BASE]
+    old = {k: v for k, v in asdict(a).items() if k not in (*HASH_EXCLUDED, "input_size")}
+    text = json.dumps(old, sort_keys=True, separators=(",", ":"))
+    assert config_hash(a) == hashlib.sha256(text.encode("utf-8")).hexdigest()
+    assert config_hash(replace(a, input_size=320)) == config_hash(configs["p2_res320"])
+    assert config_hash(replace(a, input_size=320)) != config_hash(a)
 
 
 def test_every_arm_is_a_training_transform_arm(configs: dict[str, Config]) -> None:
@@ -177,7 +264,7 @@ def test_the_dumped_copy_parses_the_same() -> None:
 @pytest.mark.parametrize(
     ("block", "key", "value", "message"),
     [
-        ("resnet18_arm_b", "model", "resnet50", "resnet18_arm_b.model"),
+        ("resnet18_arm_b", "model", "resnet101", "resnet18_arm_b.model"),
         ("resnet18_arm_b", "arm", "C", "resnet18_arm_b.arm"),
         ("resnet18_arm_b", "arm", "b", "resnet18_arm_b.arm"),
         ("common", "scheduler", "step", "scheduler"),
@@ -187,6 +274,9 @@ def test_the_dumped_copy_parses_the_same() -> None:
         ("common", "batch_size", True, "batch_size: expected int"),
         ("common", "batch_size", 64.0, "batch_size: expected int"),
         ("common", "batch_size", 0, "at least 1"),
+        ("common", "input_size", 16, "at least 32"),
+        ("common", "input_size", 224.0, "input_size: expected int"),
+        ("small_cnn", "input_size", 320, "must be 224 for small_cnn"),
         ("common", "split_seed", -1, "0 or more"),
         ("common", "split_seed", "42", "split_seed: expected int"),
         ("common", "pin_memory", "true", "pin_memory: expected bool"),
