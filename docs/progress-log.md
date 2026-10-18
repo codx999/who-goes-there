@@ -4117,10 +4117,13 @@ phase-1 rows of that commit hash to their ledger rows. Mutation check: with the 
 `batch_size` changed too, the test fails on "no longer matches its ledger row (config hash)", so
 the hash check still bites. `check.sh` green after the merge.
 
-The fix modifies an existing test in a high-stakes file, so one fix round is due on the merge's
-own changes (`git show --remerge-diff` of the merge commit: this helper and the two conflict
-resolutions); the user starts it.
+The fix modifies an existing test in a high-stakes file, so by the playbook one fix round was
+due on the merge's own changes (`git show --remerge-diff ddec877`: this helper and the two
+conflict resolutions). The user waived it (2026-10-17): the coordinator checked the test change,
+`_read_as_today`, which is guarded by its assertions (only a config without any `input_size`
+is bridged, and only with `HASH_NEUTRAL`'s 224).
 
-**Next.** 13.02 merges after 9.03 and before 13.04 (the coordinator's order).
+**Next.** Ready to merge: 13.02 merges after 9.03 (in, at 364e851) and before 13.04.
 
-Review: tier 2, ran both reviewers; fix round ran (a94b482..10e53b1), both reviewers clean.
+Review: tier 2, ran both reviewers; fix round ran (a94b482..10e53b1), both reviewers clean; the
+sync's fix round (ddec877) waived by the user.
