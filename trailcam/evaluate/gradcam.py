@@ -24,15 +24,16 @@ under the `assets/` folder (`ASSETS_DIR`, or another folder named `assets` passe
 `assets_root`, e.g. a clone's on Kaggle): the trans-test demo photos the user picks (item 8.05)
 are the only dataset images allowed in the repo, so `assets_image` refuses any other path,
 including one that leaves the folder through `..` or a symbolic link. The photo goes through the
-eval transform; the overlay is drawn on that transform's output with the normalisation undone,
-so it covers exactly the 224 x 224 pixels the model saw. For display the map is divided by its
-maximum (attention-in-box divides by its sum; the two differ by a constant factor, so the shape
-shown is the shape scored) and blended in one colour whose opacity grows with the map, up to
-`OVERLAY_ALPHA`; where the map is zero the photo is untouched. The PNG holds the blended image
-only, never the unblended photo: generated figures go to `docs/figures/`, which must never hold a
-raw dataset image (`.claude/rules/data.md`; the user's decision, review 8.02). A map that is zero
-everywhere would leave the photo unblended, so it is refused (`ZeroMapError`, review 8.02's fix
-round).
+eval transform; the overlay is drawn on that transform's output with the normalisation undone, so it
+covers exactly the 224 x 224 pixels the model saw (or a phase-2 config's `input_size`, item 13.05:
+`size`, which the evaluation tools take from the config; the demo and the Space use 224). For
+display the map is divided by its maximum (attention-in-box divides by its sum; the two differ by a
+constant factor, so the shape shown is the shape scored) and blended in one colour whose opacity
+grows with the map, up to `OVERLAY_ALPHA`; where the map is zero the photo is untouched. The PNG
+holds the blended image only, never the unblended photo: generated figures go to `docs/figures/`,
+which must never hold a raw dataset image (`.claude/rules/data.md`; the user's decision, review
+8.02). A map that is zero everywhere would leave the photo unblended, so it is refused
+(`ZeroMapError`, review 8.02's fix round).
 
 **The demo's overlay (item 10.01).** A photo uploaded to the Gradio demo is not under `assets/`,
 so `overlay_photo` draws the same overlay from a photo already in memory and returns it, writing
@@ -55,7 +56,7 @@ from torch import Tensor, nn
 from torchvision.models import ResNet
 
 from trailcam.data.classes import CLASSES
-from trailcam.data.dataset import IMAGENET_MEAN, IMAGENET_STD, EvalTransform
+from trailcam.data.dataset import IMAGENET_MEAN, IMAGENET_STD, INPUT_SIZE, EvalTransform
 from trailcam.model.small_cnn import SmallCNN
 
 ASSETS_DIR: Final = Path(__file__).resolve().parents[2] / "assets"
@@ -172,24 +173,28 @@ class Overlay:
     confidence: float
 
 
-def overlay(model: nn.Module, path: Path, assets_root: Path = ASSETS_DIR) -> Overlay:
+def overlay(
+    model: nn.Module, path: Path, assets_root: Path = ASSETS_DIR, *, size: int = INPUT_SIZE
+) -> Overlay:
     """The Grad-CAM overlay of the photo at `path`, which must lie under `assets_root`
-    (`assets_image`). Puts `model` in eval mode, as `gradcam` needs. Raises `ZeroMapError` when
-    the map is zero everywhere: `blend` would return the photo as it is."""
+    (`assets_image`), through the eval transform of side `size`. Puts `model` in eval mode, as
+    `gradcam` needs. Raises `ZeroMapError` when the map is zero everywhere: `blend` would return
+    the photo as it is."""
     source = assets_image(path, assets_root)
     with Image.open(source) as opened:
         photo = opened.convert("RGB")
-    return overlay_photo(model, photo)
+    return overlay_photo(model, photo, size=size)
 
 
-def overlay_photo(model: nn.Module, photo: Image.Image) -> Overlay:
+def overlay_photo(model: nn.Module, photo: Image.Image, *, size: int = INPUT_SIZE) -> Overlay:
     """The Grad-CAM overlay of a photo already in memory, such as one uploaded to the demo,
-    returned and never written. Puts `model` in eval mode; raises `ZeroMapError` as `overlay`
-    does. It needs autograd, so call it outside `torch.inference_mode()`."""
+    returned and never written, through the eval transform of side `size` (224, the demo's).
+    Puts `model` in eval mode; raises `ZeroMapError` as `overlay` does. It needs autograd, so
+    call it outside `torch.inference_mode()`."""
     photo = photo.convert("RGB")
     parameter = next(model.parameters(), None)
     device = parameter.device if parameter is not None else torch.device("cpu")
-    batch = EvalTransform()(photo).unsqueeze(0)
+    batch = EvalTransform(size)(photo).unsqueeze(0)
     model.eval()
     maps, logits = gradcam(model, batch.to(device))
     if float(maps[0].max()) <= 0.0:
@@ -205,11 +210,13 @@ def write_overlay(
     out_path: Path,
     label: int | None = None,
     assets_root: Path = ASSETS_DIR,
+    *,
+    size: int = INPUT_SIZE,
 ) -> Overlay:
     """`overlay` as a PNG at `out_path`: one panel, the blended image only (no raw photo),
     titled with the predicted class and its confidence, and the true class when `label` is
     given."""
-    result = overlay(model, path, assets_root)
+    result = overlay(model, path, assets_root, size=size)
     title = f"predicted {CLASSES[result.prediction]} ({result.confidence:.2f})"
     if label is not None:
         verdict = "correct" if label == result.prediction else "wrong"
@@ -217,7 +224,9 @@ def write_overlay(
     figure = Figure(figsize=(3.6, 3.9), layout="constrained", facecolor="#fcfcfb")
     ax = figure.subplots()
     ax.imshow(result.image)
-    ax.set_title("Grad-CAM of the top-1 class, eval frame 224 x 224", fontsize=8, color="#52514e")
+    ax.set_title(
+        f"Grad-CAM of the top-1 class, eval frame {size} x {size}", fontsize=8, color="#52514e"
+    )
     ax.set_axis_off()
     figure.suptitle(title, fontsize=9, color="#0b0b0b")
     out_path.parent.mkdir(parents=True, exist_ok=True)

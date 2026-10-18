@@ -36,11 +36,14 @@ run.locations)`, without a second pass.
         --overlay assets/<photo>.jpg=coyote --overlay assets/<photo>.jpg
     python -m trailcam.evaluate.evaluate --config dryrun --split val --out <dir>
 
-`--config` takes a config name of `config.yaml` (`--config-file` is that file's path, for a run
-from a wheel on Kaggle). A config with `fixture: true` (the `dryrun` config) writes the synthetic
-fixture into a temporary directory and uses random weights; any other needs `--checkpoint` and
-`--data-root`. An `--overlay` value is a photo path, optionally followed by `=<class>` to title
-the overlay correct or wrong; `--assets` is the assets folder, the repo's `assets/` by default.
+`--config` takes a config name of `config.yaml` (`--config-file` is that file's path, for a run from
+a wheel on Kaggle). The checkpoint is scored, and its overlays drawn, at the config's `input_size`
+(item 13.05): 224 for every phase-1 config, 320 for `p2_res320`; `load_checkpoint` refuses a
+checkpoint trained at another size than the config's. A config with `fixture: true` (the `dryrun`
+config) writes the synthetic fixture into a temporary directory and uses random weights; any other
+needs `--checkpoint` and `--data-root`. An `--overlay` value is a photo path, optionally followed by
+`=<class>` to title the overlay correct or wrong; `--assets` is the assets folder, the repo's
+`assets/` by default.
 """
 
 from __future__ import annotations
@@ -58,11 +61,11 @@ from torch import Tensor, nn
 from torch.utils.data import DataLoader
 
 from trailcam.data.classes import CLASS_TO_INDEX, CLASSES, NUM_CLASSES
-from trailcam.data.dataset import CCT20Dataset, EvalTransform
+from trailcam.data.dataset import INPUT_SIZE, CCT20Dataset, EvalTransform
 from trailcam.data.metadata import DAY_NIGHT_SIDECAR, Record, load_metadata
 from trailcam.data.split import make_split
 from trailcam.data.synthetic import write_synthetic_fixture
-from trailcam.evaluate.attention import CAMERA_GROUPS, CLI_SPLITS, load_checkpoint
+from trailcam.evaluate.attention import CAMERA_GROUPS, CLI_SPLITS, load_checkpoint, size_note
 from trailcam.evaluate.figures import write_confusion_matrix, write_per_camera, write_per_class
 from trailcam.evaluate.gradcam import ASSETS_DIR, assets_image, write_overlay
 from trailcam.evaluate.metrics import (
@@ -114,18 +117,20 @@ def predict(
     batch_size: int,
     num_workers: int = 0,
     pin_memory: bool = False,
+    size: int = INPUT_SIZE,
 ) -> SplitResult:
     """The top-1 predictions of `model` for the records of `split`, a key of `CAMERA_GROUPS`,
-    through the eval transform in eval mode. Every record must belong to `split`. This function
-    scores any split it is given; keeping cis_test and trans_test for the final scoring is the
-    caller's duty (the command line refuses them)."""
+    through the eval transform of side `size` (224; a phase-2 config's `input_size` from the
+    command line) in eval mode. Every record must belong to `split`. This function scores any
+    split it is given; keeping cis_test and trans_test for the final scoring is the caller's duty
+    (the command line refuses them)."""
     if split not in CAMERA_GROUPS:
         raise ValueError(f"split must be one of {tuple(CAMERA_GROUPS)}, got {split!r}")
     others = sum(1 for r in records if r.split != split)
     if others:
         raise ValueError(f"{others} of {len(records)} records are not from {split}")
     loader: DataLoader[tuple[Tensor, int]] = DataLoader(
-        CCT20Dataset(records, image_root, EvalTransform()),
+        CCT20Dataset(records, image_root, EvalTransform(size)),
         batch_size=batch_size,
         shuffle=False,
         num_workers=num_workers,
@@ -287,15 +292,18 @@ def write_overlays(
     photos: Sequence[tuple[Path, int | None]],
     out_dir: Path,
     assets_root: Path = ASSETS_DIR,
+    *,
+    size: int = INPUT_SIZE,
 ) -> list[Path]:
-    """One Grad-CAM overlay per photo, numbered in the order given; every photo is checked to
-    lie under `assets_root` before the first is drawn."""
+    """One Grad-CAM overlay per photo, numbered in the order given, through the eval transform
+    of side `size`; every photo is checked to lie under `assets_root` before the first is
+    drawn."""
     for path, _ in photos:
         assets_image(path, assets_root)
     written = []
     for n, (path, label) in enumerate(photos, start=1):
         out_path = out_dir / OVERLAY_NAME.format(n)
-        write_overlay(model, path, out_path, label, assets_root)
+        write_overlay(model, path, out_path, label, assets_root, size=size)
         written.append(out_path)
     return written
 
@@ -375,6 +383,7 @@ def run_splits(
             batch_size=config.batch_size,
             num_workers=config.num_workers,
             pin_memory=config.pin_memory,
+            size=config.input_size,
         )
         for name, split_records in records.items()
     ]
@@ -401,13 +410,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             results = run_splits(model, records, fixture.image_root, config)
         header = [f"Model {config.model}, random weights (dry run on the synthetic fixture)."]
     else:
-        model = load_checkpoint(args.checkpoint, config)
+        # The eval transform is built at the config's input size (224 for phase 1), and the
+        # checkpoint must have been trained at it (item 13.05).
+        model = load_checkpoint(args.checkpoint, config, eval_size=config.input_size)
         root = args.data_root
         meta = load_metadata(root / CACHE_ANNOTATIONS, root / DAY_NIGHT_SIDECAR)
         split = make_split(meta, config.split_seed)
         records = {s: split.records[s] for s in splits}
         header = [
-            f"Model {config.model}, config {name}, checkpoint sha256 "
+            f"Model {config.model}, config {name}{size_note(config)}, checkpoint sha256 "
             f"{file_sha256(args.checkpoint)}, split seed {config.split_seed}, split hash "
             f"{split.hash}.",
         ]
@@ -415,7 +426,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         results = run_splits(model, records, root / CACHE_IMAGES, config)
 
     table, figures = write_report(results, args.out, header)
-    overlays = write_overlays(model, args.overlay, args.out, args.assets)
+    overlays = write_overlays(model, args.overlay, args.out, args.assets, size=config.input_size)
     print(table.read_text(encoding="utf-8"))
     written = [table.name, *(p.name for p in figures), *(p.name for p in overlays)]
     print(f"wrote {', '.join(written)} under {args.out}")
