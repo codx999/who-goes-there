@@ -41,7 +41,10 @@ phase-2 config (`p2_`, `trailcam/train/config.py`) with any ledger but `docs/led
 (`PHASE2_LEDGER_NAME`) and a phase-1 config with that one (item 13.02), so a phase-2 row never
 lands in `docs/ledger.md`.
 The config's `input_size` sets the side of the training crop and of the eval transform (224 for
-every phase-1 config; `trailcam/data/dataset.py`); the loop itself does not depend on it.
+every phase-1 config; `trailcam/data/dataset.py`); the loop itself does not depend on it. The
+checkpoint holds the model name, the class list, the state dict and the input size, which
+`load_checkpoint` (`trailcam/evaluate/attention.py`) checks against the config it is loaded
+with; phase 1's checkpoints predate the size and load as 224 px.
 `train_run` then checks that the image of every kept record is under the image folder
 (`trailcam/data/cache.py`, item 6.07) before the split is drawn, so an incomplete cache fails in
 seconds too, with counts only.
@@ -421,7 +424,13 @@ def train_run(
     out_dir.mkdir(parents=True, exist_ok=True)
     checkpoint = out_dir / f"{run_id}.pt"
     state = {k: v.detach().cpu() for k, v in model.state_dict().items()}
-    torch.save({"model": config.model, "classes": list(CLASSES), "state_dict": state}, checkpoint)
+    saved = {
+        "model": config.model,
+        "classes": list(CLASSES),
+        "state_dict": state,
+        "input_size": config.input_size,  # item 13.02: load_checkpoint checks it against the config
+    }
+    torch.save(saved, checkpoint)
     digest = file_sha256(checkpoint)
     log(f"checkpoint {checkpoint.name}, sha256 {digest}")
 

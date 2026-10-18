@@ -189,12 +189,13 @@ only a rough estimate.
   plan, 2026-10-17). The evaluation tools, the demo and the Space run at 224 only, and
   `load_checkpoint` (`trailcam/evaluate/attention.py`), which they all use, refuses a config of
   another input size, so a 320 px model's val and trans_val scores are `train.py`'s, and its test
-  scoring needs 13.06's mode. The refusal is on the config the caller names: a checkpoint
-  records only its model, class list and weights, and ResNet-18's weights are the same shape at
-  320 px, so a `p2_res320` checkpoint loaded under a 224 config (`resnet18_arm_a` on the command
-  line, or the Space's default) is scored or served at 224 without an error (review 13.02). Before
-  a phase-2 checkpoint is deployed (open question 6) or test-scored (13.06), it must carry its
-  input size, or its sha256 must be matched to its ledger row's config.
+  scoring needs 13.06's mode. The checkpoint carries its input size too (review 13.02, the
+  user's decision): `train.py` saves `input_size` beside the model, the class list and the
+  weights, and `load_checkpoint` refuses a checkpoint whose size is not the config's, so a
+  `p2_res320` checkpoint loaded under a 224 config (`resnet18_arm_a` on a command line, or the
+  Space's default) is refused instead of scored or served at 224; ResNet-18's weights alone could
+  not tell, being the same shape at 320 px. A checkpoint without a size, the format of phase 1's
+  seven, counts as 224 and loads as before.
 
 **The pre-declared test scoring** (the user's decision of 2026-10-17, written here before any
 phase-2 result exists):
@@ -356,11 +357,11 @@ in epoch 4 with the cosine already at about 0.88 of its peak. Evidence mixed (LP
 at 366 (round(320 x 256/224), the same margin as now; the 512 px cache's shorter side is 373 or
 384, so no upsampling), everything else identical. *Built in 13.02*: `input_size` in the config
 (hash-neutral at 224, section 4), taken by the training transform of both arms and the eval
-transform through `train.py` and `make_loaders`. The checkpoint format is unchanged: the
-evaluation tools, the demo and the Space stay at 224 and refuse a config of another size, but
-cannot tell a 320 px checkpoint loaded under a 224 config (section 4). Deploying a 320 px model
-(open question 6) would need the checkpoint to carry its size and the attention frame, Grad-CAM,
-the demo and the Space to take it. Evidence weak (the
+transform through `train.py` and `make_loaders`. The checkpoint records its input size, and
+`load_checkpoint` refuses a checkpoint of another size than its config's (section 4). The
+evaluation tools, the demo and the Space stay at 224 and refuse a config of another size, so
+deploying a 320 px model (open question 6) would need the attention frame, Grad-CAM, the demo and
+the Space to take the size (`load_checkpoint`'s `eval_size`). Evidence weak (the
 WILDS baselines' 448 px may be part of their numbers); at 224 px many animals are a few pixels
 wide (`docs/research-report.md`, Part 2). *Hypothesis*: trans_val 0 to +0.03, val +0.5 point,
 about 2x the run time and the CPU latency. Three seeds this week.
@@ -489,7 +490,9 @@ phase-2 run:
 - `input_size` (step 4's code) and the `resnet50` model entry (step 5's), and the configs
   `p2_baseline`, `p2_head3`, `p2_res320` and `p2_r50`, each checked by a test to be
   `resnet18_arm_a` with its one change;
-- the evaluation tools, the demo and the Space refusing a config of another input size than 224;
+- the evaluation tools, the demo and the Space refusing a config of another input size than 224,
+  and, after review 13.02, every new checkpoint recording its input size, which `load_checkpoint`
+  checks against the config (a checkpoint without one, phase 1's, counts as 224);
 - the phase-2 lines of R17, R20, R25, R30, R31 and R40 in `docs/review/invariants.md`.
 
 Not in 13.02: `score_test.py`'s phase-2 mode and its test ledger (13.06, section 4).
@@ -528,12 +531,10 @@ Not in 13.02: `score_test.py`'s phase-2 mode and its test ledger (13.06, section
 5. **Arm C's review tier**: tier 2 at xhigh by the playbook, tier 3 recommended (section 6).
 6. **The Space after phase 2.** Whether a phase-2 model (or a soup) replaces the phase-1 model on
    the Space; if it does, the Space's card quotes its trans_val numbers with the honesty note, not
-   phase 1's test numbers. Before that, the checkpoint must say what it is: today
-   `scripts/deploy_space.py` checks the weights against the Space's 224 px config only, so a
-   `p2_res320` checkpoint would pass and be served at 224 (review 13.02). Either the checkpoint
-   carries its input size (a change to the checkpoint format, which `load_checkpoint` checks
-   key by key) or the deploy matches the weights' sha256 to a ledger row of the named config.
-   The user's decision, with 13.06, which needs the same for a phase-2 test scoring.
+   phase 1's test numbers. Since review 13.02 the checkpoint records its input size and the
+   deploy's load refuses a `p2_res320` checkpoint under the Space's 224 px config, so a 320 px
+   model cannot reach the Space by mistake; serving one on purpose needs the demo and the Space
+   to take the size.
 7. **CLAUDE.md and R17** (answered 2026-10-17). CLAUDE.md and `.claude/rules/` keep their
    phase-1 rules; the phase-2 exceptions (choices on val and trans_val, the transform exception,
    the second ledger, the one pre-declared test scoring) are stated in section 4 of this file, and

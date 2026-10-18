@@ -3814,3 +3814,48 @@ No fix round: the fix touches `docs/phase2-plan.md`, `docs/review/invariants.md`
 only, no high-stakes file. `check.sh` green.
 
 Review: tier 2, ran both reviewers; one low finding, fixed (docs); no fix round.
+
+## 2026-10-17: review 13.02, the low finding fixed in code: the checkpoint carries its input size (Opus 5.5)
+
+The user's decision ("go", 2026-10-17, through the coordinator): fix the review's low finding in
+13.02, since `p2_res320` trains on 10-19. On top of a94b482; `main` is still 05cd17a, already
+merged.
+
+- `trailcam/train/train.py`: every new checkpoint holds `input_size` beside `model`, `classes`
+  and `state_dict`. Not training logic: the loop, the optimizer, the schedule and the AMP path are
+  unchanged.
+- `trailcam/evaluate/attention.py`, `load_checkpoint`: accepts `CHECKPOINT_KEYS` (with the size)
+  or `PHASE1_CHECKPOINT_KEYS` (without it, phase 1's seven checkpoints, which count as 224 and
+  load as before); refuses a size that is not a whole number, and a size other than the config's
+  ("<file> was trained at 320 px, but the config's input size is 224 px"). New keyword
+  `eval_size` (default 224), the side of the caller's eval transform: the refusal of a config of
+  another size, before the file is read, now compares with it. Every caller passes none, so their
+  behaviour is the old one plus the checkpoint check.
+- The one loader: the only `torch.load` in `trailcam/`, `space/` and `scripts/` is in
+  `load_checkpoint`. It is called by `evaluate.py`, `attention.py`, `slices.py`, `score_test.py`,
+  and `predict.load_model`, which the demo app, the sort, `space/app.py` and
+  `scripts/deploy_space.py` use. No notebook loads a checkpoint. `score_test.py` is not changed;
+  its phase-1 checkpoints (three keys) load as before.
+- `trailcam/demo/predict.py`: `load_model`'s docstring names the size check.
+- Tests: `tests/test_attention.py` (a phase-1-format checkpoint loads as 224 and is refused under
+  a 320 config; a 320 px checkpoint loads under `p2_res320` with `eval_size=320`, is refused under
+  `resnet18_arm_a` and, at the tools' 224, under `p2_res320`; a size of `True`, `"320"` or
+  `224.0`, or an extra key, is refused); `tests/test_train.py` (`train_run`'s real checkpoint,
+  training and scoring stubbed, holds `CHECKPOINT_KEYS` with 224 for `resnet18_arm_a` and 320 for
+  `p2_res320`, and loads under its own config only); `tests/test_deploy_space.py` (a 320 px
+  ResNet-18 checkpoint is refused by the deploy).
+- Mutation check on a scratch copy of the tree, the 13 checkpoint and size tests: saving no size
+  in `train.py` fails 2; skipping the loader's size comparison fails 4; refusing the three-key
+  format fails 2; reading a missing size as 320 fails 2; skipping the `eval_size` check fails 2.
+  Unmutated, all 13 pass.
+- Docs: R20 (rule's phase-2 line, test cell, and its "where" now lists `trailcam/train/train.py`
+  and `scripts/deploy_space.py`), R26's test cell; `docs/phase2-plan.md` sections 4, 6 (step 4)
+  and 9, and open question 6.
+
+`check.sh` green.
+
+**Next.** The fix round: `train.py` and the loader are high-stakes, so one round on the fix range
+only, started by the user: `/review-session a94b482..HEAD 13.02`. Then 13.02 merges after 9.03 and
+before 13.04 (the coordinator's order).
+
+Review: tier 2 fix round pending (the user starts it).

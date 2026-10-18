@@ -33,6 +33,7 @@ from trailcam.data.classes import NUM_CLASSES
 from trailcam.data.dataset import CCT20Dataset, ControlCropSampler, EvalTransform
 from trailcam.data.metadata import load_metadata
 from trailcam.data.split import make_split
+from trailcam.evaluate.attention import CHECKPOINT_KEYS, load_checkpoint
 from trailcam.model.factory import build_model, head_module, parameter_groups
 from trailcam.train import train
 from trailcam.train.config import (
@@ -360,6 +361,40 @@ def test_the_config_arm_builds_its_crop_sampler(
     assert seen["train_transform"].size == seen["eval_transform"].size == size
     assert isinstance(seen["eval_transform"], EvalTransform)
     assert (seen["num_workers"], seen["pin_memory"]) == (4, True)
+
+
+@pytest.mark.parametrize(
+    ("name", "size", "other"),
+    [("resnet18_arm_a", 224, "p2_res320"), ("p2_res320", 320, "resnet18_arm_a")],
+)
+def test_the_checkpoint_carries_the_config_input_size(
+    monkeypatch: pytest.MonkeyPatch,
+    fixture_split: Any,
+    tmp_path: Path,
+    name: str,
+    size: int,
+    other: str,
+) -> None:
+    """Item 13.02, the review's low finding: `train_run` saves the config's input size beside
+    the model, the class list and the weights, and `load_checkpoint` loads that file under its
+    own config and refuses it under a config of the other size. Training and scoring are
+    replaced (random weights, no download); the checkpoint is the real one `train_run` writes."""
+    _, root, meta = fixture_split
+    config = replace(load_config(name), pretrained=False, num_workers=0, pin_memory=False)
+    fake_fit = train.FitResult(
+        (train.Epoch(1, True, 1.0, Scores(1.0, 0.5, 0.5)),), 1, (2, NUM_CLASSES)
+    )
+    monkeypatch.setattr(train, "fit", lambda *a, **k: fake_fit)
+    monkeypatch.setattr(train, "evaluate", lambda *a, **k: Scores(1.0, 0.2, 0.1))
+    run = train.train_run(name, config, meta, root, tmp_path, log=lambda _: None)
+    (checkpoint,) = tmp_path.glob("*.pt")
+    assert train.file_sha256(checkpoint) == run.checkpoint_sha256
+    saved = torch.load(checkpoint, weights_only=True)
+    assert set(saved) == CHECKPOINT_KEYS
+    assert (saved["model"], saved["input_size"]) == ("resnet18", size)
+    load_checkpoint(checkpoint, config, eval_size=size)
+    with pytest.raises(ValueError, match=f"trained at {size} px"):
+        load_checkpoint(checkpoint, load_config(other), eval_size=load_config(other).input_size)
 
 
 # The command line (R25, R37).
