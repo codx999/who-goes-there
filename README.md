@@ -61,6 +61,25 @@ The attention score is the share of the Grad-CAM map inside the box; on trans_te
 scores 0.137, arm A scores 0.230 to 0.232 and arm B 0.232 to 0.234. The animal-removed test
 blanks every box; accuracy falls from between 0.57 and 0.61 to between 0.22 and 0.29.
 
+Experiment tables, mean of 3 seeds, scored on the images whose box lies inside the centre crop
+(cis_test 11,312, trans_test 16,982; an even map's attention score is 0.127 on cis_test and 0.137
+on trans_test):
+
+| arm | attention-in-box, cis_test | attention-in-box, trans_test | trans_test accuracy | trans_test accuracy, box blanked | cis_test accuracy | cis_test accuracy, box blanked |
+| --- | --- | --- | --- | --- | --- | --- |
+| arm A | 0.2119 | 0.2315 | 0.5754 | 0.2470 | 0.7455 | 0.3445 |
+| arm B | 0.2173 | 0.2331 | 0.6039 | 0.2613 | 0.7557 | 0.3406 |
+
+Slice tables on trans_test, seed 0 (every seed is in
+[`slices_test.md`](docs/figures/slices_test.md)); rare species are bird, rodent and skunk, under
+4% of the training images:
+
+| model | accuracy, day | accuracy, night | accuracy, common species | accuracy, rare species |
+| --- | --- | --- | --- | --- |
+| small CNN | 0.2961 | 0.3210 | 0.3226 | 0.0180 |
+| ResNet-18 arm A | 0.5315 | 0.5058 | 0.5171 | 0.3754 |
+| ResNet-18 arm B | 0.5618 | 0.5362 | 0.5504 | 0.3066 |
+
 ### Figures
 
 Seed 0 on trans_test, the unseen cameras, unless noted; more in [`docs/figures/`](docs/figures/).

@@ -369,6 +369,23 @@ methods. Mixed outcomes are reported as mixed. A negative result is a result.
     from the same weeks as training, cis_test from other times, so val is optimistic about time
     shift as well as location shift. No leakage alarm fired.
   - Pretraining: the ResNet-18 arms beat the small CNN by about 20 points of trans_test accuracy.
+  - Experiment tables, mean of 3 seeds, on the images whose box lies inside the centre crop
+    (cis_test 11,312, trans_test 16,982; an even map scores 0.127 on cis_test, 0.137 on
+    trans_test):
+
+    | arm | attention-in-box, cis_test | attention-in-box, trans_test | trans_test accuracy | trans_test accuracy, box blanked | cis_test accuracy | cis_test accuracy, box blanked |
+    | --- | --- | --- | --- | --- | --- | --- |
+    | arm A | 0.2119 | 0.2315 | 0.5754 | 0.2470 | 0.7455 | 0.3445 |
+    | arm B | 0.2173 | 0.2331 | 0.6039 | 0.2613 | 0.7557 | 0.3406 |
+
+  - Slice tables on trans_test, seed 0 (every seed in `slices_test.md`; rare species are bird,
+    rodent and skunk, under 4% of the training images):
+
+    | model | accuracy, day | accuracy, night | accuracy, common species | accuracy, rare species |
+    | --- | --- | --- | --- | --- |
+    | small CNN | 0.2961 | 0.3210 | 0.3226 | 0.0180 |
+    | ResNet-18 arm A | 0.5315 | 0.5058 | 0.5171 | 0.3754 |
+    | ResNet-18 arm B | 0.5618 | 0.5362 | 0.5504 | 0.3066 |
   - Figures in `docs/figures/` (seed 0, as for val): `test_trans_confusion_matrix_*` (small
     CNN, arm A, arm B), `test_trans_per_class_arm_{a,b}_seed0.png`,
     `test_trans_per_camera_arm_{a,b}_seed0.png`, `attention_test_arm_{a,b}_seed0.png`,
