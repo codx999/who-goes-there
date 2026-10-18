@@ -3742,3 +3742,31 @@ Review: tier 2 (config, notebook, ledger checker and `train.py` are high-stakes;
 `load_checkpoint` refusal is on the final scoring's path, see above). Command: `/review-session
 13.02`. Spec changed: `docs/plan.md` section 9 (R31), `docs/phase2-plan.md` (now cited by R17,
 R20, R25, R30, R31, R40).
+
+## 2026-10-17: item 13.02, the plan's trans_val caveat from 8.06 (Opus 5.5)
+
+The coordinator's request (2026-10-17), from 8.06's evaluation run, applied to
+`docs/phase2-plan.md` on top of 2cddcb9; docs only.
+
+- Section 2: trans_val is one camera (location 125) and a bobcat-heavy mix (734 of 1,603, 46%;
+  the per-class counts are the data card's), phase 1's trans_val spread is mostly bobcat recall
+  there (0.19 to 0.40, missed bobcats mostly called cat), and macro-F1 averages in rabbit (9) and
+  bird (7); so a trans_val gain is weak evidence of a general new-camera gain.
+- Section 3: val macro-F1 must hold (the keep rule's condition 3 and the screen's val condition
+  are requirements, never traded for trans_val); trans_val accuracy and macro-F1 are reported
+  together with bobcat recall and the per-class table as context; no selection metric added.
+- Section 4: the pre-declared scoring on trans_test (21,473 images, 9 cameras, the data card) is
+  the real check of a phase-2 gain.
+- Section 6, step 1: 8.06's animal-removed test leaves val accuracy about 0.57 with the boxes
+  blanked (chance 1 in 12, 0.08), evidence of background reliance, which arm C targets.
+
+Checked against the repo: the counts, the one location and trans_test's 21,473 images on 9
+locations match `docs/data-card.md`. Location 125, the bobcat recall range and the 0.57 are 8.06's,
+as the coordinator reported them, and are marked so in the plan until 8.06's entry lands.
+
+Found: the per-class context has no path for phase-2 checkpoints yet. The evaluation notebook
+(8.08) reads `docs/ledger.md` only and the evaluation tools refuse a non-224 config, so
+`p2_res320` gets none; the plan says a small follow-up item is needed (the user's OK).
+
+Review: docs only, inside 13.02's range; `/review-session 13.02` covers it. Spec changed:
+`docs/phase2-plan.md` sections 2, 3, 4 and 6 (cited by R17, R20, R25, R30, R31, R40).

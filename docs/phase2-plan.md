@@ -65,6 +65,17 @@ changing class move accuracy by 0.03. The bands are arm A's, the baseline's: arm
 about three times wider on trans_val macro-F1 (0.2588 to 0.3472), so a recipe's own spread is
 checked when it becomes the baseline (section 3).
 
+**trans_val is one camera and a bobcat-heavy class mix.** Its 1,603 images come from one
+location (125, per 8.06's run): bobcat 734 (46%), opossum 444, raccoon 129, dog 96, cat 72,
+skunk 63, coyote 49, rabbit 9 and bird 7, with no squirrel, car or rodent (the data card's
+per-class table). 8.06's evaluation run (2026-10-17, as the coordinator reported it; its numbers
+reach the repo with 8.06's log entry) puts most of phase 1's trans_val spread on bobcat recall at
+that camera, 0.19 to 0.40 across the runs, the misses mostly predicted as cat; and macro-F1 there
+averages in two classes of under 10 images, where one or two photos swing a class's F1. So
+choosing a recipe on trans_val is choosing for one camera and this class mix, and a trans_val
+gain is weak evidence of a gain on new cameras in general: it can be a better bobcat-versus-cat
+boundary at camera 125 and nothing more.
+
 ## 3. How a change is judged: screen, confirm, keep
 
 Every comparison is paired by run seed: the change's seed k against the baseline's seed k at
@@ -106,6 +117,17 @@ winner's own confirm shows that).
 
   Steps that change the cost of a prediction (0, 4 and 5) also pass the CPU latency check.
   Accuracy is reported beside macro-F1 everywhere, but the rule is on macro-F1, as in phase 1.
+
+  Val macro-F1 must hold: condition 3 here and the screen's val condition are requirements, never
+  traded against a trans_val gain, since val's ten cameras are the steadier evidence (section 2).
+  Every screen, confirm and stack reports trans_val accuracy and macro-F1 together, with bobcat
+  recall and trans_val's per-class table beside them as context, so a gain that is all bobcat at
+  camera 125 shows as one. That context selects nothing: the rule stays on val macro-F1 and
+  trans_val macro-F1, and no selection metric is added. The per-class table and bobcat recall
+  come from `trailcam/evaluate/evaluate.py` on val and trans_val; its notebook (8.08) reads
+  `docs/ledger.md` only, and the evaluation tools run at 224 px only, so for phase-2 checkpoints
+  (and `p2_res320` in particular) that context needs a small follow-up item; until it exists it is
+  reported where it can be.
 
 **Kept changes stack.** The kept changes are combined into one recipe (a config with several
 changes, so `tests/test_config.py`'s one-change rule needs a named exception for it) and run on
@@ -185,6 +207,10 @@ phase-2 result exists):
   name.
 - If the freeze slips past 2026-10-22, phase 2 has no test scoring: it is reported on trans_val
   only, with the honesty note.
+- That one scoring is the real check of a phase-2 gain. trans_test holds 21,473 images from 9
+  unseen cameras (the data card), against trans_val's 1,603 from one (section 2), and nothing in
+  phase 2 is chosen on it; a gain that holds there is evidence about new cameras, and one that
+  does not was a camera-125 effect.
 
 **Honesty note.** Phase 2 selects on trans_val, so its trans_val numbers are slightly
 optimistic: the best of several tries looks better than it will on the next new camera. WILDS
@@ -272,7 +298,10 @@ Step 0 changes no training, so it does not stack: a soup that works is applied t
 recipe's seeds at the end. Its scores go in the progress log with the checkpoints' sha256.
 
 **1. Copy-paste, arm C**, the strongest evidence (the leaderboard's targeted augmentation, Gao
-2023, Mesnage 2025). For about half of the boxed training images (probability 0.5, as in arm B),
+2023, Mesnage 2025). Our own evidence points the same way: in 8.06's run (2026-10-17, as the
+coordinator reported it), the animal-removed test leaves val accuracy at about 0.57 with every box
+blanked, against 0.08 by chance (1 in 12): with the animal gone, the model still names the class
+more than half the time from the scene, which is background reliance, the shortcut arm C targets. For about half of the boxed training images (probability 0.5, as in arm B),
 the box region of the training animal is pasted onto an empty frame from a training camera, night
 onto night and day onto day by the sidecar's night flag (Mesnage's nocturnal failures). v1 pastes
 the box rectangle (cheap); v2, a separate step only if v1's screen is promising, pastes a
