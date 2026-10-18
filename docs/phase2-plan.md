@@ -66,11 +66,11 @@ about three times wider on trans_val macro-F1 (0.2588 to 0.3472), so a recipe's 
 checked when it becomes the baseline (section 3).
 
 **trans_val is one camera and a bobcat-heavy class mix.** Its 1,603 images come from one
-location (125, per 8.06's run): bobcat 734 (46%), opossum 444, raccoon 129, dog 96, cat 72,
-skunk 63, coyote 49, rabbit 9 and bird 7, with no squirrel, car or rodent (the data card's
-per-class table). 8.06's evaluation run (2026-10-17, as the coordinator reported it; its numbers
-reach the repo with 8.06's log entry) puts most of phase 1's trans_val spread on bobcat recall at
-that camera, 0.19 to 0.40 across the runs, the misses mostly predicted as cat; and macro-F1 there
+location, 125: bobcat 734 (46%), opossum 444, raccoon 129, dog 96, cat 72, skunk 63, coyote 49,
+rabbit 9 and bird 7, with no squirrel, car or rodent (the data card's per-class table). 8.06's
+evaluation (plan.md section 7, "Val results") puts most of phase 1's trans_val spread on bobcat
+recall at that camera, 0.19 to 0.40 across the runs, the misses mostly predicted as cat; and
+macro-F1 there
 averages in two classes of under 10 images, where one or two photos swing a class's F1. So
 choosing a recipe on trans_val is choosing for one camera and this class mix, and a trans_val
 gain is weak evidence of a gain on new cameras in general: it can be a better bobcat-versus-cat
@@ -186,9 +186,15 @@ only a rough estimate.
   `p2_res320` trains on 320 px crops and is evaluated with the shorter side resized to 366 and a
   320 px centre crop, everything else identical. The 256 and 224 of CLAUDE.md, `.claude/rules/`
   and R20 stay true for every phase-1 config, the demo and the Space (the user approved this
-  plan, 2026-10-17). The evaluation tools, the demo and the Space run at 224 only and refuse a
-  config of another input size (`load_checkpoint` in `trailcam/evaluate/attention.py`), so a 320
-  px model's val and trans_val scores are `train.py`'s, and its test scoring needs 13.06's mode.
+  plan, 2026-10-17). The evaluation tools, the demo and the Space run at 224 only, and
+  `load_checkpoint` (`trailcam/evaluate/attention.py`), which they all use, refuses a config of
+  another input size, so a 320 px model's val and trans_val scores are `train.py`'s, and its test
+  scoring needs 13.06's mode. The refusal is on the config the caller names: a checkpoint
+  records only its model, class list and weights, and ResNet-18's weights are the same shape at
+  320 px, so a `p2_res320` checkpoint loaded under a 224 config (`resnet18_arm_a` on the command
+  line, or the Space's default) is scored or served at 224 without an error (review 13.02). Before
+  a phase-2 checkpoint is deployed (open question 6) or test-scored (13.06), it must carry its
+  input size, or its sha256 must be matched to its ledger row's config.
 
 **The pre-declared test scoring** (the user's decision of 2026-10-17, written here before any
 phase-2 result exists):
@@ -298,11 +304,12 @@ Step 0 changes no training, so it does not stack: a soup that works is applied t
 recipe's seeds at the end. Its scores go in the progress log with the checkpoints' sha256.
 
 **1. Copy-paste, arm C**, the strongest evidence (the leaderboard's targeted augmentation, Gao
-2023, Mesnage 2025). Our own evidence points the same way: in 8.06's run (2026-10-17, as the
-coordinator reported it), the animal-removed test leaves val accuracy at about 0.57 with every box
-blanked, against 0.08 by chance (1 in 12): with the animal gone, the model still names the class
-more than half the time from the scene, which is background reliance, the shortcut arm C targets. For about half of the boxed training images (probability 0.5, as in arm B),
-the box region of the training animal is pasted onto an empty frame from a training camera, night
+2023, Mesnage 2025). Our own evidence points the same way: in 8.06's animal-removed test (plan.md
+section 7, "Val results"), blanking every box drops ResNet-18's val accuracy from about 0.90 only
+to 0.50 to 0.61, against 0.083 by chance (1 in 12): with the animal gone, the model still names
+the class about half the time from the scene, which is background reliance, the shortcut arm C
+targets. For about half of the boxed training images (probability 0.5, as in arm B), the box
+region of the training animal is pasted onto an empty frame from a training camera, night
 onto night and day onto day by the sidecar's night flag (Mesnage's nocturnal failures). v1 pastes
 the box rectangle (cheap); v2, a separate step only if v1's screen is promising, pastes a
 segmentation mask (its segmentation model needs a check of its own pretraining data). *Needs code*:
@@ -350,9 +357,10 @@ at 366 (round(320 x 256/224), the same margin as now; the 512 px cache's shorter
 384, so no upsampling), everything else identical. *Built in 13.02*: `input_size` in the config
 (hash-neutral at 224, section 4), taken by the training transform of both arms and the eval
 transform through `train.py` and `make_loaders`. The checkpoint format is unchanged: the
-evaluation tools, the demo and the Space stay at 224 and refuse a config of another size rather
-than read the size from the checkpoint, so deploying a 320 px model (open question 6) would need
-the attention frame, Grad-CAM, the demo and the Space to take the size too. Evidence weak (the
+evaluation tools, the demo and the Space stay at 224 and refuse a config of another size, but
+cannot tell a 320 px checkpoint loaded under a 224 config (section 4). Deploying a 320 px model
+(open question 6) would need the checkpoint to carry its size and the attention frame, Grad-CAM,
+the demo and the Space to take it. Evidence weak (the
 WILDS baselines' 448 px may be part of their numbers); at 224 px many animals are a few pixels
 wide (`docs/research-report.md`, Part 2). *Hypothesis*: trans_val 0 to +0.03, val +0.5 point,
 about 2x the run time and the CPU latency. Three seeds this week.
@@ -520,7 +528,12 @@ Not in 13.02: `score_test.py`'s phase-2 mode and its test ledger (13.06, section
 5. **Arm C's review tier**: tier 2 at xhigh by the playbook, tier 3 recommended (section 6).
 6. **The Space after phase 2.** Whether a phase-2 model (or a soup) replaces the phase-1 model on
    the Space; if it does, the Space's card quotes its trans_val numbers with the honesty note, not
-   phase 1's test numbers.
+   phase 1's test numbers. Before that, the checkpoint must say what it is: today
+   `scripts/deploy_space.py` checks the weights against the Space's 224 px config only, so a
+   `p2_res320` checkpoint would pass and be served at 224 (review 13.02). Either the checkpoint
+   carries its input size (a change to the checkpoint format, which `load_checkpoint` checks
+   key by key) or the deploy matches the weights' sha256 to a ledger row of the named config.
+   The user's decision, with 13.06, which needs the same for a phase-2 test scoring.
 7. **CLAUDE.md and R17** (answered 2026-10-17). CLAUDE.md and `.claude/rules/` keep their
    phase-1 rules; the phase-2 exceptions (choices on val and trans_val, the transform exception,
    the second ledger, the one pre-declared test scoring) are stated in section 4 of this file, and

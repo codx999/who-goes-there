@@ -3770,3 +3770,47 @@ Found: the per-class context has no path for phase-2 checkpoints yet. The evalua
 
 Review: docs only, inside 13.02's range; `/review-session 13.02` covers it. Spec changed:
 `docs/phase2-plan.md` sections 2, 3, 4 and 6 (cited by R17, R20, R25, R30, R31, R40).
+
+## 2026-10-17: review 13.02: one low finding, fixed in the docs; main merged at 05cd17a (Opus 5.5)
+
+The user ran `/review-session 13.02` on `dc19821..38b07c9` (tier 2): code-reviewer (Opus 5.5,
+xhigh) on the range, risk-reviewer (Fable 5.1, high) on the 20 high-stakes files. All 24
+scenarios held for both (R03, R05, R06, R07, R12, R14, R16, R17, R20 to R27, R30 to R32, R37,
+R38, R40 to R42). The code-reviewer ran `check.sh` (1001 passed, none skipped); the
+risk-reviewer the ten test files (399 passed), mypy and ruff.
+
+- **Low, both reviewers** (the risk-reviewer as a residual exposure): the 224 px refusal in
+  `load_checkpoint` checks the config the caller names, not the checkpoint, which records only
+  model, classes and weights. So a `p2_res320` checkpoint loaded under a 224 config (the eval
+  command lines with `resnet18_arm_a`, the demo, the Space, `deploy_space.check_weights`, which
+  loads with `DEFAULT_CONFIG`) is scored or served at 224 with no error, and R20's phase-2 line
+  promised more. Verified from the code: `scripts/deploy_space.py:138-145`,
+  `trailcam/evaluate/attention.py:539-559`; ResNet-18's weights are the same at 320 px
+  (`test_the_resnets_take_320_px`). Fixed by the user's choice (option a): the limit is stated
+  in R20's phase-2 line, `docs/phase2-plan.md` section 4, step 4 and open question 6. Options b
+  (the checkpoint carries its input size, a checkpoint-format change) and c (the deploy matches
+  the weights' sha256 to a ledger row of the named config) stay the user's, due before a phase-2
+  checkpoint is deployed or test-scored (13.06). `tests/test_attention.py`'s docstring is left as
+  it is: it describes the config path, which the guard does refuse.
+- **Note, risk-reviewer:** `score_test.py` does not refuse `docs/ledger-phase2.md` by name;
+  already left to 13.06 in the plan (a phase-2 ledger has no small-CNN row, so it cannot be
+  scored today). No change.
+- **For the user to confirm, code-reviewer:** the approvals the docs cite as "the user's decision
+  of 2026-10-17 via the coordinator": R17's phase-2 line (step decisions on trans_val, one more
+  test scoring on 10-22) and the edit of 13.02's description and due date in `progress.json`.
+
+The coordinator's request, from 13.04's review, for `train.py` to refuse a phase mix-up from a
+shell run: already in d8c7be1 (13.04 was reviewed against `main`, which lacks 13.02). Checked on
+a scratch copy of HEAD, the worktree untouched: removing the call in `main()` fails 3 tests, and
+removing the one in `append_row` fails 3; from the shell, both mix-ups exit 2 with "before
+training: ..." and leave the ledger copy unchanged. No change.
+
+Merged `main` at 05cd17a (8.06's figures and results) through the sync tool, no conflicts. The
+plan now cites plan.md section 7 for camera 125 and the bobcat recall, and for the animal-removed
+test its range, val accuracy from about 0.90 to 0.50 to 0.61 (the coordinator had sent about
+0.57).
+
+No fix round: the fix touches `docs/phase2-plan.md`, `docs/review/invariants.md` and this log
+only, no high-stakes file. `check.sh` green.
+
+Review: tier 2, ran both reviewers; one low finding, fixed (docs); no fix round.
