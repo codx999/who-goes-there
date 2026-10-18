@@ -106,10 +106,11 @@ winner's own confirm shows that).
   baseline's seed 0). Otherwise the step stops: its row stays in the phase-2 ledger, marked
   screened out in the progress log, and the baseline is unchanged. (Open questions 1 and 2 ask
   whether these two conditions should change.)
-- **Confirm** on run seeds 1 and 2 (seed 0 is the screen's run), so three seeds in all, with
-  `p2_baseline`'s seeds 1 and 2 run at the same commit (open question 8). This week every step
-  confirms on three seeds (section 8); the five seeds below are not in the timeline, so a gain
-  under about 4 points is reported as not confirmed rather than claimed (see "Resolvability").
+- **Confirm** on run seeds 1 and 2 (seed 0 is the screen's run), so three seeds in all, paired with
+  phase 1's arm A seeds 1 and 2 as the baseline's (open question 8, answered: `p2_baseline` seed 0
+  reproduced arm A seed 0 bit for bit, so its seeds 1 and 2 are not re-run). This week every step
+  confirms on three seeds (section 8); the five seeds below are not in the timeline, so a gain under
+  about 4 points is reported as not confirmed rather than claimed (see "Resolvability").
 - **Keep** a change only if all three hold:
   1. the mean trans_val macro-F1 over the confirm's seeds rises by more than the noise, 0.03;
   2. it rises on every seed, paired with the baseline's same seed;
@@ -540,6 +541,21 @@ context on val and trans_val, never a test split:
   default arm A beside arm B per seed in phase 1, and each config beside `p2_baseline` at the
   same run seed in phase 2.
 
+Known limitations of 13.05 (review 13.05, the user's decision of 2026-10-18 to defer them):
+
+- **A re-run baseline seed.** If a `p2_baseline` seed is re-run at a later commit (section 4),
+  the phase-2 ledger holds two rows of one config and seed. The slices take one run per config
+  and seed, and `SLICE_PAIRS` names configs, not run ids. So with the default pairs the notebook
+  stops in section 4, in seconds, naming both runs. Set `SLICE_PAIRS` to pairs without
+  `p2_baseline`, or to `[]`; evaluate and attention are unaffected. A variant cannot then be
+  sliced beside the same-commit re-run. No re-run is planned (open question 8), so this was
+  deferred.
+- **Seeds 1 and 2 of a confirm.** With open question 8's answer, the baseline's seeds 1 and 2
+  are phase 1's arm A rows in `docs/ledger.md`. The notebook reads one ledger, and `slices.py`
+  refuses a phase-1 and a phase-2 checkpoint in one run. So the default phase-2 slices pair a
+  variant with `p2_baseline` at seed 0 only. A variant's seeds 1 and 2 still get their metrics
+  and attention tables; arm A's seeds 1 and 2 have phase 1's (item 8.06).
+
 ## 10. Beyond the ladder (future work, for the slides' closing)
 
 - **A detector crop at test time.** The literature's fix: Beery et al. 2018 found that classifying
@@ -585,7 +601,9 @@ context on val and trans_val, never a test split:
 8. **`p2_baseline`'s seeds 1 and 2.** As written (section 3), they run on 10-20 at the confirm's
    commit, so every pair is within one commit (two runs, about 25 minutes). The cheaper option:
    pair the confirms with phase 1's arm A seeds 1 and 2 if `p2_baseline` seed 0 passes the control
-   check. Recommended: run them. The user's decision.
+   check. Recommended: run them. The user's decision. **Answered (the user, 2026-10-18, through
+   the coordinator): not re-run.** `p2_baseline` seed 0 reproduced phase 1's arm A seed 0 bit for
+   bit, so phase 1's arm A seeds 1 and 2 serve as the baseline's seeds 1 and 2.
 9. **This week's GPU cap.** The worst case of section 7 is about 8 GPU hours against the 5-hour cap
    of the stopping rule; the quota (30 a week) allows it. Raise the cap for this week, or confirm
    the cheapest winners first and drop what does not fit? The user's decision.

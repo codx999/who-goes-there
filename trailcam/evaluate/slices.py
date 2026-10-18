@@ -776,18 +776,23 @@ def main(argv: Sequence[str] | None = None) -> int:
                 results[label] = run_splits(model, records, fixture.image_root, config)
         header = [f"Model {models[0][1].model}, random weights (dry run on the synthetic fixture)."]
     else:
+        # Every checkpoint is loaded, and so checked (model, class map, and its input size
+        # against its own config's, item 13.05), before the metadata or any image is read: a
+        # mismatched second checkpoint is refused before the first is scored (review 13.05).
+        loaded = []
+        for label, config, checkpoint in models:
+            assert checkpoint is not None
+            model = load_checkpoint(checkpoint, config, eval_size=config.input_size)
+            loaded.append((label, config, checkpoint, model))
         root = args.data_root
         meta = load_metadata(root / CACHE_ANNOTATIONS, root / DAY_NIGHT_SIDECAR)
         split = make_split(meta, models[0][1].split_seed)
         records = {s: split.records[s] for s in splits}
         header = [f"Split seed {models[0][1].split_seed}, split hash {split.hash}.", ""]
         del split, meta  # nothing past this line can reach cis_test or trans_test
-        for label, config, checkpoint in models:
-            assert checkpoint is not None
+        for label, config, checkpoint, model in loaded:
             note = size_note(config)
             header.append(f"- {label}{note}: checkpoint sha256 {file_sha256(checkpoint)}")
-            # Each checkpoint at its own config's input size (item 13.05).
-            model = load_checkpoint(checkpoint, config, eval_size=config.input_size)
             results[label] = run_splits(model, records, root / CACHE_IMAGES, config)
 
     table = write_report(results, args.out, header)

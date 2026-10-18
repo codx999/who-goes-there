@@ -4584,3 +4584,52 @@ R20, R26), `docs/review/invariants.md`.
 
 **Next.** The review, which the user starts. Then the merge; sync first if main has moved (9.02's
 test-ledger rows today).
+
+## 2026-10-18: review 13.05: two lows, one fixed, one deferred; main merged at 60189a7 (Opus 5.5)
+
+Review: tier 2. The user ran `/review-session 13.05` on `03fee36..462b69a`: code-reviewer (Opus
+5.5, xhigh) on the range, risk-reviewer (Fable 5.1, high) on its 8 high-stakes files. Neither found
+anything high. All 19 scenarios held for both: R03, R04, R05, R06, R07, R14, R16, R17, R20, R23,
+R26, R27, R32, R35, R37, R38, R40, R41 and R42. The risk-reviewer marked R27 and R32 as not
+touched by the range. The code-reviewer's `check.sh` was green (1,177 passed, none skipped). It
+re-read the spec-changed rows (R17, R20, R23, R25, R26, R28, R30, R31, R37, R40, R41) against the
+code and found them matching.
+
+The user's decisions (2026-10-18, through the coordinator):
+
+- **Fixed: low, both reviewers.** `slices.py` loaded each checkpoint inside the scoring loop. So
+  with two checkpoints, a mismatched second one was refused only after the first had scored val
+  and trans_val. Nothing was written, but GPU time was spent, and R20's new 13.05 line ("refused
+  by each of the three before any image is read") did not hold for `slices.py`. Now `main` loads,
+  and so checks, every checkpoint before the metadata or any image is read; R20's line holds as
+  written. New test
+  `test_slices_refuses_a_mismatched_second_checkpoint_before_scoring_the_first`: four cases, a
+  good first checkpoint and a mismatched second, with `predict_split` and `load_metadata`
+  replaced by a refusal, so nothing is scored or read. Against 462b69a's `slices.py` (scratch
+  copy), all 4 cases fail; with the fix they pass.
+- **Deferred: low, code-reviewer.** A re-run `p2_baseline` seed (two rows of one config and seed)
+  stops the default slices in section 4, and `SLICE_PAIRS` cannot name run ids. It fails safe and
+  nothing is mis-paired. The user answered open question 8 today: `p2_baseline` seeds 1 and 2 are
+  not re-run, since seed 0 reproduced phase 1's arm A seed 0 bit for bit, and phase 1's arm A
+  seeds 1 and 2 serve as the baseline's. `docs/phase2-plan.md` records that answer (section 3's
+  confirm, open question 8) and section 9 records two known limitations: this one, and that
+  default phase-2 slices pair at seed 0 only, since the baseline's seeds 1 and 2 are phase-1
+  rows.
+- **Left as it is (code-reviewer, a note).** `ASSETS_OVERLAY_RUN` may name a phase-2 run; it stays
+  off by default.
+
+Not verifiable by the reviewers: the approvals. The `training.md` wording was approved by the user
+directly in this session; the item itself came through the coordinator. Not checked: GPU memory
+at 320 px on a T4. The risk-reviewer noted mypy errors in the two test files; `check.sh` does not
+type-check `tests/`, and most predate the range.
+
+Merged `main` at 60189a7 (9.02's test results, 12.02's README) through the sync tool as daa97f9.
+One conflict, this log: both sides appended an entry, so 12.02's entry comes first and 13.05's
+after. No code file changed on both sides.
+
+The fix touches `trailcam/evaluate/slices.py`, a high-stakes file, so by the playbook one fix
+round is due on the fix commit's range. The user starts it. `check.sh` green after the merge and
+the fix: 1,181 passed.
+
+**Next.** The fix round. Then sync again before reporting ready to merge, since main moves when
+13.08 merges.

@@ -294,6 +294,48 @@ def test_a_checkpoint_of_another_size_than_its_config_is_refused_by_each_tool(
     assert not out.exists()
 
 
+@pytest.mark.parametrize(
+    ("name", "size", "message"),
+    [
+        ("p2_baseline", 320, "trained at 320 px, but the config's input size is 224 px"),
+        ("resnet18_arm_a", 320, "trained at 320 px, but the config's input size is 224 px"),
+        ("p2_res320", None, "trained at 224 px, but the config's input size is 320 px"),
+        ("p2_res320", 224, "trained at 224 px, but the config's input size is 320 px"),
+    ],
+    ids=["320-under-p2_baseline", "320-under-arm-a", "phase1-under-res320", "224-under-res320"],
+)
+def test_slices_refuses_a_mismatched_second_checkpoint_before_scoring_the_first(
+    cache: Path,
+    config_file: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    name: str,
+    size: int | None,
+    message: str,
+) -> None:
+    """Review 13.05: a good first checkpoint of the pair (`p2_head3` at 224, or phase 1's arm B
+    beside a phase-1 config) and a mismatched second. Every checkpoint is checked before any
+    pass, so the first is never scored, no metadata is read and nothing is written."""
+    phase1 = not name.startswith("p2_")
+    if phase1:
+        first = ("resnet18_arm_b", _checkpoint(tmp_path / "first.pt", None))
+    else:
+        first = ("p2_head3", _checkpoint(tmp_path / "first.pt", 224))
+    second = (name, _checkpoint(tmp_path / "second.pt", size, seed=1))
+    touched: list[str] = []
+
+    def refuse(*args: object, **kwargs: object) -> None:
+        touched.append("read")
+        raise AssertionError("an image or the metadata was read before every checkpoint passed")
+
+    monkeypatch.setattr(slices, "predict_split", refuse)
+    monkeypatch.setattr(slices, "load_metadata", refuse)
+    out = tmp_path / "out"
+    with pytest.raises(ValueError, match=re.escape(message)):
+        _slices(config_file, cache, [first, second], out)
+    assert touched == [] and not out.exists()
+
+
 def test_slices_refuses_a_phase1_and_a_phase2_checkpoint_together(
     config_file: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
