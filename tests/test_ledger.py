@@ -264,7 +264,7 @@ def test_a_run_id_not_of_its_own_config_and_seed_fails(tmp_path: Path, run_id: s
     ("changes", "column"),
     [
         ({"model": "resnet101"}, "model"),
-        ({"arm": "C"}, "arm"),
+        ({"arm": "D"}, "arm"),  # arm C is phase 2's (item 13.04)
         ({"split_seed": "-1"}, "split seed"),
         ({"run_seed": "01", "run_id": "resnet18_arm_a-seed01-20261015T101500Z"}, "run seed"),
         ({"epochs_run": "eight"}, "epochs run"),
@@ -444,20 +444,21 @@ def test_the_steps_of_one_model_may_carry_several_config_hashes(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Every phase-2 step is a new recipe of resnet18, so one model and run seed has several
-    config hashes, which the phase-1 checks refuse; an arm pair (here arm B standing in for
-    item 13.04's arm C) shares its config's hash."""
+    config hashes, which the phase-1 checks refuse. An arm pair may share its config's hash
+    (here arm B against arm A) or carry its own: item 13.04's arm C hashes its `paste_p`."""
     rows = [
         p2("p2_baseline", config_hash=sha("arm A recipe")),
         p2("p2_baseline", 1, config_hash=sha("arm A recipe")),
         p2("p2_head3"),
         p2("p2_res320"),
         p2("p2_arm_b", arm="B", config_hash=sha("arm A recipe")),
+        p2("p2_arm_c", arm="C"),
     ]
     path = write_p2(tmp_path, *rows)
     assert problems_of(path) == []
     assert main(["--check", str(path)]) == 0
     out = capsys.readouterr().out
-    assert out.startswith("phase-2 ledger: 5 rows, every check passed")
+    assert out.startswith("phase-2 ledger: 6 rows, every check passed")
     unprefixed = [{**row, "config": row["config"][3:], "run id": row["run id"][3:]} for row in rows]
     phase1 = write(tmp_path, *unprefixed)
     assert any("disagree on config hash" in problem for problem in problems_of(phase1))

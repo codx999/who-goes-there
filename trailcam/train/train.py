@@ -26,6 +26,11 @@ soon as `make_loaders` returns).
 Seeds (R27): the split seed draws the split (`make_split`); the run seed seeds `random`, NumPy and
 torch (every device) before the model is built, and the train loader's shuffle generator.
 
+The arm (R25): `train_transform` builds the training transform of the config's arm, the train
+loader's only. Arm C (phase 2, item 13.04) also needs its background pool, made from the metadata
+and the split by `trailcam/data/copypaste.py` and logged as counts per day and night and its hash;
+that module is imported for arm C only, so no other run, and no evaluation, loads it.
+
 Leakage alarms (R16): an image id of the train loader in another split stops the run before any
 training (`make_loaders` checks it too; this re-checks the loaders the loop reads). After
 training, trans_val accuracy within `TRANS_GAP_ALARM` of val accuracy (or above it), or val
@@ -375,6 +380,29 @@ def file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def train_transform(
+    config: Config,
+    meta: Metadata,
+    split: Split,
+    image_root: Path,
+    log: Callable[[str], None] = log_line,
+) -> TrainTransform:
+    """The training transform of `config.arm` at `config.input_size`. For arm C, the paste step on
+    the background pool of `meta` and `split` (counts and hash logged), whose frames must be under
+    `image_root`, before arm A's crop at that size."""
+    if config.arm != "C":
+        return TrainTransform(config.arm, size=config.input_size)
+    # Imported for arm C only (module docstring).
+    from trailcam.data.copypaste import CopyPaste, background_pool
+
+    if config.paste_p is None:
+        raise ValueError("arm C needs paste_p, its paste probability")
+    pool = background_pool(meta, split)
+    log(pool.summary())
+    paste = CopyPaste(pool, image_root, p=config.paste_p)
+    return TrainTransform("C", paste=paste, size=config.input_size)
+
+
 def train_run(
     config_name: str,
     config: Config,
@@ -402,6 +430,7 @@ def train_run(
     log(check_images(meta, image_root))  # a missing or empty image fails here, not mid-epoch
     split = make_split(meta, config.split_seed)
     log(repr(split))
+    transform = train_transform(config, meta, split, image_root, log)
     generator = seed_everything(config.run_seed)
     model = build_model(config.model, pretrained=config.pretrained)
     every = make_loaders(
@@ -410,7 +439,7 @@ def train_run(
         config.batch_size,
         num_workers=config.num_workers,
         pin_memory=config.pin_memory,
-        train_transform=TrainTransform(config.arm, size=config.input_size),
+        train_transform=transform,
         eval_transform=EvalTransform(config.input_size),
         generator=generator,
     )

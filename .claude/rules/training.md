@@ -18,7 +18,8 @@ paths:
   macro-F1, checkpoint hash. The ledger row is what gets reviewed.
 - Arm A (control) and arm B (box-guided crop) configs differ only in the `arm` field
   (`docs/plan.md` section 6): same backbone, seeds, epochs, optimizer, schedule, resolution, batch
-  size, loss and evaluation transform. The arm selects the training crop sampler and nothing else.
+  size, loss and evaluation transform. The arm selects the training crop sampler and nothing else;
+  in phase 2, arm C also adds a paste step before arm A's crop.
 - Hyperparameters and the checkpoint are chosen on val only. cis test and trans test are scored
   once, at the end, by the user's go-ahead.
 - Notebooks are committed with outputs cleared (Kaggle: Edit > Clear all outputs, or

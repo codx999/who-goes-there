@@ -52,7 +52,7 @@ from trailcam.evaluate.score_test import (
     scoring_header,
 )
 from trailcam.train import device
-from trailcam.train.config import HASH_NEUTRAL
+from trailcam.train.config import HASH_NEUTRAL, OPTIONAL_FIELDS
 
 ROOT = Path(__file__).resolve().parents[1]
 NOTEBOOK = ROOT / "notebooks" / "kaggle_score_test.ipynb"
@@ -297,12 +297,15 @@ def _read_as_today(config_text: bytes) -> bytes:
     `input_size`: its code hard-coded 224 px, which 13.02 made a required field, left out of
     the config hash at 224 (`HASH_NEUTRAL`). So `input_size: 224` is added to `common`, and
     every config hashes as it did. On Kaggle the notebook installs the code of the same commit
-    as its config.yaml, so this only bridges the test's mix of today's code and an older file."""
+    as its config.yaml, so this only bridges the test's mix of today's code and an older file.
+    Arm C's `paste_p` (item 13.04) needs no bridge: a config may leave it out (`OPTIONAL_FIELDS`),
+    and left out it is None, its `HASH_NEUTRAL` value."""
     raw = yaml.safe_load(config_text)
     if "input_size" in raw["common"]:
         return config_text
     assert not any("input_size" in block for block in raw["configs"].values())
-    assert dict(HASH_NEUTRAL) == {"input_size": INPUT_SIZE} == {"input_size": 224}
+    assert dict(HASH_NEUTRAL) == {"input_size": INPUT_SIZE, "paste_p": None}
+    assert INPUT_SIZE == 224 and OPTIONAL_FIELDS == ("paste_p",)
     raw["common"]["input_size"] = INPUT_SIZE
     return yaml.safe_dump(raw, sort_keys=False).encode("utf-8")
 

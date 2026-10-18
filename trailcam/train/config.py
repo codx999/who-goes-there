@@ -22,7 +22,11 @@ phase 2 is listed in `HASH_NEUTRAL` with the value phase 1 used: at that value i
 the hash, so every phase-1 config hash stays the one in `docs/ledger.md` (which `score_test.py`
 checks), and any other value changes the hash. `input_size` is the first: the side of the
 training crop and of the eval centre crop, 224 in phase 1 (`trailcam/data/dataset.py`). The small
-CNN's flatten head is sized for 224, so its configs keep 224.
+CNN's flatten head is sized for 224, so its configs keep 224. `paste_p`, arm C's paste
+probability (item 13.04), is the second, and the one field a config may leave out
+(`OPTIONAL_FIELDS`, the one exception to "nothing is defaulted"): left out it is None, its
+phase-1 value. Arm C sets it and no other arm may, so `p2_arm_c` hashes it and has a config hash
+of its own (the user's decision on 13.04).
 
 The file sits at the repository root, outside the package. `CONFIG_PATH` finds it from a checkout
 or an editable install; a run from an installed wheel passes its path.
@@ -76,13 +80,17 @@ class Config:
     num_workers: int
     pin_memory: bool
     fixture: bool  # the dry run: train on the synthetic fixture in a temporary directory
+    # Phase 2: None when the config leaves it out (OPTIONAL_FIELDS), then out of the hash.
+    paste_p: float | None = None  # arm C: share of boxed train images pasted (copypaste.py)
 
 
 FIELDS: Final = tuple(f.name for f in fields(Config))
 HASH_EXCLUDED: Final = ("arm", "run_seed")  # the fields arm A and B, or two seeds, may differ in
 # Phase-2 fields, left out of the hash at their phase-1 value so the phase-1 hashes stay the same.
-HASH_NEUTRAL: Final = MappingProxyType({"input_size": INPUT_SIZE})
-_TYPES: Final = {f.name: f.type for f in fields(Config)}
+# `paste_p` did not exist in phase 1: None, which is also its value when a config leaves it out.
+HASH_NEUTRAL: Final = MappingProxyType({"input_size": INPUT_SIZE, "paste_p": None})
+OPTIONAL_FIELDS: Final = ("paste_p",)  # may be left out (None); arm C sets it, no other arm does
+_TYPES: Final = {f.name: str(f.type).removesuffix(" | None") for f in fields(Config)}
 
 
 class _UniqueKeyLoader(yaml.SafeLoader):
@@ -154,6 +162,12 @@ def _check(name: str, config: Config) -> None:
         refuse("head_only_epochs", f"must leave the body one of {config.max_epochs} epochs")
     if config.warmup_epochs > config.max_epochs:
         refuse("warmup_epochs", f"must fit in {config.max_epochs} epochs")
+    if config.arm == "C" and config.paste_p is None:
+        refuse("arm", "arm C needs paste_p, its paste probability")
+    if config.arm != "C" and config.paste_p is not None:
+        refuse("paste_p", f"only arm C pastes; arm {config.arm} takes no paste_p")
+    if config.paste_p is not None and not 0.0 <= config.paste_p <= 1.0:
+        refuse("paste_p", "must be between 0 and 1")
 
 
 def _config(name: str, common: Mapping[str, object], own: Mapping[str, object]) -> Config:
@@ -161,10 +175,11 @@ def _config(name: str, common: Mapping[str, object], own: Mapping[str, object]) 
     unknown = sorted(set(raw) - set(FIELDS), key=str)
     if unknown:
         raise ConfigError(f"{name}: unknown fields {unknown}")
-    missing = [key for key in FIELDS if key not in raw]
+    missing = [key for key in FIELDS if key not in raw and key not in OPTIONAL_FIELDS]
     if missing:
         raise ConfigError(f"{name}: missing fields {missing}")
-    config = Config(**{key: _value(name, key, raw[key]) for key in FIELDS})  # type: ignore[arg-type]
+    values = {key: _value(name, key, raw[key]) for key in FIELDS if key in raw}
+    config = Config(**values)  # type: ignore[arg-type]
     _check(name, config)
     return config
 

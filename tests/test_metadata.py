@@ -27,7 +27,7 @@ from trailcam.data.classes import (
     NUM_CLASSES,
     index_of_cct_id,
 )
-from trailcam.data.metadata import DROP_RULES, SPLITS, Metadata, load_metadata
+from trailcam.data.metadata import DROP_RULES, SPLITS, EmptyFrame, Metadata, load_metadata
 
 
 @pytest.fixture
@@ -249,6 +249,61 @@ def test_filters_remove_exactly_the_right_images(fixture_dir: Path, meta: Metada
         assert dict(meta.dropped[split]) == expected_dropped, split
 
 
+def test_the_empty_images_are_kept_aside_as_empty_frames(fixture_dir: Path) -> None:
+    """Item 13.04: every image of the `empty` rule, and no other, becomes an `EmptyFrame` of its
+    file, in file order, with the file's location, sequence id and file name and the sidecar's
+    night flag (None without a sidecar). None of them is a record."""
+    sidecar = fixture_dir / "day_night.json"
+    flags = json.loads(sidecar.read_text())
+    flagged = load_metadata(fixture_dir, sidecar=sidecar)
+    unflagged = load_metadata(fixture_dir)
+    assert flagged.dropped == unflagged.dropped
+    for split in SPLITS:
+        ids = [r.image_id for r in unflagged.records[split]]
+        assert [r.image_id for r in flagged.records[split]] == ids, split
+    for split in SPLITS:
+        data = read_split(fixture_dir, split)
+        cats = categories_by_image(data)
+        expected = [
+            EmptyFrame(
+                image_id=image["id"],
+                file_name=image["file_name"],
+                split=split,
+                location=image["location"],
+                seq_id=image["seq_id"],
+                night=flags[image["id"]]["night"],
+            )
+            for image in data["images"]
+            if cats[image["id"]] and set(cats[image["id"]]) == {30}
+        ]
+        assert list(flagged.empties[split]) == expected, split
+        assert len(expected) == flagged.dropped[split]["empty"], split
+        assert all(f.night is None for f in unflagged.empties[split]), split
+        assert not {f.image_id for f in expected} & {r.image_id for r in flagged.records[split]}
+    assert sum(len(flagged.empties[s]) for s in SPLITS) == 12
+    assert {f.night for s in SPLITS for f in flagged.empties[s]} <= {True, False}
+
+
+def test_an_empty_frame_needs_an_integer_location(fixture_dir: Path) -> None:
+    """Arm C reads an empty frame's location, so a malformed one fails loudly, as a kept
+    image's does, instead of being dropped unread."""
+    path = fixture_dir / "cis_val_annotations.json"
+    data = read_split(fixture_dir, "cis_val")
+    cats = categories_by_image(data)
+    empty = next(image for image in data["images"] if cats[image["id"]] == [30])
+    empty["location"] = "101"
+    path.write_text(json.dumps(data))
+    with pytest.raises(ValueError, match=r"^cis_val: a location is not an integer"):
+        load_metadata(fixture_dir)
+
+
+def test_metadata_built_by_hand_has_no_empties(meta: Metadata) -> None:
+    """`empties` defaults to an empty mapping, so a hand-built Metadata gives no background."""
+    built = Metadata(records=meta.records, dropped=meta.dropped, clipped_boxes=meta.clipped_boxes)
+    assert dict(built.empties) == {}
+    assert set(meta.empties) == set(SPLITS)
+
+
 def test_planted_cases_are_counted(meta: Metadata) -> None:
     """Pinned against the synthetic layout, so a filter that silently stops firing fails here."""
     dropped = {rule: [meta.dropped[s][rule] for s in SPLITS] for rule in DROP_RULES}
@@ -454,8 +509,16 @@ def test_reprs_show_no_image_id_seq_id_or_file_name(meta: Metadata) -> None:
     assert other != first and dataclasses.replace(first) == first
     assert hash(dataclasses.replace(first)) == hash(first)
 
+    frames = [f for s in SPLITS for f in meta.empties[s]]
+    assert frames
+    for f in frames:
+        text = repr(f)
+        assert not any(v in text for v in (f.image_id, f.seq_id, f.file_name, "syn-", ".jpg"))
+        assert text == f"EmptyFrame(split={f.split}, location={f.location}, night={f.night})"
+
     text = repr(meta)
     assert "Record(" not in text and "syn-" not in text and ".jpg" not in text
+    assert "EmptyFrame(" not in text
     sizes = ", ".join(f"{s}={len(meta.records[s])}" for s in SPLITS)
     drops = ", ".join(f"{rule}={sum(meta.dropped[s][rule] for s in SPLITS)}" for rule in DROP_RULES)
     clipped = sum(meta.clipped_boxes.values())
@@ -465,7 +528,7 @@ def test_reprs_show_no_image_id_seq_id_or_file_name(meta: Metadata) -> None:
 # Two records that differ only in their ids, kept in a module of their own: pytest prints the
 # failing test's source, so the ids must not be written in the test itself.
 RECORDS_MODULE = """
-from trailcam.data.metadata import Record
+from trailcam.data.metadata import EmptyFrame, Record
 
 left = Record(image_id="leakmark-img-a", file_name="leakmark-img-a.jpg", split="train", label=0,
               location=1, seq_id="leakmark-seq-a", frame_num=0, seq_num_frames=1, width=8,
@@ -473,21 +536,29 @@ left = Record(image_id="leakmark-img-a", file_name="leakmark-img-a.jpg", split="
 right = Record(image_id="leakmark-img-b", file_name="leakmark-img-b.jpg", split="train", label=0,
                location=1, seq_id="leakmark-seq-b", frame_num=0, seq_num_frames=1, width=8,
                height=8, hour=0, boxes=(), night=None)
+empty_left = EmptyFrame(image_id="leakmark-img-c", file_name="leakmark-img-c.jpg", split="cis_val",
+                        location=1, seq_id="leakmark-seq-c", night=True)
+empty_right = EmptyFrame(image_id="leakmark-img-d", file_name="leakmark-img-d.jpg", split="cis_val",
+                         location=1, seq_id="leakmark-seq-d", night=True)
 """
 FAILING_TEST = """
-from leak_records import left, right
+from leak_records import empty_left, empty_right, left, right
 
 
 def test_records_equal() -> None:
     assert left == right
+
+
+def test_empty_frames_equal() -> None:
+    assert empty_left == empty_right
 """
 
 
 def test_failed_record_equality_shows_no_id(tmp_path: Path) -> None:
     """R03: pytest explains a failed `==` between two dataclasses field by field, printing every
     differing field, ids included, without calling the repr (review 3.05, both reviewers). Runs a
-    failing comparison in a subprocess at default and -vv verbosity: the output holds the id-free
-    repr and no id."""
+    failing comparison of two records and of two empty frames (item 13.04) in a subprocess at
+    default and -vv verbosity: the output holds the id-free reprs and no id."""
     (tmp_path / "leak_records.py").write_text(RECORDS_MODULE)
     (tmp_path / "test_leak.py").write_text(FAILING_TEST)
     root = str(Path(__file__).resolve().parents[1])
@@ -505,9 +576,8 @@ def test_failed_record_equality_shows_no_id(tmp_path: Path) -> None:
             text=True,
         )
         out = result.stdout + result.stderr
-        outcomes.append(
-            (result.returncode, "1 failed" in out, "Record(class=" in out, out.count("leakmark"))
-        )
+        shown = "Record(class=" in out and "EmptyFrame(split=cis_val" in out
+        outcomes.append((result.returncode, "2 failed" in out, shown, out.count("leakmark")))
     assert outcomes == [(1, True, True, 0), (1, True, True, 0)]
 
 
@@ -540,6 +610,7 @@ def test_real_metadata_drops_match_data_inspection() -> None:
         assert kept + sum(dropped.values()) == images[split], split
         assert dropped["two_species"] == two_species[split], split
         assert dropped["empty"] == empty[split], split
+        assert len(meta.empties[split]) == empty[split], split  # item 13.04's empty frames
         assert dropped["unannotated"] == 0, split
     assert sum(meta.dropped[s]["two_species"] for s in SPLITS) == 78
 

@@ -4127,3 +4127,317 @@ is bridged, and only with `HASH_NEUTRAL`'s 224).
 
 Review: tier 2, ran both reviewers; fix round ran (a94b482..10e53b1), both reviewers clean; the
 sync's fix round (ddec877) waived by the user.
+
+## 2026-10-17: session 13, item 13.04, arm C: the copy-paste sampler (Opus 5.5)
+
+The user approved item 13.04 on 2026-10-17 through the coordinator. It was added to
+`docs/progress.json` (session 13, owner claude, due 2026-10-19) with the description and steps
+given. Effort xhigh: the background pool is a leakage boundary, treated like split code. Main
+moved to dc19821 (8.08) mid-item: synced through the sync tool (a fast-forward; the work was set
+aside in a tagged stash, restored by its SHA and the entry dropped).
+
+**Done.**
+
+- `trailcam/data/metadata.py`: an image of the `empty` rule is also kept as an `EmptyFrame`
+  (image id, file name, official file, location, sequence id, the sidecar's night flag; the repr
+  shows no id, and `__eq__` is written out as `Record`'s is, so a failed `==` in pytest shows the
+  repr, review 3.05), per file in `Metadata.empties`, which defaults to empty. Records, drop counts, the
+  split and its hash are unchanged (`c78a9c10…`, the pinned test passes). One behaviour change: an
+  empty image with a non-integer location now fails loading, as a kept image's does (none in
+  CCT20).
+- `trailcam/data/copypaste.py`, new. `background_pool(meta, split)` keeps an empty frame only if
+  it comes from a pooled file (official train or cis_val), sits at a train location and its
+  sequence has no image in val, trans_val, cis_test or trans_test. `check_pool` re-checks the
+  result independently (every rule, no image id of any split, no repeat, a night flag on each) and
+  refuses with counts only. An edited split (records no longer matching its hash) is refused. The
+  pool's repr and `summary` give counts per day and night and its SHA-256 only. `CopyPaste` is the
+  paste step: with probability `p`, for a boxed image, one box drawn uniformly, its rectangle
+  rounded out to whole pixels, pasted onto a background of the image's night flag at another
+  location (drawn uniformly), at the same width and height fractions of the frame, at a uniform
+  position wholly inside the frame with its bottom edge in the lower half. It returns the
+  composite and the pasted box, or the image and its own boxes. Torch's generator only; with
+  `p=0` no coin is drawn. Every background must be on disk when the step is built (counts only).
+- `trailcam/data/dataset.py`: `ARMS` gains "C". `TrainTransform("C", paste=...)` is arm A's
+  sampler and steps with the paste step first; arms A and B refuse a paste step and arm C needs
+  one. The dataset hands the training transform each record's boxes, night flag and location.
+- `trailcam/train/config.py`: `paste_p`, the first phase-2 setting, is one of `PHASE2_FIELDS`:
+  None when a config leaves it out, and then out of the hash. Arm C needs it, the other arms
+  refuse it, and it must lie in 0 to 1. `trailcam/train/train.py`: `train_transform` builds the
+  arm's transform; for arm C it imports `copypaste` (there only), builds the pool from the run's
+  metadata and split, and logs its summary line before training.
+- `config.yaml`: `p2_arm_c`, resnet18_arm_a's recipe with `arm: C` and `paste_p: 0.5`.
+- `notebooks/kaggle_look_at_data.ipynb`, new section 5, outputs cleared: 6 boxed train photos,
+  day and night by turns. Each row shows the photo, the composite the real step returned with the
+  pasted box outlined, and the 224 px training input. Pool and step are built as training builds
+  them (`p=1.0` here); the dataset hands the step each photo's fields, so no cell names a location
+  or an id. The cell prints the pool's summary line.
+- Tests: `tests/test_copypaste.py`, new, 49 tests, about 20 s:
+  - pool rules on the synthetic split with 13 planted frames, each breaking one rule and passing
+    the others; `check_pool`'s refusals; the real pool pinned;
+  - day/night, another location, the fallback, the probability, unboxed images, several boxes;
+  - geometry over eleven cases; torch only; pickling; the arms; bad arguments;
+  - no evaluation path loads `copypaste` (static and in a fresh interpreter).
+- Other tests: `test_metadata.py` (3 new: the empty frames read back from the files, the location
+  check, the default; the R03 leak test now also compares two empty frames, and failed before
+  `EmptyFrame` wrote out its `__eq__`); `test_config.py` (4 new: arm C against arm A, the phase-1 hashes against
+  every `docs/ledger.md` row, the hash rule, the optional field; 9 new refusals);
+  `test_train.py` (arm C through `train_run`); `test_datavis.py` (3 new: the paste cell's static
+  check, its note, the cell run on the fixture).
+- Adjusted tests: `test_boxcrop.py` (the transform now has a `paste` attribute; "C" is an arm, so
+  "D" is the bad one); `test_ledger.py` (likewise for the malformed arm cell); `test_notebook.py`
+  (the training notebook's check cell keeps phase 1's configs and so refuses `p2_arm_c`, see
+  below).
+- `docs/review/invariants.md`: new R28 (the pool and the paste step); R23 and R25 extended to arm
+  C; R03's test cell extended, and its rule text given a third exception (below); P2 added to the
+  sources, R20 to R28 in the id ranges. `docs/phase2-plan.md`: what step 1 built (section 6) and the
+  hash form (section 9). `docs/learning-journal.md`, topic 15: one entry.
+
+**Numbers** (real metadata, split seed 42, cache sidecar; counts only):
+
+- Empty frames per file: train 0, cis_val 995, trans_val 61, cis_test 1,180, trans_test 1,778.
+  Every one has a night flag.
+- The pool is all 995 of cis_val's, day 531 and night 464, at all 10 train locations, hash
+  `87c5d379bfad28f7c5ede2d5ab8093dc7299fd6143782d2616db223e86c1d8bb`. None of the 995 shares a
+  burst with val, train or any evaluation file, so the sequence rule removes none today; it stays
+  as the guard.
+- 11,633 boxed train images (7,048 night): each has at least 350 backgrounds of its flag at other
+  cameras, so arm C never falls back for want of one on the real data.
+- Frame sizes: boxed train images 2048 x 1494 (10,444), 2048 x 1536 (914), 2560 x 1920 (275); the
+  pool 975, 2 and 18. Keeping the width and height fractions stretches a paste by 3% at most.
+
+**Decisions to review.**
+
+1. The pool rules: the intersection of your three rules and the plan's file rule (section 6: "only
+   the 995 empty frames of the official cis_val file"). Your rules alone would admit 1,179 of
+   cis_test's 1,180 empties: train cameras, bursts with no kept image. The plan calls them test
+   images. Both together give cis_val's 995.
+2. The config hash: a phase-2 field is hashed when set, so `p2_arm_c` does not share
+   `resnet18_arm_a`'s hash. The alternative: leave `paste_p` out of the hash like `arm`, so arm C
+   and arm A share it, as arm A and B do. Then two arm C configs with different probabilities would
+   share a hash too. That alternative is a two-line change; 13.02's checker may prefer it for
+   pairing.
+3. Placement: Mesnage et al. 2025, section 2.4 (checked on the paper's page today): a random x
+   and y with the segment's bottom in the bottom half. Their ±5% scale and ±5° rotation are not
+   taken: you asked to keep the box's size.
+4. The step returns the pasted box with the composite, so the boxes that reach the sampler
+   describe the composite. Arm C's sampler is arm A's, which ignores boxes.
+5. R03 wording, **for your approval**, as for 8.08: R03's rule now names a third exception, the
+   arm C paste check. It also says the composites show the pool's empty frames: cis_val frames
+   that are training inputs and in no split, not train photos. The rest is unchanged.
+6. Not edited, for you to decide: CLAUDE.md's ground rule ("Bounding boxes are training-time
+   augmentation (arm B) and attention scoring only") and `.claude/rules/data.md` (the box sampler
+   "is used by the arm B training transform only"). Both are still true of the arm B sampler, but
+   arm C now uses boxes in training too. Proposed: "(arm B; in phase 2, arm C)".
+7. Do not run `p2_arm_c` before 13.02 merges: `train.py` would append its row to
+   `docs/ledger.md`. The training notebook's check cell lists phase 1's configs only, so it
+   refuses `p2_arm_c`; `test_notebook.py` now pins that. From the shell, a pasted row would fail
+   the phase-1 ledger check (a second ResNet-18 config hash), but nothing stops the append itself.
+   With "C" in `ARMS`, the phase-1 checker's arm cell accepts C; 13.02's `p2_` refusal covers
+   that.
+
+**Checks.**
+
+- `uv run pytest tests/test_copypaste.py` 49 passed. `uv run pytest tests/test_datavis.py -k "look
+  or crop or paste"` 10 passed, also with DeprecationWarnings as errors.
+- Mutation checks (each source copied, mutated, tested and restored by a script; never `git
+  checkout`), 18 planted faults, each fails a test:
+  - no sequence exclusion, a trans location allowed, no file rule: each in the filter alone, and
+    in the filter and `check_pool` together;
+  - no day/night matching; no other-location rule; no lower-half bias; no scaling between frame
+    sizes; `copypaste` imported at module level in `train.py`;
+  - each of `check_pool`'s five rules alone; no split-hash check;
+  - a phase-2 field hashed when None.
+- Arm C through `train_run` on the synthetic fixture: the dry-run config with `arm: C`,
+  `paste_p: 0.5`, one epoch, once without workers and once with two spawned workers. It trained,
+  logged the pool's summary line and wrote its checkpoint (temporary directory, removed). The
+  alarm is the dry run's, reported only.
+- The split hash is unchanged, and every `docs/ledger.md` row's config hash still matches its
+  config.
+- `check.sh` green (1,013 passed, mypy, ruff and the data guard clean).
+
+**Next.** Review 13.04. Merge it after 13.02, which adds the phase-2 ledger. Then the step's
+pinned commit with the hypothesis line, and your eye check of section 5 on Kaggle. Open for you:
+the R03 wording (decision 5), CLAUDE.md and `data.md` (decision 6), and the hash form (decision
+2).
+
+Review: tier 2 by the playbook (no split code). Tier 3 is recommended, because the pool is a
+leakage boundary like the split (`docs/phase2-plan.md` section 6, open question 5): `/review-session
+13.04`, then `/code-review ultra`. Spec changed: `docs/review/invariants.md` (R03's rule text,
+which needs your approval; R23 and R25 extended; R28 new; sources and id ranges);
+`docs/phase2-plan.md` sections 6 and 9, now cited as P2 by R23, R25 and R28.
+
+## 2026-10-17: review 13.04: two lows, one fixed; the user's decisions, R03 wording approved (Opus 5.5)
+
+Review: tier 2, ran `/review-session 13.04` on dc19821..6c91d35 (code-reviewer Opus 5.5 xhigh on
+the range, risk-reviewer Fable 5.1 high on the 15 high-stakes files). Neither found anything high,
+and all 27 scenarios held for both: R01, R03, R05, R06, R07, R10, R14, R15, R16, R17, R20, R21,
+R23, R24, R25, R27, R28, R31, R32, R37, R38, R40, R41, R42, R43, R44, R45. The code-reviewer's own
+`check.sh` was green (1,013 passed). Tier 3 (`/code-review ultra`) was recommended and skipped:
+the user's decision. Spec changed: `docs/phase2-plan.md` sections 6 and 9 (P2, the source of
+R23, R25 and R28); the rule text of R03, R23 and R25, and the new R28.
+
+The two lows:
+
+- **Both reviewers.** Before 13.02, a command-line run of `p2_arm_c` would append its row to
+  `docs/ledger.md`: `train.py` refuses no `p2_` config, and `append_row` checks only the header.
+  Both confirmed the guards that hold today: the training notebook refuses `p2_arm_c`, and a
+  pasted row fails `check.sh`. Not fixed here: the user assigned the refusal to 13.02
+  (`check_ledger_phase` in `train.py`).
+- **Code-reviewer.** Three sources of R23 and R25 still describe arm B alone: CLAUDE.md's ground
+  rule, `.claude/rules/data.md` ("(arm B)") and `.claude/rules/training.md` (the arm "selects the
+  training crop sampler and nothing else"). **Fixed** with the minimal wording the user approved,
+  relayed by the coordinator and confirmed by the user in this session (CLAUDE.md and `.claude/`
+  are the user's files). CLAUDE.md's ground rule and `data.md` now read "(arm B; in phase 2, arm
+  C)". `training.md` adds "in phase 2, arm C also adds a paste step before arm A's crop".
+
+The user's decisions on 13.04's list ("go", 2026-10-17, relayed by the coordinator):
+
+1. The stricter pool: the 995 empty frames of the official cis_val file only, never a cis_test
+   file empty. As built.
+2. `paste_p` is hashed, so `p2_arm_c` has its own config hash. As built.
+3. The placement: Mesnage's random x with the segment's bottom in the lower half, no scale or
+   rotation. As built.
+4. Boxes travel with the composite. As built.
+5. R03's wording, the third eye-check exception (arm C's composites), approved by the user via
+   the coordinator on 2026-10-17. `docs/review/invariants.md` now reads "approved for items 8.07,
+   8.08 and 13.04".
+6. The wording of CLAUDE.md, `data.md` and `training.md`: done, see the second low above.
+7. The `p2_` refusal: in 13.02.
+
+Merged `main` at 05cd17a (8.06) through the sync tool as e44bb33: a clean merge, since 8.06
+touched only `docs/figures/` and `docs/plan.md`. `check.sh` was green after it (1,013 passed).
+This commit is the fix: the wording edit, the R03 wording and this entry; no code or test changed.
+It touches CLAUDE.md and `.claude/rules/`, which are high-stakes paths, so the playbook calls for
+one fix round on this commit's range. The user starts it.
+
+**Next.** The fix round, if the user starts it. Then the merge, after 9.03 and 13.02, syncing again
+if main has moved.
+
+## 2026-10-17: fix round 13.04: two lows and a miscount fixed, no third round (Opus 5.5)
+
+Review: tier 2, ran `/review-session e44bb33..HEAD 13.04` on 634b760, the review fix
+(code-reviewer Opus 5.5 xhigh on the range, risk-reviewer Fable 5.1 high on CLAUDE.md,
+`.claude/rules/data.md` and `.claude/rules/training.md`). Neither found anything high. All 9
+scenarios held for both: R01, R03, R23, R25, R28, R42, R43, R44 and R45. The new wording matches
+the code. Spec changed: CL, DR and TR (the box wording only), and R03's approval phrase. Fixed in
+this commit, with the coordinator's go and no third round, per the playbook:
+
+- **Code-reviewer, low.** `docs/phase2-plan.md` section 6 still said arm C is compared with arm A
+  "on identical configs apart from `arm`", where R25, `config.yaml` and `config.py` say `arm` and
+  `paste_p`. Its line "the metadata loader drops empties today" was stale too. Both sentences
+  predate 13.04 (3bfcf63). Now: "apart from `arm` and `paste_p`", and the loader "dropped empties",
+  which item 13.04 keeps aside as `Metadata.empties`.
+- **Risk-reviewer, low.** `trailcam/data/boxcrop.py`'s docstring said no other module of the package
+  imports it, but `copypaste.py` imports `to_pixels`. Now: no other module imports the sampler, arm
+  C's `copypaste.py` imports only `to_pixels`, and the eval transform never loads the module. A
+  docstring only; no code changed.
+- **Code-reviewer, a record.** The review entry above said 28 scenarios for a list of 27; the
+  selection gave those 27 and none was left out. Corrected to 27 above. The review commit's
+  message (634b760) still says 28; it stays as it is, since that commit is not rewritten.
+
+Both reviewers flagged that they could not verify the approvals. The user approved the CL, DR and
+TR wording directly in this session; the R03 wording came relayed by the coordinator.
+
+**Next.** Ready to merge, after 9.03 and 13.02; sync again if main moves.
+
+## 2026-10-18: main merged at 89e649a (9.03, 13.02): arm C on 13.02's conventions (Opus 5.5)
+
+13.02 merged first, and the coordinator asked for this sync at xhigh care, integrating rather than
+only keeping both sides. Merged through the sync tool. 11 files conflicted: `config.yaml`,
+`trailcam/data/dataset.py`, `trailcam/train/config.py`, `trailcam/train/train.py`, the tests of
+`boxcrop`, `config`, `ledger` and `train`, `docs/phase2-plan.md`, this log and
+`docs/review/invariants.md`.
+
+**Resolved.**
+
+- **One hash rule.** 13.02's `HASH_NEUTRAL` is now `{input_size: 224, paste_p: None}`, and a field
+  at its phase-1 value stays out of the hash. My `PHASE2_FIELDS` is gone. `OPTIONAL_FIELDS`
+  (`paste_p`) now says only that a config may leave the field out.
+  - Both pins of the phase-1 hashes hold: 13.02's literal hashes and its per-row run seeds.
+  - A set `paste_p` is still hashed (decision 2), so `p2_arm_c` has a config hash of its own.
+- **`config.yaml`.** `p2_arm_c` now sits in 13.02's phase-2 block, after `p2_baseline`, and takes
+  `input_size: 224` from `common`. `P2_CHANGES` gains `p2_arm_c: {arm: C, paste_p: 0.5}`. The
+  one-change rule counts arm C's own setting as part of the arm's change.
+- **The transform.** `TrainTransform(arm, *, sampler, paste, size)` runs the paste step on the full
+  image, then arm A's crop resized to `size`. Arms A and B are unchanged. `train_transform` passes
+  `config.input_size` to every arm; the eval transform is 13.02's `EvalTransform(input_size)`.
+- **Ledger and checkpoint.** `p2_arm_c` goes through 13.02's `check_ledger_phase` and is refused
+  with `docs/ledger.md`. It appends to `docs/ledger-phase2.md`, and its checkpoint carries
+  `input_size`.
+- **13.02's text corrected.** It said arm C would share arm A's config hash, in `ledger.py`'s
+  docstring, R25, a `test_ledger.py` docstring and `phase2-plan.md` section 6. With `paste_p`
+  hashed, arm C's rows carry their own hash and are paired by config and run seed.
+- **Superseded.** My `test_notebook.py` change, which kept the training notebook to phase 1:
+  13.02's notebook takes `p2_` configs, but only with the phase-2 ledger, so 13.02's test stands
+  as it is. My copy of the ledger-hash pin is removed too, since 13.02's is stronger.
+- **9.03's test.** `test_score_notebook.py` bridges a pre-13.02 `config.yaml` and guards
+  `HASH_NEUTRAL`'s contents. It now names `paste_p`, which needs no bridge: left out, it is None.
+- **Unchanged: the pool and every leakage rule.** The merge did not touch `copypaste.py`. Its
+  tests and the real pool pin (995 frames, day 531 and night 464, `87c5d379…`) pass.
+
+**New tests.**
+
+- `test_train.py`:
+  - `test_arm_c_trains_into_the_phase2_ledger_only_and_its_checkpoint_carries_the_size`. Through
+    `main`, `p2_arm_c` against a copy of `docs/ledger.md` stops before training. Through the
+    phase-2 ledger it runs `train_run` with the paste step and logs the pool's summary line. It
+    appends one row that passes the phase-2 check, and writes a checkpoint carrying input size 224,
+    which `load_checkpoint` accepts. Training and scoring are replaced; the rest is the real run.
+  - `PHASE_MIXUPS` gains `(p2_arm_c, ledger.md)`.
+  - The arm/size test covers `p2_arm_c` at 224.
+- `test_copypaste.py`: `test_arm_c_crops_the_composite_at_the_configs_input_size` checks 320 px
+  items, and that with the paste off arm C gives arm A's 320 px tensor draw for draw.
+- `test_ledger.py`: the phase-2 ledger with a hashed arm C row passes.
+
+**Docs.**
+
+- `docs/review/invariants.md`:
+  - R03 keeps the third exception and adds 9.03's scoring-notebook test;
+  - R25 merges 13.02's phase-2 line with arm C's `paste_p` and its own hash;
+  - R23 and R28 are kept;
+  - the header names 13.04's rows.
+- `docs/phase2-plan.md`, sections 6 and 9.
+- This log: main's entries first, then 13.04's. The 13.04 entry above still says `PHASE2_FIELDS`;
+  that is now `HASH_NEUTRAL` plus `OPTIONAL_FIELDS`.
+
+**Review.** The resolution changes high-stakes code: `config.py`, `dataset.py`, `train.py`,
+`ledger.py` and tests. The playbook calls for a fix round, which the user starts: `/review-session
+89e649a..<this merge> 13.04`. That range is 13.04 as it lands on main; 9.03's and 13.02's own
+changes are not in it. `git show --remerge-diff` on the merge shows the resolutions alone.
+
+## 2026-10-18: fix round of the 89e649a merge: clean, no further round (Opus 5.5)
+
+Review: tier 2, ran `/review-session 89e649a..cae22d7 13.04` (code-reviewer Opus 5.5 xhigh on the
+range, risk-reviewer Fable 5.1 high on its 20 high-stakes files). The range is 13.04 as it lands
+on main after 9.03 and 13.02, with the merge's integration as the focus. Nothing found by either.
+All 27 scenarios held: R01, R03, R05, R06, R07, R10, R14, R15, R16, R17, R20, R21, R23, R24,
+R25, R27, R28, R31, R32, R37, R38, R40, R41, R42, R43, R44 and R45. The code-reviewer checked
+R45; the risk-reviewer could not, since no agent file was in its list. The code-reviewer's own
+`check.sh` was green (1,129 passed).
+
+Both reviewers confirmed:
+
+- the phase-1 config hashes are unchanged;
+- arms A and B and the eval transform are unchanged;
+- the pool and leakage rules are unchanged: no diff since 995624b in `copypaste.py`,
+  `metadata.py`, `split.py` or `boxcrop.py`;
+- `p2_arm_c` follows 13.02's ledger and checkpoint conventions.
+
+The risk-reviewer read the merge's own resolutions in full: every conflict kept both sides' code
+and assertions.
+
+Two near-misses were checked and found sound:
+
+- The dropped 13.04 ledger-hash test. 13.02's pin still checks every ledger row, and "only arm
+  C sets `paste_p`" is still checked across all configs.
+- "C" in the phase-1 ledger's arm column. An arm C row in `docs/ledger.md` is still refused, by
+  the `p2_` prefix and its own config hash.
+
+Noted, outside the range: `.claude/rules/training.md` still says every training run appends to
+`docs/ledger.md`. That is 13.02's wording; it goes to item 13.05, with the user's OK there.
+Could not be verified offline: that the Kaggle cache holds the pool's 995 frames.
+`CopyPaste` refuses before training if any is missing.
+
+No fix, so no further round. This commit changes this log only.
+
+**Next.** Ready to merge.

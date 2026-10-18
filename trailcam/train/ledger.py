@@ -45,10 +45,12 @@ make one model one recipe: every phase-2 step is a new recipe of the same model,
 one model, or of one model and run seed, may carry several config hashes. In their place, the
 rows of one config share its config hash (a config edited between its seeds fails), and every
 row shares one split seed, since each comparison is paired by run seed on phase 1's split. A
-phase-2 arm pair (arm C against arm A, item 13.04) has configs that differ in `arm` alone, so its
-rows share the config hash, which `tests/test_config.py` checks on the configs. The phase-2
-summary groups by config first, then model, arm and seeds; phase 2 keeps or drops a step on val
-and trans_val (the plan's section 3), while training still selects on val alone.
+phase-2 arm pair (arm C against arm A, item 13.04) has configs that differ in `arm` and arm C's
+own `paste_p` alone, which `tests/test_config.py` checks on the configs; `paste_p` is hashed (the
+user's decision on 13.04), so arm C's rows carry a config hash of their own, and the pair is
+matched by config and run seed, not by hash. The phase-2 summary groups by config first, then
+model, arm and seeds; phase 2 keeps or drops a step on val and trans_val (the plan's section 3),
+while training still selects on val alone.
 """
 
 from __future__ import annotations

@@ -329,15 +329,32 @@ boundary**, so it gets its own rules and tests:
 
 The cache and sidecar already hold every annotated image, empties included
 (`scripts/kaggle_prepare_cct20.py`, `scripts/kaggle_pack_cache.py`), so no cache rebuild; the
-metadata loader drops empties today, so the pool needs a reviewed path to them. R23 and R24 name arm B as
-the only box user at training time; arm C's item extends them. Arm C (`p2_arm_c`) is compared
-with `p2_baseline` on identical configs apart from `arm` (R25's rule and its phase-2 line). Tier 2 at xhigh by the playbook; tier 3
-(`/code-review ultra` as well) is recommended because the pool is a new data boundary like the
-split, and is automatic if the code touches `trailcam/data/split.py` or its tests. *Hypothesis*:
+metadata loader dropped empties, so the pool needed a reviewed path to them (item 13.04 keeps them
+aside as `Metadata.empties`). R23 and R24 name arm B as the only box user at training time; arm
+C's item extends them. Arm C (`p2_arm_c`) is compared with `p2_baseline` on identical configs
+apart from `arm` and arm C's own `paste_p` (R25's rule and its phase-2 line). Tier 2 at xhigh by
+the playbook; tier 3 (`/code-review ultra` as well) is recommended because the pool is a new data
+boundary like the split, and is automatic if the code touches `trailcam/data/split.py` or its
+tests. *Hypothesis*:
 trans_val macro-F1 0 to +0.06 (about +0.03), val flat to -0.005; smaller than the leaderboard's
 +5.7 because our backgrounds are training cameras only, no detector, 224 px. Three seeds; if the
 result is positive but under about 4 points, seeds 3 and 4 are added (after the presentation)
 before it is claimed.
+
+*Built in item 13.04* (`trailcam/data/copypaste.py`, config `p2_arm_c`, invariant R28). The pool
+keeps an empty frame only if it comes from a pooled file (official train or cis_val; train has
+none), sits at a train location and its sequence has no image in val, trans_val, cis_test or
+trans_test; it is the user's three rules of 2026-10-17 with this section's file rule on top. On
+the real metadata (split seed 42) that is cis_val's 995 empty frames, day 531 and night 464, at all
+10 train cameras, hash `87c5d379…`; the sequence rule removes none of them today (none shares a
+burst with val, train or an evaluation file) and stays as the guard. The paste: one box drawn
+uniformly, its rectangle rounded out to whole pixels, the same width and height fractions of the
+frame (the cache's 512 x 373 and 512 x 384 frames stretch it by 3% at most), a uniform position
+wholly inside the frame with its bottom edge in the lower half (Mesnage et al. 2025, section 2.4;
+their ±5% scale and ±5° rotation are not taken), a background of the image's day/night flag at
+another camera drawn uniformly (every boxed train image has at least 350), then arm A's training
+transform at the config's input size (224). Not yet run: its rows go to `docs/ledger-phase2.md`
+(13.02's conventions), and the hypothesis line above goes into the step's pinned commit.
 
 **2. SWA over the late epochs** (`torch.optim.swa_utils`: a running average of the weights over
 the last epochs, batch-norm statistics recomputed on the training data). *Needs code* in
@@ -496,6 +513,11 @@ phase-2 run:
 - the phase-2 lines of R17, R20, R25, R30, R31 and R40 in `docs/review/invariants.md`.
 
 Not in 13.02: `score_test.py`'s phase-2 mode and its test ledger (13.06, section 4).
+
+Item 13.04, merged after 13.02, puts arm C's `paste_p` into `HASH_NEUTRAL` at None, its value when
+a config leaves it out, so the phase-1 hashes hold. `p2_arm_c` sets it and so hashes it: arm C's
+rows carry a config hash of their own and are paired with `p2_baseline`'s by config and run seed,
+not by hash (the user's decision on 13.04).
 
 ## 10. Beyond the ladder (future work, for the slides' closing)
 

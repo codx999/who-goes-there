@@ -30,6 +30,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from trailcam.data import synthetic
 from trailcam.data.boxcrop import BoxCropSampler
 from trailcam.data.classes import NUM_CLASSES
+from trailcam.data.copypaste import CopyPaste, background_pool
 from trailcam.data.dataset import CCT20Dataset, ControlCropSampler, EvalTransform
 from trailcam.data.metadata import load_metadata
 from trailcam.data.split import make_split
@@ -335,14 +336,18 @@ def test_the_score_alarms(val: float, trans: float, fired: int) -> None:
         ("resnet18_arm_a", ControlCropSampler, 224),
         ("resnet18_arm_b", BoxCropSampler, 224),
         ("p2_res320", ControlCropSampler, 320),
+        ("p2_arm_c", ControlCropSampler, 224),
     ],
 )
 def test_the_config_arm_builds_its_crop_sampler(
     monkeypatch: pytest.MonkeyPatch, fixture_split: Any, name: str, sampler: type, size: int
 ) -> None:
     """The arm picks the sampler; the config's input size (224 in phase 1, 320 for
-    `p2_res320`) reaches the training and the eval transform alike."""
+    `p2_res320`) reaches the training and the eval transform alike. Arm C (item 13.04) also gets
+    its paste step, on the background pool of the run's metadata and split, logged before
+    training."""
     split, root, meta = fixture_split
+    lines: list[str] = []
     seen: dict[str, Any] = {}
 
     class Stop(Exception):
@@ -355,11 +360,19 @@ def test_the_config_arm_builds_its_crop_sampler(
     monkeypatch.setattr(train, "make_loaders", spy)
     monkeypatch.setattr(train, "build_model", lambda *a, **k: nn.Linear(1, 1))
     with pytest.raises(Stop):
-        train.train_run(name, load_config(name), meta, root, Path("unused"), log=lambda _: None)
+        train.train_run(name, load_config(name), meta, root, Path("unused"), log=lines.append)
     assert seen["train_transform"].arm == load_config(name).arm
     assert isinstance(seen["train_transform"].sampler, sampler)
     assert seen["train_transform"].size == seen["eval_transform"].size == size
     assert isinstance(seen["eval_transform"], EvalTransform)
+    paste = seen["train_transform"].paste
+    if name == "p2_arm_c":
+        assert isinstance(paste, CopyPaste) and paste.p == load_config(name).paste_p
+        assert paste.pool == background_pool(meta, split) and paste.image_root == root
+        assert paste.pool.summary() in lines
+    else:
+        assert paste is None
+        assert not [line for line in lines if "background pool" in line]
     assert (seen["num_workers"], seen["pin_memory"]) == (4, True)
 
 
@@ -558,6 +571,7 @@ def test_append_row_refuses_a_missing_ledger_or_another_header(tmp_path: Path) -
 PHASE_MIXUPS = [
     ("p2_head3", "ledger.md"),
     ("p2_baseline", "other.md"),
+    ("p2_arm_c", "ledger.md"),
     ("resnet18_arm_a", "ledger-phase2.md"),
 ]
 
@@ -611,6 +625,69 @@ def test_a_phase2_run_appends_to_the_phase2_ledger(
         *PHASE2_LEDGER_PATH.read_text().splitlines(),
         ledger_row(row),
     ]
+
+
+def test_arm_c_trains_into_the_phase2_ledger_only_and_its_checkpoint_carries_the_size(
+    fixture_split: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Item 13.04 on 13.02's conventions, through the command line: `p2_arm_c` against a copy of
+    docs/ledger.md stops before training; against the phase-2 ledger it runs `train_run` with arm
+    C's paste step (the pool's summary line is logged), appends one row that passes the phase-2
+    check and writes a checkpoint carrying the config's input size, which `load_checkpoint`
+    accepts. The synthetic cache stands in for the real one; training and scoring are replaced
+    (random weights, no download), the rest is the real run."""
+    split, image_root, meta = fixture_split
+    data_root = image_root.parent  # the run reads <data root>/images, as on the cache
+    out = tmp_path / "out"
+    argv = ["--config-name=p2_arm_c", f"--data-root={data_root}", f"--out-dir={out}"]
+
+    monkeypatch.setattr(train, "load_metadata", _no_training)
+    phase1 = tmp_path / "ledger.md"
+    phase1.write_text(LEDGER_PATH.read_text())
+    with pytest.raises(SystemExit) as exit_info:
+        train.main([*argv, f"--ledger={phase1}"])
+    assert exit_info.value.code == 2
+    assert "before training" in capsys.readouterr().err
+    assert phase1.read_text() == LEDGER_PATH.read_text() and not out.exists()
+
+    monkeypatch.setattr(train, "load_metadata", lambda *a, **k: meta)
+    monkeypatch.setattr(
+        train, "build_model", lambda name, pretrained: build_model(name, pretrained=False)
+    )
+    fake_fit = train.FitResult(
+        (train.Epoch(1, True, 1.0, Scores(1.0, 0.5, 0.5)),), 1, (2, NUM_CLASSES)
+    )
+    monkeypatch.setattr(train, "fit", lambda *a, **k: fake_fit)
+    monkeypatch.setattr(train, "evaluate", lambda *a, **k: Scores(1.0, 0.2, 0.1))
+    ledger = tmp_path / "ledger-phase2.md"
+    ledger.write_text(PHASE2_LEDGER_PATH.read_text())
+    assert train.main([*argv, f"--ledger={ledger}"]) == 0
+
+    config = load_config("p2_arm_c")
+    stdout = capsys.readouterr().out
+    assert background_pool(meta, split).summary() in stdout
+    rows, problems = check_ledger(ledger)
+    assert problems == []
+    added = ledger.read_text().splitlines()[len(PHASE2_LEDGER_PATH.read_text().splitlines()) :]
+    assert len(added) == 1 and rows[-1].line == len(ledger.read_text().splitlines())
+    assert (rows[-1]["config"], rows[-1]["arm"], rows[-1]["model"]) == ("p2_arm_c", "C", "resnet18")
+    assert rows[-1]["config hash"] == config_hash(config)
+    (checkpoint,) = out.glob("*.pt")
+    assert train.file_sha256(checkpoint) == rows[-1]["checkpoint sha256"]
+    saved = torch.load(checkpoint, weights_only=True)
+    assert set(saved) == CHECKPOINT_KEYS
+    assert (
+        (saved["model"], saved["input_size"])
+        == ("resnet18", config.input_size)
+        == (
+            "resnet18",
+            224,
+        )
+    )
+    load_checkpoint(checkpoint, config, eval_size=config.input_size)
 
 
 # A real run fails before training on a bad out dir or ledger, and its alarms always show
