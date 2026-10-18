@@ -4577,3 +4577,40 @@ pinned, and its row is screened against `p2_baseline` seed 0.
 Review: tier 2 (`config.yaml` is high-stakes in `scripts/risk_files.sh`). Command:
 `/review-session 13.08`. Spec changed: `docs/phase2-plan.md` step 1, section 9 and open question
 1 (notes only, no rule).
+
+## 2026-10-18: review 13.08: two lows, one fixed in a new test, one for the user (Opus 5.5)
+
+`/review-session 13.08`, started by the user: tier 2, range `60189a7..339d021`. The
+code-reviewer ran on Opus 5.5 at xhigh, the risk-reviewer on Fable 5.1 at high. Neither found
+anything high or medium. Every scenario holds (R25, R28, R31, R40, R42, R01, R03, R43, R44,
+R45), and both reviewers' test runs were green. The user's go for the fix came through the
+coordinator.
+
+1. **Low, both reviewers: no test tied the phase-2 ledger's config hashes to `config.yaml`.**
+   The phase-2 checker compares rows with each other only. Fixed in `tests/test_config.py`, by
+   added lines only:
+   - `PHASE2_HASHES` pins every `p2_` config's hash. That covers the configs with rows and the
+     pre-declared ones (`p2_arm_c_p25`, `p2_head3`, `p2_r50`), so a config edited before its run
+     fails too.
+   - `test_the_phase2_config_hashes_are_the_ledgers`: each `docs/ledger-phase2.md` row's config,
+     at the row's run seed, hashes to the row's config hash and to the pin. `p2_baseline`'s rows
+     carry arm A's phase-1 hash, because `input_size` 224 and `paste_p` None are hash-neutral.
+     Arm C's rows do not, because a set `paste_p` is hashed.
+   - Mutation checks, each restored from a copy afterwards, each failing the new test:
+     `max_epochs` 11 in `p2_res320`; `paste_p` dropped from `HASH_NEUTRAL`; `input_size` dropped
+     from it; one character of `p2_arm_c`'s row hash changed; `p2_arm_c_p25`'s `paste_p` 0.3.
+   - The reviewers could not compute the hashes. They match: each row's hash equals today's
+     `config_hash`, and `p2_arm_c_p25`'s is `42d47bfd…`, as the plan says.
+2. **Low, code-reviewer: item 13.08's text names two rows and two screens.** The commit holds
+   three, and the coordinator's later rows make four. Not changed: CLAUDE.md says items are never
+   edited. **For the user:** reword 13.08 (it was created in this unmerged branch), or move the
+   `p2_res320` rows to an item of their own.
+
+Raised by the code-reviewer, for the user:
+- Which `p2_baseline` run `p2_arm_c_p25` pairs with. It will run at a commit after `69dfe93`.
+  Between the two, only `config.yaml` changed on the training path (it gained this block), and
+  `p2_baseline`'s own block is unchanged.
+- The bit-for-bit epoch match and the train losses come from the Kaggle output, not the repo.
+
+The fix only adds lines to a test file (a new test, a new constant and a new import line, with no
+line modified or deleted), so by the playbook no fix round is needed.

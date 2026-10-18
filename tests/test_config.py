@@ -23,6 +23,7 @@ from trailcam.data.dataset import ARMS, INPUT_SIZE, TrainTransform
 from trailcam.data.metadata import Box
 from trailcam.model import factory
 from trailcam.train import config as config_module
+from trailcam.train import train as train_module
 from trailcam.train.config import (
     CONFIG_PATH,
     DRY_RUN,
@@ -184,6 +185,41 @@ def test_the_phase1_config_hashes_are_the_ledgers(configs: dict[str, Config]) ->
             row["config"], configs[row["config"]], {"run_seed": int(row["run seed"])}
         )
         assert config_hash(config) == row["config hash"] == PHASE1_HASHES[row["config"]]
+
+
+# The config hashes of docs/ledger-phase2.md's configs (item 13.08, review 13.08): the configs with
+# rows and the pre-declared ones, so a config edited after its run, or before it, fails here.
+PHASE2_HASHES = {
+    "p2_baseline": PHASE1_HASHES["resnet18_arm_a"],  # input_size 224 and paste_p None: neutral
+    "p2_arm_c": "5c7c51c2faea18b8f814eb58cb54ca34ade489302e2689781092ab633c313b51",
+    "p2_arm_c_p25": "42d47bfda80f99a821b0257a1f1c74543d93587cf2f5966a735899df54410fb9",
+    "p2_head3": "a21b04f00a14b244a72e0cc425c575dfebafc7e263ab803e145fa78af8073b56",
+    "p2_res320": "5a20cf0771a6e3f81b2fbf4ee1a23bbb19738fcca761bf87ef07e7cf825febfd",
+    "p2_r50": "05a685a9c19ef0b43693be03373de08dce8af240c1c02c1f99ff1fa3427a78ed",
+}
+
+
+def test_the_phase2_config_hashes_are_the_ledgers(configs: dict[str, Config]) -> None:
+    """Review 13.08, R25's phase-2 line: the phase-2 checker compares rows with each other only,
+    so this ties each docs/ledger-phase2.md row to today's config.yaml, as the phase-1 test does:
+    the row's config at the row's run seed hashes to the row's config hash. `p2_baseline` rows
+    carry arm A's phase-1 hash (`input_size` 224 and `paste_p` None are hash-neutral); arm C's
+    rows do not (a set `paste_p` is hashed). Every phase-2 config's hash is pinned too."""
+    assert set(PHASE2_HASHES) == set(P2_CHANGES)
+    for name, digest in PHASE2_HASHES.items():
+        assert config_hash(configs[name]) == digest, name
+    rows, problems = check_ledger(train_module.PHASE2_LEDGER_PATH)
+    assert problems == [] and rows
+    for row in rows:
+        config = with_overrides(
+            row["config"], configs[row["config"]], {"run_seed": int(row["run seed"])}
+        )
+        assert config_hash(config) == row["config hash"] == PHASE2_HASHES[row["config"]], row[
+            "run id"
+        ]
+    by_config = {row["config"]: row["config hash"] for row in rows}
+    assert by_config["p2_baseline"] == PHASE1_HASHES["resnet18_arm_a"]
+    assert by_config["p2_arm_c"] != PHASE1_HASHES["resnet18_arm_a"]
 
 
 def test_input_size_is_left_out_of_the_hash_at_224_only(configs: dict[str, Config]) -> None:
