@@ -3854,8 +3854,18 @@ merged.
 
 `check.sh` green.
 
-**Next.** The fix round: `train.py` and the loader are high-stakes, so one round on the fix range
-only, started by the user: `/review-session a94b482..HEAD 13.02`. Then 13.02 merges after 9.03 and
-before 13.04 (the coordinator's order).
+The fix round (`train.py` and the loader are high-stakes), started by the user:
+`/review-session a94b482..HEAD 13.02`, code-reviewer (Opus 5.5, xhigh) on the range and
+risk-reviewer (Fable 5.1, high) on its six high-stakes files. Both found nothing; all 21
+scenarios held (R03, R04, R05, R14, R16, R17, R20, R21, R23, R25 to R27, R30 to R35, R37, R40,
+R42). `check.sh` 1009 passed (code-reviewer); 296 passed over every test file that builds
+checkpoints (risk-reviewer). Not findings, left as they are: three docstrings still name only
+"model or class map" as refusals (`score_test.py` lines 31-32 and 431, tier-3 code;
+`scripts/deploy_space.py:139`), incomplete rather than wrong. Neither reviewer could open the
+seven real phase-1 checkpoints or the Space's `model.pt`; both are three-key files by the old
+save line and the old exact-key loader, which loaded them in 8.06.
 
-Review: tier 2 fix round pending (the user starts it).
+**Next.** 13.02 merges after 9.03 and before 13.04 (the coordinator's order); sync again if
+`main` has moved by then.
+
+Review: tier 2, ran both reviewers; fix round ran (a94b482..10e53b1), both reviewers clean.
