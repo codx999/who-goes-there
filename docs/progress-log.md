@@ -3770,7 +3770,7 @@ which needs your approval; R23 and R25 extended; R28 new; sources and id ranges)
 
 Review: tier 2, ran `/review-session 13.04` on dc19821..6c91d35 (code-reviewer Opus 5.5 xhigh on
 the range, risk-reviewer Fable 5.1 high on the 15 high-stakes files). Neither found anything high,
-and all 28 scenarios held for both: R01, R03, R05, R06, R07, R10, R14, R15, R16, R17, R20, R21,
+and all 27 scenarios held for both: R01, R03, R05, R06, R07, R10, R14, R15, R16, R17, R20, R21,
 R23, R24, R25, R27, R28, R31, R32, R37, R38, R40, R41, R42, R43, R44, R45. The code-reviewer's own
 `check.sh` was green (1,013 passed). Tier 3 (`/code-review ultra`) was recommended and skipped:
 the user's decision. Spec changed: `docs/phase2-plan.md` sections 6 and 9 (P2, the source of
@@ -3812,3 +3812,30 @@ one fix round on this commit's range. The user starts it.
 
 **Next.** The fix round, if the user starts it. Then the merge, after 9.03 and 13.02, syncing again
 if main has moved.
+
+## 2026-10-17: fix round 13.04: two lows and a miscount fixed, no third round (Opus 5.5)
+
+Review: tier 2, ran `/review-session e44bb33..HEAD 13.04` on 634b760, the review fix
+(code-reviewer Opus 5.5 xhigh on the range, risk-reviewer Fable 5.1 high on CLAUDE.md,
+`.claude/rules/data.md` and `.claude/rules/training.md`). Neither found anything high. All 9
+scenarios held for both: R01, R03, R23, R25, R28, R42, R43, R44 and R45. The new wording matches
+the code. Spec changed: CL, DR and TR (the box wording only), and R03's approval phrase. Fixed in
+this commit, with the coordinator's go and no third round, per the playbook:
+
+- **Code-reviewer, low.** `docs/phase2-plan.md` section 6 still said arm C is compared with arm A
+  "on identical configs apart from `arm`", where R25, `config.yaml` and `config.py` say `arm` and
+  `paste_p`. Its line "the metadata loader drops empties today" was stale too. Both sentences
+  predate 13.04 (3bfcf63). Now: "apart from `arm` and `paste_p`", and the loader "dropped empties",
+  which item 13.04 keeps aside as `Metadata.empties`.
+- **Risk-reviewer, low.** `trailcam/data/boxcrop.py`'s docstring said no other module of the package
+  imports it, but `copypaste.py` imports `to_pixels`. Now: no other module imports the sampler, arm
+  C's `copypaste.py` imports only `to_pixels`, and the eval transform never loads the module. A
+  docstring only; no code changed.
+- **Code-reviewer, a record.** The review entry above said 28 scenarios for a list of 27; the
+  selection gave those 27 and none was left out. Corrected to 27 above. The review commit's
+  message (634b760) still says 28; it stays as it is, since that commit is not rewritten.
+
+Both reviewers flagged that they could not verify the approvals. The user approved the CL, DR and
+TR wording directly in this session; the R03 wording came relayed by the coordinator.
+
+**Next.** Ready to merge, after 9.03 and 13.02; sync again if main moves.

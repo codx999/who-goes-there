@@ -1,8 +1,9 @@
 """The arm B crop sampler: box-guided training crops (plan.md section 6, R24).
 
 `BoxCropSampler` is the crop sampler of arm B, which `TrainTransform("B")` in
-`trailcam/data/dataset.py` builds; no other module of the package imports it, and loading the
-eval transform never loads it. For an image with at least one box, with probability `BOX_P` (0.5)
+`trailcam/data/dataset.py` builds; no other module of the package imports the sampler (arm C's
+`trailcam/data/copypaste.py` imports only `to_pixels`), and loading the eval transform never loads
+this module. For an image with at least one box, with probability `BOX_P` (0.5)
 the crop comes from the box path (`box_crop`), otherwise from arm A's control sampler. An image
 without boxes always gets the control sampler and never reaches the box path. The box path:
 

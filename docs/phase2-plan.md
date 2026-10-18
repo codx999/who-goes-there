@@ -223,9 +223,10 @@ boundary**, so it gets its own rules and tests:
 
 The cache and sidecar already hold every annotated image, empties included
 (`scripts/kaggle_prepare_cct20.py`, `scripts/kaggle_pack_cache.py`), so no cache rebuild; the
-metadata loader drops empties today, so the pool needs a reviewed path to them. R23 and R24 name arm B as
-the only box user at training time; arm C's item extends them. Arm C is compared with arm A on
-identical configs apart from `arm` (R25's rule). Tier 2 at xhigh by the playbook; tier 3
+metadata loader dropped empties, so the pool needed a reviewed path to them (item 13.04 keeps them
+aside as `Metadata.empties`). R23 and R24 name arm B as the only box user at training time; arm
+C's item extends them. Arm C is compared with arm A on identical configs apart from `arm` and
+`paste_p` (R25's rule). Tier 2 at xhigh by the playbook; tier 3
 (`/code-review ultra` as well) is recommended because the pool is a new data boundary like the
 split, and is automatic if the code touches `trailcam/data/split.py` or its tests. *Hypothesis*:
 trans_val macro-F1 0 to +0.06 (about +0.03), val flat to -0.005; smaller than the leaderboard's
