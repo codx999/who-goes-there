@@ -307,9 +307,9 @@ methods. Mixed outcomes are reported as mixed. A negative result is a result.
   `APPROVED_BY` starts empty, and the notebook refuses the scoring until the user fills it in. A
   fresh Kaggle clone holds its commit's empty test ledger, so the run-once refusal above cannot
   see an earlier scoring there: the notebook also fetches `main` and refuses once `main`'s
-  `docs/test-ledger.md` holds any row, and the user commits the rows to `main` right after the
-  run (user's decision, review 9.03). Between the run and that commit, only `APPROVED_BY`, set
-  back to empty, guards against a second scoring.
+  `docs/test-ledger.md` holds any row, and the user commits and pushes the rows to `main` on
+  GitHub right after the run (user's decision, review 9.03). Between the run and that push, only
+  `APPROVED_BY`, set back to empty, guards against a second scoring.
 - **Val results (item 8.06, 2026-10-17)**: `notebooks/kaggle_evaluate.ipynb` at commit `dc19821`,
   every checkpoint of `docs/ledger.md` on val and trans_val, scored in float32. All 14 scores
   are within 0.01 of the ledger's (training scored in mixed precision). trans_val is reported,

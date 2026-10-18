@@ -27,7 +27,13 @@ import pytest
 import torch
 from PIL import Image
 
-from tests.test_score_test import APPROVER, World, _build_world, _figures_snapshot
+from tests.test_score_test import (
+    APPROVER,
+    World,
+    _build_world,
+    _empty_test_ledger,
+    _figures_snapshot,
+)
 from trailcam.data.cache import CACHE_TOP
 from trailcam.evaluate import evaluate, score_test
 from trailcam.evaluate.score_test import (
@@ -50,6 +56,8 @@ NOTEBOOK = ROOT / "notebooks" / "kaggle_score_test.ipynb"
 TRAIN_NOTEBOOK = ROOT / "notebooks" / "kaggle_train.ipynb"
 PUBLIC_REPO = "https://github.com/codx999/who-goes-there"
 SCORING_MODULE = "trailcam.evaluate.score_test"
+# The fixture's assets/ photo, named like an image id: its name must never be printed (R03).
+PHOTO_NAME = "fixture-6f1c2e9a-photo.jpg"
 PARAMETERS = {"COMMIT", "CACHE_ARCHIVE", "CHECKPOINTS_ROOT", "APPROVED_BY", "RUN_SEEDS"}
 # Everything the notebook takes from `trailcam`, exactly: a new name (a second route to the
 # scoring, an evaluation or training call, a checkpoint loader) fails here first. From
@@ -380,7 +388,9 @@ def test_exactly_one_code_cell_runs_the_scoring() -> None:
     popens = [
         (i, call) for i, tree in enumerate(TREES) for call in _calls_in(tree, "subprocess.Popen")
     ]
-    assert [(i, ast.unparse(call.args[0])) for i, call in popens] == [(_scoring_cell(), "command")]
+    assert [(i, ast.unparse(call.args[0])) for i, call in popens] == [
+        (_scoring_cell(), "[*command, *overlays]")
+    ]
     parents = _parents(cell)
     node: ast.AST = popens[0][1]
     while node in parents:
@@ -473,7 +483,7 @@ def _score_with(exit_code: int, **values: Any) -> tuple[dict[str, Any], list[dic
         types.SimpleNamespace(path=Path(f"/kaggle/input/trailcam-checkpoints/{n}.pt"))
         for n in ("small", "arm_a", "arm_b")
     ]
-    names["overlay_photos"] = [work / "who-goes-there" / "assets" / "photo.jpg"]
+    names["overlay_photos"] = [work / "who-goes-there" / "assets" / PHOTO_NAME]
     names["data_root"] = Path("/tmp/trailcam-cache/cct20_512")
     names.update(values)
     return _run(_scoring_cell(), names), calls
@@ -506,7 +516,9 @@ def test_run_seeds_and_the_paths_reach_the_command_line(
         assert args.overlay == [(photo, None) for photo in names["overlay_photos"]]
         assert call["env"]["PYTHONUNBUFFERED"] == "1"
         assert call["stderr"] == subprocess.STDOUT and call["errors"] == "replace"
-        assert "a line of the scoring" in capsys.readouterr().out
+        out = capsys.readouterr().out
+        assert "a line of the scoring" in out
+        assert PHOTO_NAME not in out and " and 1 --overlay photos of assets/" in out  # R03
 
 
 def test_the_scoring_cell_run_alone_with_approved_by_empty_is_refused_by_score_test() -> None:
@@ -589,12 +601,6 @@ def world(tmp_path_factory: pytest.TempPathFactory) -> World:
     return _build_world(tmp_path_factory.mktemp("score_notebook"))
 
 
-def _empty_test_ledger() -> str:
-    """The repo's test ledger up to its header, without the rows 9.02 pastes in."""
-    text = TEST_LEDGER_PATH.read_text(encoding="utf-8")
-    return text[: text.index(scoring_header()) + len(scoring_header())] + "\n"
-
-
 def _kaggle(world: World, root: Path) -> tuple[Path, Path]:
     """A clone with the fixture's config, ledger, an empty test ledger and the photo, and an
     input folder holding the checkpoints as Kaggle mounts a dataset (links to the files)."""
@@ -604,8 +610,8 @@ def _kaggle(world: World, root: Path) -> tuple[Path, Path]:
     (clone / "assets").mkdir()
     shutil.copy(world.config_file, clone / "config.yaml")
     shutil.copy(world.ledger, clone / "docs" / "ledger.md")
-    (clone / "docs" / "test-ledger.md").write_text(_empty_test_ledger(), encoding="utf-8")
-    shutil.copy(world.photo, clone / "assets" / "photo.jpg")
+    _empty_test_ledger(clone / "docs" / "test-ledger.md")
+    shutil.copy(world.photo, clone / "assets" / PHOTO_NAME)
     mount = kaggle_input / "datasets" / "someone" / "trailcam-checkpoints" / "models"
     mount.mkdir(parents=True)
     for path in world.checkpoints.values():
@@ -716,6 +722,9 @@ def test_the_notebook_scores_the_fixture_once_and_prints_and_zips_the_rows(
     ]
     assert {row["approved by"] for row in rows} == {APPROVER}
     assert f"--approved-by={APPROVER}" in captured.out and "--run-seeds 0 " in captured.out
+    # R03: the assets/ photo is counted in the printed command and named nowhere in the output.
+    assert " and 1 --overlay photos of assets/" in captured.out
+    assert PHOTO_NAME not in captured.out + captured.err
     printed = captured.out.split("for docs/test-ledger.md (paste once, below its header):\n", 1)[1]
     assert printed.startswith(scoring_header() + "\n")
     assert [ledger_line(row) for row in rows] == printed.splitlines()[2:5]
@@ -907,7 +916,8 @@ def test_markdown_says_once_part_way_and_never_save_and_run_all() -> None:
         "`APPROVED_BY` starts empty",
         never,
         "So section 3 also reads `origin/main`'s `docs/test-ledger.md` and refuses if it holds any "
-        "row",
+        "row: once the rows are pasted into `docs/test-ledger.md`, committed and pushed to `main` "
+        "on GitHub, the notebook stops in seconds",
         "## If it stops part way",
         "run again from the start with a new `--out`, the recovery `score_test.py` documents",
         "If it stopped after `appended ... rows`, the scoring has run: never run it again.",
@@ -936,7 +946,7 @@ def test_how_to_run_says_import_attach_rehearse_then_run_once() -> None:
         "The one run, when the user means it",
         "Save Version > Save & Run All (Commit)",
         "paste the rows section 7 prints into `docs/test-ledger.md`, once",
-        "and commit them to `main`: from then on section 3 refuses every run",
+        "and commit and push them to `main` on GitHub: from then on section 3 refuses every run",
         "Download `score.zip`",
     ]
     positions = [FLAT.find(step) for step in steps]

@@ -881,6 +881,11 @@ Dated, oldest first. Each: what happened, how it was caught, the lesson.
 - **2026-10-16. The weekly Claude budget ran low.** 72% used with 5 days left, shared with other
   projects. *Caught by* the usage page. *Lesson:* budget it like the Kaggle GPU quota: must-have
   items first, the rest after the reset, and cut waste, not checks.
+- **2026-10-17. The 6.04 trap, a second time.** The final scoring's tests copied the real
+  `docs/test-ledger.md` as their empty test ledger, so pasting 9.02's rows would have turned
+  main red, as 6.04's first ledger row did. *Caught by* reviewing 9.03's fixtures, and proved by
+  running the suite with a row added to the file. *Lesson:* a fixture builds its empty file from
+  the header, never from a repo file that a later run fills.
 
 ---
 

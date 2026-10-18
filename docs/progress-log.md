@@ -3798,3 +3798,66 @@ The fix touches a high-stakes file and modifies test lines, so one fix round run
 `check.sh` green (938 passed).
 
 **Next.** Fix round: `/review-session 014c19d..HEAD 9.03`. Then 9.02, the user's single run.
+
+## 2026-10-17: fix round 9.03: one high-by-rule and one low fixed, and 9.01's fixture trap (Opus 5.5, xhigh)
+
+Merged `main` twice more with the sync tool, as the coordinator asked: dc19821 (8.08) as 8fbfb8e,
+with conflicts in this log and in rows R06, R07, R17, R38 and R41 of invariants.md (both items had
+added a test-file clause; `main`'s rows kept and each 9.03 clause added whole, so every row names
+`tests/test_evaluate_notebook.py` and `tests/test_score_notebook.py`, and R17's items read "8.08,
+... 9.03"); then 05cd17a (8.06) as a0bbbaf, with a conflict in plan.md section 7 (the run-once
+sentences kept, 8.06's "Val results" bullet after them). `check.sh` green after each (988
+passed).
+
+Fix round (`/review-session 9.03`, the user's start; range dc19821..HEAD, the whole item against
+today's `main`, its first commit reviewed before): code-reviewer (Opus 5.5 xhigh), risk-reviewer
+(Fable 5.1 high) on the notebook and its tests. Scenarios R06, R07, R16, R17, R27, R37, R38, R40,
+R41 and R42 hold in both reports; R03 breaks for the code-reviewer (finding 1). Findings:
+
+- High by R03's rule, nothing leaked yet (code-reviewer; the risk-reviewer saw the same print and
+  judged it allowed, since `assets/` photos are not from `data/`): the scoring cell printed
+  `shlex.join(command)` with every `--overlay <clone>/assets/<photo>` path. R03, as approved in
+  8.08, counts an `assets/` photo's name in printed output as a breach (a photo's name may be an
+  image id), and the evaluation notebook counts its photos instead. `assets/` is empty until 8.05.
+- Low (code-reviewer): "committed to `main`" in the notebook and plan.md section 7; the check
+  fetches `main` from GitHub, so a local commit blocks nothing until it is pushed.
+
+The user's decisions ("go", via the coordinator, 2026-10-17): fix both, and fix the trap reported
+in the review 9.03 entry above (9.01's tests copying `docs/test-ledger.md`). These are the fix
+round's fixes: no third round unless the user asks.
+
+Fixes:
+
+- A. The scoring cell prints its command without the `--overlay` arguments, plus " and N --overlay
+  photos of assets/"; the overlays reach `Popen` only (`[*command, *overlays]`). Section 6's
+  markdown says why. Tests: the cell alone with a stand-in `Popen` prints the count and not the
+  photo's name; the cells on the fixture, with the real scoring and a photo named like an image id,
+  print the count and the name nowhere in stdout or stderr. R03's test cell names them.
+- B. "committed and pushed to `main` on GitHub" in the notebook's "This runs once" section,
+  How-to-run step 7 and section 3, and in plan.md section 7 ("Between the run and that push").
+  R40's test cell too.
+- C. `tests/test_score_test.py`: `_empty_test_ledger` writes the header of `TEST_LEDGER_COLUMNS`
+  (`scoring_header`) and no row; `_build_world` and `fresh` use it, never a copy of
+  `docs/test-ledger.md`, and `tests/test_score_notebook.py` imports it in place of its own.
+  `test_the_repo_test_ledger_reads` already accepts rows (docstring says so). New test: a copy of
+  the repo's test ledger with a valid row reads through the reader, and with `TEST_LEDGER_PATH`
+  pointed at it the fixtures still start with no row; only the two tests that check the repo's
+  file name it. Proved by hand: with a row added to the repo's `docs/test-ledger.md`, the whole
+  suite passed except the new test itself, which had assumed the repo file had no row (fixed to
+  read the appended row last); both files then passed with the row in place (103 passed). The file
+  was restored by copying and checked with `cmp`. R40's test cell names the rule.
+- Mutation checks, each restored by copying: the photo names printed again (killed by the cell's
+  test); `_build_world` and `fresh` copying the repo's test ledger again (each killed by the new
+  test): 3 of 3, rerun after the test's fix.
+- Journal: a timeline entry, "the 6.04 trap, a second time".
+- `nbconvert --clear-output` leaves the notebook unchanged; ruff clean.
+
+Not verified (both reviewers): Kaggle-side behaviour (dataset mounts, whether Factory reset clears
+`/kaggle/working`, the live fetch from GitHub) and the run time: whether 7 checkpoints with the
+Grad-CAM attention pass over both test splits fit in one 12-hour GPU session. 8.06's val run is
+the nearest timing.
+
+`check.sh` green (989 passed).
+
+**Next.** Ready to merge (this merges first, before 13.02 and 13.04). Then 9.02 on 2026-10-19:
+the user's single run with this notebook.
