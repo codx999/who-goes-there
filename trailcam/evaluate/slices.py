@@ -39,6 +39,16 @@ each with one block of small panels per checkpoint, side by side (arm A beside a
 per species, and one per camera location, each highlighting its images over the rest in grey.
 Small panels rather than one panel in 12 or 20 colours, which no palette keeps apart.
 
+**The pair (item 13.05).** Each `--checkpoint` names a config and a file, so the user names the
+models compared. A phase-1 checkpoint is labelled by its model and arm, as before (`resnet18 arm
+A` beside `resnet18 arm B`, one seed's pair); a phase-2 one by its config name, since several
+phase-2 configs share a model and an arm (`p2_baseline` beside `p2_head3` or `p2_res320`, the
+pairing of `docs/phase2-plan.md` section 3). Phase-1 and phase-2 checkpoints are never mixed in
+one run: phase 2 compares each variant with `p2_baseline`, never with a phase-1 run. Each
+checkpoint is scored at its own config's `input_size` (224 in phase 1, 320 for `p2_res320`), and
+`load_checkpoint` refuses one trained at another size than its config's. Which run seeds are
+paired is the caller's choice (the evaluation notebook pairs the same seed).
+
 **Output.** `write_report` writes `slices.md` (the tables) and `write_feature_maps` the two PNGs
 into the directory they are given; repo figures belong in `docs/figures/`, filled by the user
 (item 8.06). Counts and scores only, never an image id or file name (R03).
@@ -49,6 +59,8 @@ other split's records; cis_test and trans_test are reached only through the fina
 
     python -m trailcam.evaluate.slices --checkpoint resnet18_arm_a <a>.pt \\
         --checkpoint resnet18_arm_b <b>.pt --data-root <cache> --out <dir>
+    python -m trailcam.evaluate.slices --checkpoint p2_baseline <base>.pt \\
+        --checkpoint p2_res320 <variant>.pt --data-root <cache> --out <dir>
     python -m trailcam.evaluate.slices --dry-run=True --out <dir>
 
 `--split` defaults to both val and trans_val. `--dry-run=True` takes the `dryrun` config, writes
@@ -73,14 +85,21 @@ from torch import Tensor, nn
 from torch.utils.data import DataLoader
 
 from trailcam.data.classes import CLASSES, NUM_CLASSES, index_of_name
-from trailcam.data.dataset import CCT20Dataset, EvalTransform
+from trailcam.data.dataset import INPUT_SIZE, CCT20Dataset, EvalTransform
 from trailcam.data.metadata import DAY_NIGHT_SIDECAR, Record, load_metadata
 from trailcam.data.split import make_split
 from trailcam.data.synthetic import write_synthetic_fixture
-from trailcam.evaluate.attention import CAMERA_GROUPS, CLI_SPLITS, load_checkpoint
+from trailcam.evaluate.attention import CAMERA_GROUPS, CLI_SPLITS, load_checkpoint, size_note
 from trailcam.evaluate.metrics import accuracy, macro_f1
 from trailcam.model.factory import build_model, head_module
-from trailcam.train.config import CONFIG_PATH, DRY_RUN, Config, ConfigError, load_config
+from trailcam.train.config import (
+    CONFIG_PATH,
+    DRY_RUN,
+    Config,
+    ConfigError,
+    is_phase2,
+    load_config,
+)
 from trailcam.train.train import (
     CACHE_ANNOTATIONS,
     CACHE_IMAGES,
@@ -166,9 +185,11 @@ def predict_split(
     num_workers: int = 0,
     pin_memory: bool = False,
     keep_features: bool = True,
+    size: int = INPUT_SIZE,
 ) -> SplitPredictions:
     """Predictions (and, with `keep_features`, the head's input) for the records of `split`, a
-    key of `CAMERA_GROUPS`, through the eval transform in eval mode. Every record must belong to
+    key of `CAMERA_GROUPS`, through the eval transform of side `size` (224; a phase-2 config's
+    `input_size` from the command line) in eval mode. Every record must belong to
     `split` and carry a night flag. This function scores any split it is given; keeping cis_test
     and trans_test for the final scoring is the caller's duty (the command line refuses them)."""
     if split not in CAMERA_GROUPS:
@@ -180,7 +201,7 @@ def predict_split(
     if unflagged:
         raise ValueError(f"{unflagged} of {len(records)} records have no day/night flag")
     loader: DataLoader[tuple[Tensor, int]] = DataLoader(
-        CCT20Dataset(records, image_root, EvalTransform()),
+        CCT20Dataset(records, image_root, EvalTransform(size)),
         batch_size=batch_size,
         shuffle=False,
         num_workers=num_workers,
@@ -636,6 +657,12 @@ def checkpoint_label(config: Config) -> str:
     return config.model if config.model == "small_cnn" else f"{config.model} arm {config.arm}"
 
 
+def model_label(name: str, config: Config) -> str:
+    """The command line's label of config `name`: `checkpoint_label` for a phase-1 config, the
+    config name for a phase-2 one, whose model and arm several phase-2 configs share."""
+    return name if is_phase2(name) else checkpoint_label(config)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m trailcam.evaluate.slices",
@@ -647,7 +674,10 @@ def build_parser() -> argparse.ArgumentParser:
         nargs=2,
         action="append",
         metavar=("CONFIG_NAME", "PATH"),
-        help="a config name and a checkpoint written by train.py; repeat for arm A and arm B",
+        help=(
+            "a config name and a checkpoint written by train.py; repeat for each model compared "
+            "(arm A and arm B; in phase 2, p2_baseline and a variant)"
+        ),
     )
     parser.add_argument("--config", type=Path, default=CONFIG_PATH, help="the config.yaml path")
     parser.add_argument("--data-root", type=Path, help="the 512 px cache")
@@ -679,16 +709,22 @@ def resolve(
         config = _load(DRY_RUN, args.config, parser)
         return [(f"random weights {n}", config, None) for n in (1, 2)]
     if not args.checkpoint or args.data_root is None:
-        parser.error("give --checkpoint (once per arm) and --data-root, or --dry-run=True")
+        parser.error("give --checkpoint (once per model) and --data-root, or --dry-run=True")
     models: list[tuple[str, Config, Path | None]] = []
     for name, path in args.checkpoint:
         config = _load(name, args.config, parser)
         if config.fixture:
             parser.error(f"config {name} has fixture: true")
-        models.append((checkpoint_label(config), config, Path(path)))
+        models.append((model_label(name, config), config, Path(path)))
+    phases = {is_phase2(name) for name, _ in args.checkpoint}
+    if len(phases) != 1:
+        parser.error(
+            "phase-1 and phase-2 checkpoints in one run: phase 2 compares each variant with "
+            "p2_baseline (docs/phase2-plan.md section 3)"
+        )
     labels = [label for label, _, _ in models]
     if len(set(labels)) != len(labels):
-        parser.error(f"one checkpoint per model and arm, got {labels}")
+        parser.error(f"one checkpoint per model and arm (in phase 2, per config), got {labels}")
     if len({config.split_seed for _, config, _ in models}) != 1:
         parser.error("the checkpoints' configs have different split seeds")
     return models
@@ -712,6 +748,7 @@ def run_splits(
             batch_size=config.batch_size,
             num_workers=config.num_workers,
             pin_memory=config.pin_memory,
+            size=config.input_size,
         )
         for name, split_records in records.items()
     ]
@@ -739,16 +776,23 @@ def main(argv: Sequence[str] | None = None) -> int:
                 results[label] = run_splits(model, records, fixture.image_root, config)
         header = [f"Model {models[0][1].model}, random weights (dry run on the synthetic fixture)."]
     else:
+        # Every checkpoint is loaded, and so checked (model, class map, and its input size
+        # against its own config's, item 13.05), before the metadata or any image is read: a
+        # mismatched second checkpoint is refused before the first is scored (review 13.05).
+        loaded = []
+        for label, config, checkpoint in models:
+            assert checkpoint is not None
+            model = load_checkpoint(checkpoint, config, eval_size=config.input_size)
+            loaded.append((label, config, checkpoint, model))
         root = args.data_root
         meta = load_metadata(root / CACHE_ANNOTATIONS, root / DAY_NIGHT_SIDECAR)
         split = make_split(meta, models[0][1].split_seed)
         records = {s: split.records[s] for s in splits}
         header = [f"Split seed {models[0][1].split_seed}, split hash {split.hash}.", ""]
         del split, meta  # nothing past this line can reach cis_test or trans_test
-        for label, config, checkpoint in models:
-            assert checkpoint is not None
-            header.append(f"- {label}: checkpoint sha256 {file_sha256(checkpoint)}")
-            model = load_checkpoint(checkpoint, config)
+        for label, config, checkpoint, model in loaded:
+            note = size_note(config)
+            header.append(f"- {label}{note}: checkpoint sha256 {file_sha256(checkpoint)}")
             results[label] = run_splits(model, records, root / CACHE_IMAGES, config)
 
     table = write_report(results, args.out, header)

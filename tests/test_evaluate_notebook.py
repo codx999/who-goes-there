@@ -56,7 +56,14 @@ NOTEBOOK = ROOT / "notebooks" / "kaggle_evaluate.ipynb"
 TRAIN_NOTEBOOK = ROOT / "notebooks" / "kaggle_train.ipynb"
 LOOK_NOTEBOOK = ROOT / "notebooks" / "kaggle_look_at_data.ipynb"
 PUBLIC_REPO = "https://github.com/codx999/who-goes-there"
-PARAMETERS = ("COMMIT", "CACHE_ARCHIVE", "CHECKPOINTS_ROOT", "ASSETS_OVERLAY_RUN")
+PARAMETERS = (
+    "COMMIT",
+    "LEDGER",
+    "CACHE_ARCHIVE",
+    "CHECKPOINTS_ROOT",
+    "ASSETS_OVERLAY_RUN",
+    "SLICE_PAIRS",
+)
 ENTRY_POINTS = ("evaluate.main", "attention.main", "slices.main")
 CLI_SPLITS = ("val", "trans_val")
 # Kaggle's folders in the parameter cell, and where the tests put them (`_rebase`).
@@ -70,6 +77,19 @@ RUNS = (
     ("resnet18_arm_b", 1),
 )
 RUN_IDS = tuple(f"{name}-seed{seed}-20261016T0{n}0000Z" for n, (name, seed) in enumerate(RUNS))
+# Item 13.05: the runs of the made-up phase-2 ledgers, and the configs they use.
+P2_LEDGER = "docs/ledger-phase2.md"
+P2_CONFIGS = ("p2_baseline", "p2_head3", "p2_res320")
+P2_RUNS = (
+    ("p2_baseline", 0),
+    ("p2_head3", 0),
+    ("p2_res320", 0),
+    ("p2_baseline", 1),
+    ("p2_res320", 1),
+)
+P2_RUN_IDS = tuple(
+    f"{name}-seed{seed}-20261019T0{n}0000Z" for n, (name, seed) in enumerate(P2_RUNS)
+)
 
 _spec = importlib.util.spec_from_file_location("guard_data", ROOT / "scripts" / "guard_data.py")
 assert _spec is not None and _spec.loader is not None
@@ -167,10 +187,10 @@ def _kaggle_names(root: Path, **overrides: object) -> dict[str, object]:
 
 
 def _write_config(path: Path) -> None:
-    """config.yaml with the three training configs small enough for the CPU: batch 8, no workers,
-    no pinned memory, no download."""
+    """config.yaml with phase 1's three training configs and the phase-2 ones the tests use small
+    enough for the CPU: batch 8, no workers, no pinned memory, no download."""
     settings = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
-    for name in ("small_cnn", "resnet18_arm_a", "resnet18_arm_b"):
+    for name in ("small_cnn", "resnet18_arm_a", "resnet18_arm_b", *P2_CONFIGS):
         settings["configs"][name].update(
             batch_size=8, num_workers=0, pin_memory=False, pretrained=False
         )
@@ -183,14 +203,15 @@ def _write_ledger(
     files: Mapping[str, Path],
     split_hash: str,
     score: str = "1.0000",
+    runs: Mapping[str, tuple[str, int]] = dict(zip(RUN_IDS, RUNS, strict=True)),
 ) -> None:
-    """A ledger with one row per run id of `files`, as train.py writes them, that passes
-    `trailcam.train.ledger`'s check."""
-    config_file, ledger = names["CONFIG_FILE"], names["LEDGER"]
+    """A ledger at LEDGER_PATH with one row per run id of `files` (its config and run seed in
+    `runs`), as train.py writes them, that passes `trailcam.train.ledger`'s check."""
+    config_file, ledger = names["CONFIG_FILE"], names["LEDGER_PATH"]
     assert isinstance(config_file, Path) and isinstance(ledger, Path)
     lines = ["# Ledger", "", ledger_header()]
     for run_id, path in files.items():
-        name, seed = dict(zip(RUN_IDS, RUNS, strict=True))[run_id]
+        name, seed = runs[run_id]
         config = load_config(name, config_file)
         values = {
             "run id": run_id,
@@ -322,7 +343,9 @@ def test_the_parameters() -> None:
     assert p["CLONE"] == "Path('/tmp/who-goes-there')"  # local disk, not the version's output
     assert p["LOCAL_CACHE"] == "Path('/tmp/trailcam-cache')"
     assert p["CONFIG_FILE"] == "CLONE / 'config.yaml'"
-    assert p["LEDGER"] == "CLONE / 'docs' / 'ledger.md'"
+    assert p["LEDGER"] == "docs/ledger.md"  # phase 1 by default (item 13.05)
+    assert p["LEDGER_PATH"] == "CLONE / LEDGER"
+    assert p["SLICE_PAIRS"] is None  # the ledger's own pairs
     assert p["ASSETS"] == "CLONE / 'assets'"
     for value in p.values():  # every Kaggle path lies under a folder the tests move (_rebase)
         if isinstance(value, str) and value.startswith("Path('/"):
@@ -1004,3 +1027,390 @@ def test_the_summary_refuses_a_metrics_table_without_its_split_rows(
     names = {**evaluated.names, "EVAL_DIR": tmp_path, "rows_by_run": _rows_from_metrics(evaluated)}
     with pytest.raises(RuntimeError, match="found 9 split rows in the metrics tables"):
         _run(["summary"], names)
+
+
+# Item 13.05: the LEDGER parameter, phase 2's ledger and the pairs of the slices
+
+
+def _phase2_names(
+    root: Path, runs: Mapping[str, tuple[str, int]] = dict(zip(P2_RUN_IDS, P2_RUNS, strict=True))
+) -> dict[str, object]:
+    """`_light_names` for phase 2: `LEDGER = "docs/ledger-phase2.md"`, as the parameter cell
+    derives LEDGER_PATH from it, and a phase-2 ledger of `runs` (run id: config and run seed)
+    with made-up `.pt` files."""
+    names = _kaggle_names(root)
+    clone = names["CLONE"]
+    assert isinstance(clone, Path)
+    names.update(LEDGER=P2_LEDGER, LEDGER_PATH=clone / P2_LEDGER)
+    config_file, checkpoints_root = names["CONFIG_FILE"], names["CHECKPOINTS_ROOT"]
+    assert isinstance(config_file, Path) and isinstance(checkpoints_root, Path)
+    _write_config(config_file)
+    checkpoints_root.mkdir(parents=True)
+    files = {}
+    for run_id in runs:
+        files[run_id] = checkpoints_root / f"{run_id}.pt"
+        files[run_id].write_bytes(f"made-up checkpoint {run_id}".encode())
+    _write_ledger(names, files, "0" * 64, runs=runs)
+    return names
+
+
+def test_the_check_cell_refuses_a_bad_ledger_or_slice_pairs(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`LEDGER` is one of the two ledgers, as in the training notebook; `SLICE_PAIRS` is None or
+    a list of pairs of two different config names."""
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "unset by the test")
+    names = _run(["parameters"], {})
+    for good in (
+        {"LEDGER": P2_LEDGER},
+        {"SLICE_PAIRS": []},
+        {"SLICE_PAIRS": [("p2_baseline", "p2_res320"), ("p2_head3", "p2_res320")]},
+    ):
+        _run(["check"], {**names, **good})
+    assert f"LEDGER {P2_LEDGER}" in capsys.readouterr().out
+    for bad in (
+        {"LEDGER": "docs/ledger-phase3.md"},
+        {"LEDGER": "ledger.md"},
+        {"LEDGER": Path("docs/ledger.md")},
+        {"SLICE_PAIRS": ("p2_baseline", "p2_res320")},
+        {"SLICE_PAIRS": [["p2_baseline", "p2_res320"]]},
+        {"SLICE_PAIRS": [("p2_baseline",)]},
+        {"SLICE_PAIRS": [("p2_baseline", "p2_baseline")]},
+        {"SLICE_PAIRS": [("p2_baseline", 0)]},
+    ):
+        with pytest.raises(ValueError, match="must be"):
+            _run(["check"], {**names, **bad})
+
+
+def test_the_ledger_parameter_picks_the_ledger_the_checkpoints_are_matched_to(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """With `LEDGER = "docs/ledger-phase2.md"` the attached files are matched by SHA-256 to that
+    ledger's rows; phase 1's ledger is not read. A phase-2 ledger holding phase-1 rows, or phase
+    1's holding phase-2 rows, fails its check before anything is matched."""
+    names = _phase2_names(tmp_path / "p2")
+    checkpoints = _run(["checkpoints"], names)["checkpoints"]
+    assert isinstance(checkpoints, dict) and list(checkpoints) == list(P2_RUN_IDS)
+    assert "5 .pt files, 5 distinct, match the 5 ledger rows" in capsys.readouterr().out
+
+    phase1 = {**names, "LEDGER": "docs/ledger.md", "LEDGER_PATH": tmp_path / "none" / "ledger.md"}
+    message = _refused(phase1, RuntimeError, capsys)
+    assert (
+        "docs/ledger.md at commit" in message and "fails its check (1 problems, 0 rows)" in message
+    )
+
+    swapped = _light_names(tmp_path / "p1", RUN_IDS)  # phase 1's rows, under the phase-2 name
+    phase1_ledger = swapped["LEDGER_PATH"]
+    assert isinstance(phase1_ledger, Path)
+    clone = swapped["CLONE"]
+    assert isinstance(clone, Path)
+    shutil.copy(phase1_ledger, clone / P2_LEDGER)
+    swapped.update(LEDGER=P2_LEDGER, LEDGER_PATH=clone / P2_LEDGER)
+    message = _refused(swapped, RuntimeError, capsys)
+    assert f"{P2_LEDGER} at commit" in message and "fails its check" in message
+
+    pasted = _phase2_names(tmp_path / "pasted")  # phase 2's rows, under docs/ledger.md
+    clone = pasted["CLONE"]
+    assert isinstance(clone, Path)
+    shutil.copy(clone / P2_LEDGER, clone / "docs" / "ledger.md")
+    pasted.update(LEDGER="docs/ledger.md", LEDGER_PATH=clone / "docs" / "ledger.md")
+    message = _refused(pasted, RuntimeError, capsys)
+    assert "docs/ledger.md at commit" in message and "fails its check" in message
+
+
+def test_phase2_slices_pair_each_config_with_p2_baseline_at_the_same_seed(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`SLICE_PAIRS = None` in phase 2: every other config beside `p2_baseline`, once per run
+    seed both have, `p2_baseline` first. The evaluation and slices calls, parsed by their own
+    command lines, ask for val and trans_val only and name each run's config."""
+    names = _phase2_names(tmp_path)
+    names = _run(["checkpoints"], names)
+    base0, head0, res0, base1, res1 = P2_RUN_IDS
+    assert names["slice_runs"] == {
+        "slices-p2_baseline-p2_head3-seed0": [base0, head0],
+        "slices-p2_baseline-p2_res320-seed0": [base0, res0],
+        "slices-p2_baseline-p2_res320-seed1": [base1, res1],
+    }
+    assert names["pairs"] == {}  # phase 1's arm pairing is not used
+    assert "slices of 3 pairs, same run seed: slices-p2_baseline-p2_head3-seed0" in (
+        capsys.readouterr().out
+    )
+
+    calls, recorders = _recorders()
+    names.update(recorders, DATA_ROOT=Path("/unpacked/cct20_512"))
+    _run(["evaluate", "slices"], names)
+    parsers = {"evaluate": evaluate, "attention": attention, "slices": slices}
+    parsed = {
+        name: [parsers[name].build_parser().parse_args(argv) for argv in argvs]
+        for name, argvs in calls.items()
+    }
+    for runs in parsed.values():
+        for args in runs:
+            assert args.split == list(CLI_SPLITS)
+    assert [a.config_name for a in parsed["evaluate"]] == [name for name, _ in P2_RUNS]
+    assert [a.config_name for a in parsed["attention"]] == [name for name, _ in P2_RUNS]
+    files = names["checkpoints"]
+    assert isinstance(files, dict)
+    eval_dir = names["EVAL_DIR"]
+    assert isinstance(eval_dir, Path)
+    assert [a.out for a in parsed["slices"]] == [
+        eval_dir / folder
+        for folder in (
+            "slices-p2_baseline-p2_head3-seed0",
+            "slices-p2_baseline-p2_res320-seed0",
+            "slices-p2_baseline-p2_res320-seed1",
+        )
+    ]
+    assert [a.checkpoint for a in parsed["slices"]] == [
+        [["p2_baseline", str(files[base0])], ["p2_head3", str(files[head0])]],
+        [["p2_baseline", str(files[base0])], ["p2_res320", str(files[res0])]],
+        [["p2_baseline", str(files[base1])], ["p2_res320", str(files[res1])]],
+    ]
+
+
+def test_named_slice_pairs_replace_the_default_in_either_phase(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The pairs named, in their order, at every run seed both configs have; `[]` slices
+    nothing. In phase 1 a named pair replaces arm A beside arm B."""
+    names = _phase2_names(tmp_path / "p2")
+    names["SLICE_PAIRS"] = [("p2_res320", "p2_head3")]
+    _, head0, res0, _, _ = P2_RUN_IDS
+    found = _run(["checkpoints"], names)["slice_runs"]
+    assert found == {"slices-p2_res320-p2_head3-seed0": [res0, head0]}
+    names["SLICE_PAIRS"] = []
+    assert _run(["checkpoints"], names)["slice_runs"] == {}
+    assert "slices of 0 pairs, same run seed: none" in capsys.readouterr().out
+
+    light = _light_names(tmp_path / "p1", RUN_IDS)
+    light["SLICE_PAIRS"] = [("resnet18_arm_b", "resnet18_arm_a")]
+    names = _run(["checkpoints"], light)
+    assert names["slice_runs"] == {
+        "slices-resnet18_arm_b-resnet18_arm_a-seed0": [RUN_IDS[2], RUN_IDS[1]],
+        "slices-resnet18_arm_b-resnet18_arm_a-seed1": [RUN_IDS[4], RUN_IDS[3]],
+    }
+    assert names["pairs"] == {}
+
+
+def test_phase1_s_default_slices_are_unchanged(light: dict[str, object]) -> None:
+    """`SLICE_PAIRS = None` with `docs/ledger.md`: arm A beside arm B per run seed, in folders
+    `slices-seed<n>`, as before item 13.05."""
+    names = _run(["checkpoints"], light)
+    assert names["slice_runs"] == {
+        "slices-seed0": [RUN_IDS[1], RUN_IDS[2]],
+        "slices-seed1": [RUN_IDS[3], RUN_IDS[4]],
+    }
+
+
+@pytest.mark.parametrize(
+    ("runs", "pairs", "error", "message"),
+    [
+        (P2_RUN_IDS, [("p2_baseline", "p2_r50")], ValueError, "p2_r50 has no row in"),
+        (P2_RUN_IDS[1:3], None, ValueError, "p2_baseline has no row in"),
+        (
+            (P2_RUN_IDS[0], P2_RUN_IDS[1], P2_RUN_IDS[4]),
+            [("p2_head3", "p2_res320")],
+            RuntimeError,
+            "p2_head3 and p2_res320 share no run seed in docs/ledger-phase2.md",
+        ),
+    ],
+    ids=["named-config-absent", "no-baseline-row", "named-pair-shares-no-seed"],
+)
+def test_a_pair_that_cannot_be_sliced_is_refused(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    runs: Sequence[str],
+    pairs: list[tuple[str, str]] | None,
+    error: type[Exception],
+    message: str,
+) -> None:
+    by_id = dict(zip(P2_RUN_IDS, P2_RUNS, strict=True))
+    names = _phase2_names(tmp_path, {run_id: by_id[run_id] for run_id in runs})
+    names["SLICE_PAIRS"] = pairs
+    assert message in _refused(names, error, capsys)
+
+
+def test_a_default_pair_without_a_shared_seed_is_skipped_and_said(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    by_id = dict(zip(P2_RUN_IDS, P2_RUNS, strict=True))
+    runs = {run_id: by_id[run_id] for run_id in (P2_RUN_IDS[0], P2_RUN_IDS[1], P2_RUN_IDS[4])}
+    names = _run(["checkpoints"], _phase2_names(tmp_path, runs))
+    assert names["slice_runs"] == {
+        "slices-p2_baseline-p2_head3-seed0": [P2_RUN_IDS[0], P2_RUN_IDS[1]]
+    }
+    assert "p2_res320 shares no run seed with p2_baseline: not sliced" in capsys.readouterr().out
+
+
+def test_two_runs_of_one_config_and_seed_are_refused_for_the_slices(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A re-run (`docs/phase2-plan.md` section 4: a `p2_baseline` seed re-run at a later commit)
+    leaves two rows of one config and seed; the slices take one run per config and seed, so the
+    pair is refused, naming both, before anything is evaluated."""
+    again = "p2_baseline-seed0-20261020T000000Z"
+    runs = {**dict(zip(P2_RUN_IDS, P2_RUNS, strict=True)), again: ("p2_baseline", 0)}
+    names = _phase2_names(tmp_path, runs)
+    message = _refused(names, RuntimeError, capsys)
+    assert f"runs {P2_RUN_IDS[0]}, {again} are all p2_baseline of run seed 0" in message
+    names["SLICE_PAIRS"] = [("p2_head3", "p2_res320")]  # a pair without p2_baseline still runs
+    assert list(_run(["checkpoints"], names)["slice_runs"]) == ["slices-p2_head3-p2_res320-seed0"]
+
+
+def test_a_named_pair_with_the_small_cnn_is_refused(
+    light: dict[str, object], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Section 7: the small CNN's 25,088 features per image never reach the slices."""
+    light["SLICE_PAIRS"] = [("small_cnn", "resnet18_arm_a")]
+    assert "holds the small CNN" in _refused(light, ValueError, capsys)
+
+
+def _clone_cell_names(root: Path, slices_text: str, ledger: str) -> dict[str, object]:
+    """The clone cell's namespace over a fake clone at COMMIT: the modules the cell asks for,
+    this checkout's but `trailcam/evaluate/slices.py`, which holds `slices_text`."""
+    names = _run(["parameters"], {})
+    names = {key: _rebase(value, root) for key, value in names.items()}
+    clone = names["CLONE"]
+    assert isinstance(clone, Path)
+    for module in ("data/cache.py", "evaluate/evaluate.py", "evaluate/attention.py"):
+        (clone / "trailcam" / module).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(ROOT / "trailcam" / module, clone / "trailcam" / module)
+    (clone / "trailcam" / "demo").mkdir(parents=True, exist_ok=True)
+    shutil.copy(ROOT / "trailcam/demo/predict.py", clone / "trailcam/demo/predict.py")
+    (clone / "trailcam/evaluate/slices.py").write_text(slices_text, encoding="utf-8")
+    names["LEDGER"] = ledger
+    return names
+
+
+def test_a_phase2_ledger_needs_a_commit_with_item_13_05_s_evaluation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Run as written with git replaced: with `LEDGER = "docs/ledger-phase2.md"` the clone cell
+    refuses a COMMIT whose `slices.py` predates item 13.05 (no per-config labels, so no eval at
+    each config's input size either), before the install; phase 1 still takes it. The default
+    COMMIT, phase 1's, is such a commit."""
+    commit = str(_parameters(TREES["parameters"])["COMMIT"])
+
+    def git(argv: list[str], **kwargs: object) -> SimpleNamespace:
+        return SimpleNamespace(stdout=f"{commit}\n" if "rev-parse" in argv else "")
+
+    monkeypatch.setattr(subprocess, "run", git)
+    current = (ROOT / "trailcam/evaluate/slices.py").read_text(encoding="utf-8")
+    assert "def model_label(" in current
+    older = current.replace("def model_label(", "def other_label(")
+    _run(["clone"], _clone_cell_names(tmp_path / "a", older, "docs/ledger.md"))
+    with pytest.raises(RuntimeError, match="lacks trailcam/evaluate/slices.py"):
+        _run(["clone"], _clone_cell_names(tmp_path / "b", older, P2_LEDGER))
+    _run(["clone"], _clone_cell_names(tmp_path / "c", current, P2_LEDGER))
+    assert capsys.readouterr().out.count(f"commit {commit}") == 2
+
+    monkeypatch.undo()
+    shown = subprocess.run(
+        ["git", "-C", str(ROOT), "show", f"{commit}:trailcam/evaluate/slices.py"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert "def model_label(" not in shown.stdout
+
+
+@pytest.fixture(scope="module")
+def evaluated_p2(tmp_path_factory: pytest.TempPathFactory) -> SimpleNamespace:
+    """As `evaluated`, for phase 2: `LEDGER = "docs/ledger-phase2.md"`, three random-weight
+    checkpoints saved as train.py saves them since item 13.02 (with their input size):
+    `p2_baseline` and `p2_head3` at 224 and `p2_res320` at 320, run seed 0, and the notebook's
+    cells from the checkpoint check to the zip run on the cache-shaped fixture. The side of every
+    batch a loaded model is given is recorded."""
+    root = tmp_path_factory.mktemp("kaggle-p2")
+    names = _kaggle_names(root)
+    clone = names["CLONE"]
+    config_file = names["CONFIG_FILE"]
+    assert isinstance(clone, Path) and isinstance(config_file, Path)
+    names.update(LEDGER=P2_LEDGER, LEDGER_PATH=clone / P2_LEDGER)
+    _write_config(config_file)
+
+    built = root / "built" / CACHE_TOP
+    fixture = synthetic.write_synthetic_fixture(root / "fixture")
+    built.mkdir(parents=True)
+    fixture.image_root.rename(built / CACHE_IMAGES)
+    Path(fixture.paths["sidecar"]).rename(built / DAY_NIGHT_SIDECAR)
+    (root / "fixture").rename(built / CACHE_ANNOTATIONS)
+    meta = load_metadata(built / CACHE_ANNOTATIONS, built / DAY_NIGHT_SIDECAR)
+    split_hash = make_split(meta, 42).hash
+    archive = names["CACHE_ARCHIVE"]
+    assert isinstance(archive, Path)
+    archive.parent.mkdir(parents=True)
+    with tarfile.open(archive, "w") as tar:
+        tar.add(built, arcname=CACHE_TOP)
+    shutil.rmtree(root / "built")
+
+    runs = {run_id: P2_RUNS[n] for n, run_id in enumerate(P2_RUN_IDS[:3])}
+    checkpoints_root = names["CHECKPOINTS_ROOT"]
+    assert isinstance(checkpoints_root, Path)
+    checkpoints_root.mkdir(parents=True)
+    files = {}
+    for n, (run_id, (name, _)) in enumerate(runs.items()):
+        torch.manual_seed(n)
+        config = load_config(name, config_file)
+        state = build_model(config.model, pretrained=False).state_dict()
+        saved = {"model": config.model, "classes": list(CLASSES), "state_dict": state}
+        saved["input_size"] = config.input_size
+        files[run_id] = checkpoints_root / f"{run_id}.pt"
+        torch.save(saved, files[run_id])
+    _write_ledger(names, files, split_hash, runs=runs)
+
+    sides: list[tuple[int, int]] = []
+    real = attention.build_model
+
+    def spy(name: str, **kwargs: bool) -> torch.nn.Module:
+        model = real(name, **kwargs)
+        model.register_forward_pre_hook(
+            lambda _m, inputs: sides.append(tuple(inputs[0].shape[-2:]))
+        )
+        return model
+
+    out, err = io.StringIO(), io.StringIO()
+    with pytest.MonkeyPatch.context() as patch, redirect_stdout(out), redirect_stderr(err):
+        patch.setattr(attention, "build_model", spy)
+        _run(["checkpoints", "unpack", "cache", "evaluate", "slices", "zip", "summary"], names)
+    return SimpleNamespace(names=names, out=out.getvalue(), err=err.getvalue(), sides=sides)
+
+
+def test_a_phase2_ledger_is_evaluated_each_run_at_its_input_size(
+    evaluated_p2: SimpleNamespace,
+) -> None:
+    """Every phase-2 run gets its metrics, figures and attention outputs; `p2_res320`'s tables
+    say 320 px and its batches are 320 x 320, the others' 224; each variant is sliced beside
+    `p2_baseline`, labelled by config; the summary compares every run with its phase-2 row; no
+    table scores a test split."""
+    eval_dir = evaluated_p2.names["EVAL_DIR"]
+    assert isinstance(eval_dir, Path)
+    base, head, res = P2_RUN_IDS[:3]
+    for run_id in (base, head, res):
+        found = sorted(p.name for p in (eval_dir / run_id).iterdir())
+        expected = ["attention.md", attention.HISTOGRAM_NAME, evaluate.METRICS_NAME]
+        expected += [f"{s}_{f}.png" for s in CLI_SPLITS for f in evaluate.FIGURES]
+        assert found == sorted(expected), run_id
+        assert set(_metrics_rows(eval_dir / run_id / evaluate.METRICS_NAME)) == set(CLI_SPLITS)
+    for run_id, size in ((base, ""), (head, ""), (res, ", input size 320 px")):
+        name = run_id.split("-seed")[0]
+        for table in (evaluate.METRICS_NAME, attention.TABLE_NAME):
+            text = (eval_dir / run_id / table).read_text(encoding="utf-8")
+            assert f"config {name}{size}, checkpoint sha256" in text, (run_id, table)
+    assert "whole 320 x 320 input" in (eval_dir / res / attention.TABLE_NAME).read_text()
+    assert set(evaluated_p2.sides) == {(224, 224), (320, 320)}
+    folders = sorted(p.name for p in eval_dir.iterdir())
+    pairs = ["slices-p2_baseline-p2_head3-seed0", "slices-p2_baseline-p2_res320-seed0"]
+    assert folders == sorted([base, head, res, *pairs])
+    for folder, other in zip(pairs, ("p2_head3", "p2_res320"), strict=True):
+        table = (eval_dir / folder / slices.TABLE_NAME).read_text(encoding="utf-8")
+        assert "## p2_baseline" in table and f"## {other}" in table
+    assert "- p2_res320, input size 320 px: checkpoint sha256" in (
+        eval_dir / pairs[1] / slices.TABLE_NAME
+    ).read_text(encoding="utf-8")
+    assert evaluated_p2.out.count("python -m trailcam.evaluate.slices ") == 2
+    assert "CHECK: 6 of 6 splits differ from the ledger by more than 0.01" in evaluated_p2.err
+    for table in eval_dir.rglob("*.md"):  # R17: no table scores a test split
+        text = table.read_text(encoding="utf-8")
+        assert "cis_test" not in text and "trans_test" not in text, table.name

@@ -26,9 +26,11 @@ of milliseconds on the CPU (to be measured at 11.03), so the CPU is not the bloc
 the CPU's after the Space moves to ZeroGPU, so the model also runs on the free fallback and on a
 laptop.
 
-Baseline: phase 1's `resnet18_arm_a`, run seeds 0, 1 and 2 (section 2), re-run unchanged at the
-phase-2 commit as `p2_baseline` (section 3). Phase 2 measures "trans" on trans_val (section 4,
-the honesty note); its one test scoring, of the frozen final recipe only, is declared in section 4.
+Baseline: phase 1's `resnet18_arm_a`, run seeds 0, 1 and 2 (section 2). Seed 0 re-ran unchanged at
+the phase-2 commit as `p2_baseline` and reproduced phase 1's run bit for bit, so seeds 1 and 2 are
+phase 1's own runs, not re-run (section 3, open question 8). Phase 2 measures "trans" on trans_val
+(section 4, the honesty note); its one test scoring, of the frozen final recipe only, is declared in
+section 4.
 
 ## 2. Phase-1 results so far, and the noise they show
 
@@ -78,9 +80,11 @@ boundary at camera 125 and nothing more.
 
 ## 3. How a change is judged: screen, confirm, keep
 
-Every comparison is paired by run seed: the change's seed k against the baseline's seed k at
-the same commit, on phase 1's split (split seed 42, split hash `c78a9c10…`). The baseline is
-`p2_baseline`, which is `resnet18_arm_a` exactly (same fields, same config hash).
+Every comparison is paired by run seed: the change's seed k against the baseline's seed k, on phase
+1's split (split seed 42, split hash `c78a9c10…`). The baseline is `p2_baseline`, which is
+`resnet18_arm_a` exactly (same fields, same config hash). Its seed 0 ran at the phase-2 commit; its
+seeds 1 and 2 are phase 1's arm A seeds 1 and 2, paired across commits (section 4's exception, open
+question 8).
 
 **The control re-run.** The code has moved since phase 1's training commit `61f1ecc` (item
 13.02's progress-log entry lists the training-path files changed). So `p2_baseline` seed 0 runs
@@ -106,10 +110,11 @@ winner's own confirm shows that).
   baseline's seed 0). Otherwise the step stops: its row stays in the phase-2 ledger, marked
   screened out in the progress log, and the baseline is unchanged. (Open questions 1 and 2 ask
   whether these two conditions should change.)
-- **Confirm** on run seeds 1 and 2 (seed 0 is the screen's run), so three seeds in all, with
-  `p2_baseline`'s seeds 1 and 2 run at the same commit (open question 8). This week every step
-  confirms on three seeds (section 8); the five seeds below are not in the timeline, so a gain
-  under about 4 points is reported as not confirmed rather than claimed (see "Resolvability").
+- **Confirm** on run seeds 1 and 2 (seed 0 is the screen's run), so three seeds in all, paired with
+  phase 1's arm A seeds 1 and 2 as the baseline's (open question 8, answered: `p2_baseline` seed 0
+  reproduced arm A seed 0 bit for bit, so its seeds 1 and 2 are not re-run). This week every step
+  confirms on three seeds (section 8); the five seeds below are not in the timeline, so a gain under
+  about 4 points is reported as not confirmed rather than claimed (see "Resolvability").
 - **Keep** a change only if all three hold:
   1. the mean trans_val macro-F1 over the confirm's seeds rises by more than the noise, 0.03;
   2. it rises on every seed, paired with the baseline's same seed;
@@ -124,14 +129,18 @@ winner's own confirm shows that).
   recall and trans_val's per-class table beside them as context, so a gain that is all bobcat at
   camera 125 shows as one. That context selects nothing: the rule stays on val macro-F1 and
   trans_val macro-F1, and no selection metric is added. The per-class table and bobcat recall
-  come from `trailcam/evaluate/evaluate.py` on val and trans_val; its notebook (8.08) reads
-  `docs/ledger.md` only, and the evaluation tools run at 224 px only, so for phase-2 checkpoints
-  (and `p2_res320` in particular) that context needs a small follow-up item; until it exists it is
-  reported where it can be.
+  come from `trailcam/evaluate/evaluate.py` on val and trans_val. Item 13.05 runs it on phase-2
+  checkpoints: the evaluation notebook (8.08) takes `LEDGER = "docs/ledger-phase2.md"` and
+  matches the attached checkpoints to that ledger's rows by SHA-256, and the three evaluation
+  tools score each checkpoint at its config's input size (`p2_res320` at 320). Its slices put
+  each variant beside `p2_baseline` at the same run seed by default. trans_val is reported per
+  class because it is one camera: a macro-F1 change there can be one class at camera 125, and the
+  per-class rows show which.
 
 **Kept changes stack.** The kept changes are combined into one recipe (a config with several
 changes, so `tests/test_config.py`'s one-change rule needs a named exception for it) and run on
-seeds 0, 1 and 2; the stack is kept by the same rule against `p2_baseline`. If it fails, the final
+seeds 0, 1 and 2; the stack is kept by the same rule against the baseline (`p2_baseline` seed 0,
+phase 1's arm A seeds 1 and 2). If it fails, the final
 recipe is chosen on 10-22 among the single kept changes and `p2_baseline`, by the same rule. If a
 kept recipe's spread is clearly wider than the bands above, the bands are re-measured from it and
 the progress log says so. The goal's val limit is cumulative: the stacked recipe stays within
@@ -158,7 +167,11 @@ only a rough estimate.
   is the notebook's `COMMIT` for every run of the batch, `p2_baseline`'s included, and the batch's
   progress-log entry quotes it. A variant run at a later commit than its `p2_baseline` seed is
   paired with it only if no training-path file changed between the two commits (the diff 13.02's
-  log takes from `61f1ecc`); otherwise that `p2_baseline` seed re-runs at the later commit.
+  log takes from `61f1ecc`); otherwise that `p2_baseline` seed re-runs at the later commit. One
+  exception (open question 8, the user's decision of 2026-10-18): the baseline's seeds 1 and 2 are
+  phase 1's arm A seeds 1 and 2 at `61f1ecc`, paired across commits although training-path files
+  changed since, because `p2_baseline` seed 0 at the phase-2 commit reproduced arm A seed 0 bit for
+  bit. So the confirm and the stack re-run no baseline seed; the rule holds as written for seed 0.
 - **Each run is a row in `docs/ledger-phase2.md`** (built in 13.02), with the header and columns
   of `docs/ledger.md`, and never in `docs/ledger.md`. The final scoring
   (`trailcam/evaluate/score_test.py`) relies on `docs/ledger.md` holding exactly the
@@ -186,10 +199,12 @@ only a rough estimate.
   `p2_res320` trains on 320 px crops and is evaluated with the shorter side resized to 366 and a
   320 px centre crop, everything else identical. The 256 and 224 of CLAUDE.md, `.claude/rules/`
   and R20 stay true for every phase-1 config, the demo and the Space (the user approved this
-  plan, 2026-10-17). The evaluation tools, the demo and the Space run at 224 only, and
-  `load_checkpoint` (`trailcam/evaluate/attention.py`), which they all use, refuses a config of
-  another input size, so a 320 px model's val and trans_val scores are `train.py`'s, and its test
-  scoring needs 13.06's mode. The checkpoint carries its input size too (review 13.02, the
+  plan, 2026-10-17). The three evaluation tools (`evaluate.py`, `attention.py` and `slices.py`)
+  build their eval transform at the config's input size since item 13.05, so a 320 px model is
+  evaluated at 320 on val and trans_val, Grad-CAM and the attention frame included. The final
+  scoring, the demo and the Space run at 224 only, and `load_checkpoint`
+  (`trailcam/evaluate/attention.py`), which they all use, refuses there a config of another
+  input size, so a 320 px model's test scoring needs 13.06's mode. The checkpoint carries its input size too (review 13.02, the
   user's decision): `train.py` saves `input_size` beside the model, the class list and the
   weights, and `load_checkpoint` refuses a checkpoint whose size is not the config's, so a
   `p2_res320` checkpoint loaded under a 224 config (`resnet18_arm_a` on a command line, or the
@@ -402,9 +417,9 @@ at 366 (round(320 x 256/224), the same margin as now; the 512 px cache's shorter
 (hash-neutral at 224, section 4), taken by the training transform of both arms and the eval
 transform through `train.py` and `make_loaders`. The checkpoint records its input size, and
 `load_checkpoint` refuses a checkpoint of another size than its config's (section 4). The
-evaluation tools, the demo and the Space stay at 224 and refuse a config of another size, so
-deploying a 320 px model (open question 6) would need the attention frame, Grad-CAM, the demo and
-the Space to take the size (`load_checkpoint`'s `eval_size`). Evidence weak (the
+evaluation tools score it at 320 on val and trans_val since item 13.05. The demo and the Space
+stay at 224 and refuse a config of another size, so deploying a 320 px model (open question 6)
+would need the demo and the Space to take the size (`load_checkpoint`'s `eval_size`). Evidence weak (the
 WILDS baselines' 448 px may be part of their numbers); at 224 px many animals are a few pixels
 wide (`docs/research-report.md`, Part 2). *Hypothesis*: trans_val 0 to +0.03, val +0.5 point,
 about 2x the run time and the CPU latency. Three seeds this week.
@@ -460,11 +475,12 @@ review (13.02's review covers steps 3 to 5).
 
 This week, from the multipliers below and about 12 minutes a ResNet-18 run: the 10-19 screen is
 five runs (`p2_baseline`, `p2_head3`, `p2_res320`, `p2_r50`, `p2_arm_c`), about 90 minutes, plus
-SWA's screen, about 13; the 10-20 confirm is `p2_baseline`'s two seeds and two per winner, from
-about 25 minutes (no winner) to about 3.5 hours (every variant wins); the 10-21 stack is three runs,
-about 40 minutes for a ResNet-18 stack and nearly 3 hours if it holds 320 px and ResNet-50 (about
-55 minutes a run). The worst case, about 8 GPU hours, is above the 5-hour cap of the rule below:
-open question 9.
+SWA's screen, about 13; the 10-20 confirm is two runs per winner, `p2_baseline`'s seeds 1 and 2
+being phase 1's (open question 8), from nothing (no winner) to about 3 hours (every variant wins);
+the 10-21 stack is three runs, about 40 minutes for a ResNet-18 stack and nearly 3 hours if it holds
+320 px and ResNet-50 (about 55 minutes a run). The worst case, about 8 GPU hours as first
+estimated (about 7.5 without the baseline's two confirm runs), is above the 5-hour cap of the rule
+below: open question 9.
 
 Run time, measured in phase 1 and estimated after: a ResNet-18 run at 224 px took about 12
 minutes, start-up included (the gaps between consecutive start times in item 7.03's run ids). The
@@ -505,7 +521,8 @@ Phase 2 runs this week, before the presentation on 2026-10-26, not after (the us
 
 Screening independent one-change variants in parallel against the same baseline, then stacking
 the winners, keeps one change per comparison: every screen and every confirm compares a variant
-with `p2_baseline` and nothing else, and only the stack combines changes, once, after each has
+with the baseline (`p2_baseline`, its seeds 1 and 2 phase 1's arm A runs) and nothing else, and
+only the stack combines changes, once, after each has
 been confirmed alone (section 3).
 
 Phase 1's own items are unchanged and run beside it: the evaluation on val and trans_val (8.06),
@@ -550,6 +567,37 @@ a config leaves it out, so the phase-1 hashes hold. `p2_arm_c` sets it and so ha
 rows carry a config hash of their own and are paired with `p2_baseline`'s by config and run seed,
 not by hash (the user's decision on 13.04). Item 13.08 adds `p2_arm_c_p25` (`paste_p: 0.25`),
 hashed the same way, so its config hash (`42d47bfd…`) is neither `p2_arm_c`'s nor arm A's.
+
+Item 13.05 (evaluation code and the notebook) gives the screens and confirms their per-class
+context on val and trans_val, never a test split:
+
+- `evaluate.py`, `attention.py` and `slices.py` take the eval size from the config's
+  `input_size` and pass it to `load_checkpoint` as `eval_size`. So a checkpoint is scored, its
+  Grad-CAM drawn and its boxes mapped at the size it was trained at, and one of another size than
+  its config's is refused. Phase-1 configs are all 224, and their outputs are byte for byte those
+  of before. The final scoring, the demo and the Space keep the 224 defaults.
+- `slices.py` labels a phase-2 checkpoint by its config name, so `p2_baseline` and a variant of
+  the same model and arm can be compared, and refuses a phase-1 and a phase-2 checkpoint in one
+  run.
+- `notebooks/kaggle_evaluate.ipynb`: `LEDGER` (`docs/ledger.md` by default, or
+  `docs/ledger-phase2.md`), the SHA-256 check against that ledger's rows, and `SLICE_PAIRS`: by
+  default arm A beside arm B per seed in phase 1, and each config beside `p2_baseline` at the
+  same run seed in phase 2.
+
+Known limitations of 13.05 (review 13.05, the user's decision of 2026-10-18 to defer them):
+
+- **A re-run baseline seed.** If a `p2_baseline` seed is re-run at a later commit (section 4),
+  the phase-2 ledger holds two rows of one config and seed. The slices take one run per config
+  and seed, and `SLICE_PAIRS` names configs, not run ids. So with the default pairs the notebook
+  stops in section 4, in seconds, naming both runs. Set `SLICE_PAIRS` to pairs without
+  `p2_baseline`, or to `[]`; evaluate and attention are unaffected. A variant cannot then be
+  sliced beside the same-commit re-run. No re-run is planned (open question 8), so this was
+  deferred.
+- **Seeds 1 and 2 of a confirm.** With open question 8's answer, the baseline's seeds 1 and 2
+  are phase 1's arm A rows in `docs/ledger.md`. The notebook reads one ledger, and `slices.py`
+  refuses a phase-1 and a phase-2 checkpoint in one run. So the default phase-2 slices pair a
+  variant with `p2_baseline` at seed 0 only. A variant's seeds 1 and 2 still get their metrics
+  and attention tables; arm A's seeds 1 and 2 have phase 1's (item 8.06).
 
 ## 10. Beyond the ladder (future work, for the slides' closing)
 
@@ -598,7 +646,9 @@ hashed the same way, so its config hash (`42d47bfd…`) is neither `p2_arm_c`'s 
 8. **`p2_baseline`'s seeds 1 and 2.** As written (section 3), they run on 10-20 at the confirm's
    commit, so every pair is within one commit (two runs, about 25 minutes). The cheaper option:
    pair the confirms with phase 1's arm A seeds 1 and 2 if `p2_baseline` seed 0 passes the control
-   check. Recommended: run them. The user's decision.
+   check. Recommended: run them. The user's decision. **Answered (the user, 2026-10-18, through
+   the coordinator): not re-run.** `p2_baseline` seed 0 reproduced phase 1's arm A seed 0 bit for
+   bit, so phase 1's arm A seeds 1 and 2 serve as the baseline's seeds 1 and 2.
 9. **This week's GPU cap.** The worst case of section 7 is about 8 GPU hours against the 5-hour cap
    of the stopping rule; the quota (30 a week) allows it. Raise the cap for this week, or confirm
    the cheapest winners first and drop what does not fit? The user's decision.
