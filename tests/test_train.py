@@ -337,6 +337,7 @@ def test_the_score_alarms(val: float, trans: float, fired: int) -> None:
         ("resnet18_arm_b", BoxCropSampler, 224),
         ("p2_res320", ControlCropSampler, 320),
         ("p2_arm_c", ControlCropSampler, 224),
+        ("p2_arm_c_p25", ControlCropSampler, 224),
     ],
 )
 def test_the_config_arm_builds_its_crop_sampler(
@@ -366,7 +367,7 @@ def test_the_config_arm_builds_its_crop_sampler(
     assert seen["train_transform"].size == seen["eval_transform"].size == size
     assert isinstance(seen["eval_transform"], EvalTransform)
     paste = seen["train_transform"].paste
-    if name == "p2_arm_c":
+    if load_config(name).arm == "C":
         assert isinstance(paste, CopyPaste) and paste.p == load_config(name).paste_p
         assert paste.pool == background_pool(meta, split) and paste.image_root == root
         assert paste.pool.summary() in lines
@@ -572,6 +573,7 @@ PHASE_MIXUPS = [
     ("p2_head3", "ledger.md"),
     ("p2_baseline", "other.md"),
     ("p2_arm_c", "ledger.md"),
+    ("p2_arm_c_p25", "ledger.md"),
     ("resnet18_arm_a", "ledger-phase2.md"),
 ]
 
@@ -662,8 +664,12 @@ def test_arm_c_trains_into_the_phase2_ledger_only_and_its_checkpoint_carries_the
     )
     monkeypatch.setattr(train, "fit", lambda *a, **k: fake_fit)
     monkeypatch.setattr(train, "evaluate", lambda *a, **k: Scores(1.0, 0.2, 0.1))
+    # The phase-2 ledger's text and header without its rows: those carry the real split's hash,
+    # and the synthetic split's row would disagree with them (item 13.08 added the first rows).
+    lines = PHASE2_LEDGER_PATH.read_text().splitlines()
+    empty = lines[: lines.index(ledger_header().splitlines()[0]) + 2]
     ledger = tmp_path / "ledger-phase2.md"
-    ledger.write_text(PHASE2_LEDGER_PATH.read_text())
+    ledger.write_text("\n".join(empty) + "\n")
     assert train.main([*argv, f"--ledger={ledger}"]) == 0
 
     config = load_config("p2_arm_c")
@@ -671,7 +677,7 @@ def test_arm_c_trains_into_the_phase2_ledger_only_and_its_checkpoint_carries_the
     assert background_pool(meta, split).summary() in stdout
     rows, problems = check_ledger(ledger)
     assert problems == []
-    added = ledger.read_text().splitlines()[len(PHASE2_LEDGER_PATH.read_text().splitlines()) :]
+    added = ledger.read_text().splitlines()[len(empty) :]
     assert len(added) == 1 and rows[-1].line == len(ledger.read_text().splitlines())
     assert (rows[-1]["config"], rows[-1]["arm"], rows[-1]["model"]) == ("p2_arm_c", "C", "resnet18")
     assert rows[-1]["config hash"] == config_hash(config)
