@@ -310,6 +310,37 @@ methods. Mixed outcomes are reported as mixed. A negative result is a result.
   `docs/test-ledger.md` holds any row, and the user commits the rows to `main` right after the
   run (user's decision, review 9.03). Between the run and that commit, only `APPROVED_BY`, set
   back to empty, guards against a second scoring.
+- **Val results (item 8.06, 2026-10-17)**: `notebooks/kaggle_evaluate.ipynb` at commit `dc19821`,
+  every checkpoint of `docs/ledger.md` on val and trans_val, scored in float32. All 14 scores
+  are within 0.01 of the ledger's (training scored in mixed precision). trans_val is reported,
+  never selected on (R17). It is one camera (location 125, 1,603 images, bobcat 734 of them,
+  squirrel, car and rodent absent), so its spread across seeds is mostly that camera's bobcat
+  recall (0.19 to 0.40, mostly predicted as cat).
+
+  | run | val accuracy | val macro-F1 | trans_val accuracy | trans_val macro-F1 |
+  | --- | --- | --- | --- | --- |
+  | small CNN, seed 0 | 0.6625 | 0.6216 | 0.1965 | 0.0775 |
+  | ResNet-18 arm A, seed 0 | 0.8647 | 0.8542 | 0.3718 | 0.2905 |
+  | ResNet-18 arm A, seed 1 | 0.8659 | 0.8559 | 0.3525 | 0.3187 |
+  | ResNet-18 arm A, seed 2 | 0.8676 | 0.8569 | 0.4099 | 0.3200 |
+  | ResNet-18 arm B, seed 0 | 0.8530 | 0.8427 | 0.3394 | 0.2594 |
+  | ResNet-18 arm B, seed 1 | 0.8500 | 0.8376 | 0.2920 | 0.3019 |
+  | ResNet-18 arm B, seed 2 | 0.8576 | 0.8481 | 0.3699 | 0.3472 |
+  | arm A, mean of 3 seeds | 0.8661 | 0.8557 | 0.3781 | 0.3097 |
+  | arm B, mean of 3 seeds | 0.8535 | 0.8428 | 0.3338 | 0.3028 |
+
+  - Attention-in-box on val (an even map scores 0.113): arm A 0.189, 0.193, 0.194; arm B 0.201,
+    0.202, 0.202, so B is higher on all three seeds. On trans_val it is mixed (A 0.107 to 0.120,
+    B 0.110 to 0.117). The small CNN is at chance (0.108).
+  - Animal-removed test, val, every box blanked: ResNet-18 accuracy falls from about 0.90 to
+    0.50 to 0.61 (chance 0.083), so a large share of correct predictions survives without the
+    animal, which is evidence of background reliance.
+  - The day/night mix does not explain the cis-trans gap: re-weighting trans_val to the cis night
+    share changes the gap by under 0.01.
+  - Figures in `docs/figures/`: `val_confusion_matrix_*`, `val_per_class_*` and
+    `attention_val_*` (small CNN, arm A and arm B seed 0), `features_by_species_val_seed0.png`
+    and `features_by_camera_val_seed0.png` (val and trans_val features cluster by camera), and
+    `slices_val_seed0.md`. No Grad-CAM overlays yet: `assets/` has no photos until item 8.05.
 
 ## 8. Demo and deployment
 
