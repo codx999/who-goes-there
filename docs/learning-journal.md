@@ -242,6 +242,12 @@ only in the sampler, and the evaluation code never even loads the box sampler:
 uv run pytest -q tests/test_boxcrop.py -k "hold_the_whole_box or differ_only or never_loads"
 ```
 
+**Stating the result (item 12.02).** Arm B won on trans_test on all 3 seeds, by +2.5 accuracy on
+average: say "small but consistent", give the per-seed numbers, and say what did *not* move
+(attention up only about 0.002, background reliance still large), so the claim is no bigger than
+the evidence. trans_val had pointed the other way because it is one camera, mostly bobcats: one
+camera measures that camera, and 9 unseen cameras overturned it. See the README's results section.
+
 ## 6. The models: a small CNN vs ResNet-18
 
 **What we did.** Two models, trained and scored the same way:

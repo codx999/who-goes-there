@@ -4442,6 +4442,36 @@ No fix, so no further round. This commit changes this log only.
 
 **Next.** Ready to merge.
 
+## 2026-10-18: item 12.02, README results section (Opus 5.5)
+
+**Done.** `README.md` gains a Results section, from `docs/test-ledger.md` and `docs/plan.md`
+section 7 (test and val results) only:
+
+- the headline table, copied from plan.md section 7 (small CNN; arm A and arm B means of 3
+  seeds; cis_test and trans_test accuracy and macro-F1; both gaps), with the scoring's approver
+  (codx999) and time (20261018T193117Z);
+- the experiment claim in two sentences, wording approved by the user in this session, and a
+  per-seed trans_test table for arms A and B;
+- four figures from `docs/figures/` by relative link: the arm B trans_test confusion matrix, the
+  per-camera chart, the attention histogram and the features-by-camera map, with the data line;
+- honest notes: trans_val is one camera and pointed the other way; cis_test sits far below val
+  (time shift); the test sets were scored once; the day/night re-weighting;
+- a Demo section with the Space link as a placeholder (11.03 deploys it) and the local commands;
+- a "What's next" line pointing to `docs/phase2-plan.md`; no phase-2 results;
+- the Status section updated, and a link to `docs/data-card.md` in the Dataset section.
+
+Every decimal in the README was checked against the test ledger, the training ledger,
+`headline_test.md` and plan.md section 7 by script; every figure link resolves. The learning
+journal gains 5 lines under topic 5.
+
+**Not flipped.** 12.02 stays `passes: false`: its step needs the Space URL in the README, which
+exists only after 11.03 (the user's decision in this session). Flip it once 11.03 records the URL.
+
+**For the user.** Item 9.02's last step ("pasted into ... README.md") is met once this merges;
+the user can then flip 9.02.
+
+**Review.** Tier 0, docs only (`README.md`, the journal and this log).
+
 ## 2026-10-18: session 13, item 13.05, phase-2 evaluation support (Opus 5.5)
 
 The user approved item 13.05 on 2026-10-17 through the coordinator. It was added to
