@@ -4614,3 +4614,20 @@ Raised by the code-reviewer, for the user:
 
 The fix only adds lines to a test file (a new test, a new constant and a new import line, with no
 line modified or deleted), so by the playbook no fix round is needed.
+
+## 2026-10-18: item 13.08, `p2_res320` confirm seed 1 of 2 (Opus 5.5)
+
+The coordinator relayed the row (seed 1, commit `69dfe93`). It is pasted verbatim into
+`docs/ledger-phase2.md` as `p2_res320-seed1-20261018T221422Z`. The checker exits 0 ("phase-2
+ledger: 4 rows, every check passed"), and the new hash test holds for it.
+
+- **Pairing.** The baseline is phase 1's `resnet18_arm_a` seed 1 in `docs/ledger.md`, not a
+  `p2_baseline` re-run. That is the user's decision on open question 8, as the coordinator
+  relayed it, made because `p2_baseline` seed 0 reproduced phase 1's arm A seed 0 bit for bit.
+  `docs/phase2-plan.md` still lists open question 8 as open; recording the answer there is the
+  user's call.
+- **Result.** Val macro-F1 0.8678 against 0.8559 (+0.0119). Trans_val macro-F1 0.3275 against
+  0.3187 (+0.0088). Trans_val accuracy 0.3568 against 0.3525 (+0.0043).
+- **So far.** Trans_val macro-F1 is up on both seeds (+0.0271 on seed 0, +0.0088 on seed 1), a
+  mean of +0.018 over two seeds against keep condition 1's 0.03. Val is up on both.
+- **Next.** The keep decision waits for seed 2 and the CPU latency check (section 3).
