@@ -111,7 +111,12 @@ def test_parameters() -> None:
     assert isinstance(p["COMMIT"], str) and re.fullmatch(r"[0-9a-f]{40}", p["COMMIT"])
     assert p["REPO_URL"] == PUBLIC_REPO  # the public repo, not a fork (R38)
     assert p["RUN_SEED"] is None  # the config's run seed unless the user overrides it (R27)
-    training = {name for name, c in load_configs().items() if not c.fixture}
+    # Phase 1's training configs: a phase-2 config (`p2_`, item 13.04's p2_arm_c) stays refused
+    # by the check cell until the notebook can write to the phase-2 ledger (item 13.02), so its
+    # row cannot land in docs/ledger.md.
+    configs = load_configs()
+    training = {n for n, c in configs.items() if not c.fixture and not n.startswith("p2_")}
+    assert {n for n in configs if n.startswith("p2_")} == {"p2_arm_c"}
     assert p["CONFIG_NAME"] == "small_cnn" and p["CONFIG_NAME"] in training  # 6.04 first
     assert p["DATA_ROOT"] == KAGGLE_DATA_ROOT
     assert p["CACHE_ARCHIVE"] == KAGGLE_ARCHIVE

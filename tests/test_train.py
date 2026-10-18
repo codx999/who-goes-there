@@ -29,6 +29,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from trailcam.data import synthetic
 from trailcam.data.boxcrop import BoxCropSampler
 from trailcam.data.classes import NUM_CLASSES
+from trailcam.data.copypaste import CopyPaste, background_pool
 from trailcam.data.dataset import CCT20Dataset, ControlCropSampler, EvalTransform
 from trailcam.data.metadata import load_metadata
 from trailcam.data.split import make_split
@@ -328,12 +329,19 @@ def test_the_score_alarms(val: float, trans: float, fired: int) -> None:
 
 @pytest.mark.parametrize(
     ("name", "sampler"),
-    [("resnet18_arm_a", ControlCropSampler), ("resnet18_arm_b", BoxCropSampler)],
+    [
+        ("resnet18_arm_a", ControlCropSampler),
+        ("resnet18_arm_b", BoxCropSampler),
+        ("p2_arm_c", ControlCropSampler),
+    ],
 )
 def test_the_config_arm_builds_its_crop_sampler(
     monkeypatch: pytest.MonkeyPatch, fixture_split: Any, name: str, sampler: type
 ) -> None:
+    """Arm C (item 13.04) also gets its paste step, on the background pool of the run's metadata
+    and split, logged before training."""
     split, root, meta = fixture_split
+    lines: list[str] = []
     seen: dict[str, Any] = {}
 
     class Stop(Exception):
@@ -346,9 +354,17 @@ def test_the_config_arm_builds_its_crop_sampler(
     monkeypatch.setattr(train, "make_loaders", spy)
     monkeypatch.setattr(train, "build_model", lambda *a, **k: nn.Linear(1, 1))
     with pytest.raises(Stop):
-        train.train_run(name, load_config(name), meta, root, Path("unused"), log=lambda _: None)
+        train.train_run(name, load_config(name), meta, root, Path("unused"), log=lines.append)
     assert seen["train_transform"].arm == load_config(name).arm
     assert isinstance(seen["train_transform"].sampler, sampler)
+    paste = seen["train_transform"].paste
+    if name == "p2_arm_c":
+        assert isinstance(paste, CopyPaste) and paste.p == load_config(name).paste_p
+        assert paste.pool == background_pool(meta, split) and paste.image_root == root
+        assert paste.pool.summary() in lines
+    else:
+        assert paste is None
+        assert not [line for line in lines if "background pool" in line]
     assert (seen["num_workers"], seen["pin_memory"]) == (4, True)
 
 

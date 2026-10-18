@@ -15,6 +15,13 @@ loaded config is checked. `config_hash` is the ledger's config hash: a SHA-256 o
 config without `arm` and `run_seed` (`HASH_EXCLUDED`), so the arm A and arm B rows of one seed,
 and the seeds of one arm, share it, and a run whose values differ from the committed file does not.
 
+Phase 2 (docs/phase2-plan.md section 4) adds settings as `PHASE2_FIELDS`: the one exception to
+"nothing is defaulted", each is None when a config leaves it out, and the hash leaves it out while
+it is None. The phase-1 configs name none of them, so their hashes, which `score_test.py` checks
+against `docs/ledger.md`, stay what they were (`tests/test_config.py` pins them against the
+ledger); a phase-2 config that sets one hashes it. `paste_p`, arm C's paste probability (item
+13.04), is set for arm C and only for arm C.
+
 The file sits at the repository root, outside the package. `CONFIG_PATH` finds it from a checkout
 or an editable install; a run from an installed wheel passes its path.
 """
@@ -65,11 +72,14 @@ class Config:
     num_workers: int
     pin_memory: bool
     fixture: bool  # the dry run: train on the synthetic fixture in a temporary directory
+    # Phase 2: None when the config leaves it out, and then out of the hash (PHASE2_FIELDS).
+    paste_p: float | None = None  # arm C: share of boxed train images pasted (copypaste.py)
 
 
 FIELDS: Final = tuple(f.name for f in fields(Config))
 HASH_EXCLUDED: Final = ("arm", "run_seed")  # the fields arm A and B, or two seeds, may differ in
-_TYPES: Final = {f.name: f.type for f in fields(Config)}
+PHASE2_FIELDS: Final = ("paste_p",)  # optional; out of the hash while None
+_TYPES: Final = {f.name: str(f.type).removesuffix(" | None") for f in fields(Config)}
 
 
 class _UniqueKeyLoader(yaml.SafeLoader):
@@ -137,6 +147,12 @@ def _check(name: str, config: Config) -> None:
         refuse("head_only_epochs", f"must leave the body one of {config.max_epochs} epochs")
     if config.warmup_epochs > config.max_epochs:
         refuse("warmup_epochs", f"must fit in {config.max_epochs} epochs")
+    if config.arm == "C" and config.paste_p is None:
+        refuse("arm", "arm C needs paste_p, its paste probability")
+    if config.arm != "C" and config.paste_p is not None:
+        refuse("paste_p", f"only arm C pastes; arm {config.arm} takes no paste_p")
+    if config.paste_p is not None and not 0.0 <= config.paste_p <= 1.0:
+        refuse("paste_p", "must be between 0 and 1")
 
 
 def _config(name: str, common: Mapping[str, object], own: Mapping[str, object]) -> Config:
@@ -144,10 +160,11 @@ def _config(name: str, common: Mapping[str, object], own: Mapping[str, object]) 
     unknown = sorted(set(raw) - set(FIELDS), key=str)
     if unknown:
         raise ConfigError(f"{name}: unknown fields {unknown}")
-    missing = [key for key in FIELDS if key not in raw]
+    missing = [key for key in FIELDS if key not in raw and key not in PHASE2_FIELDS]
     if missing:
         raise ConfigError(f"{name}: missing fields {missing}")
-    config = Config(**{key: _value(name, key, raw[key]) for key in FIELDS})  # type: ignore[arg-type]
+    values = {key: _value(name, key, raw[key]) for key in FIELDS if key in raw}
+    config = Config(**values)  # type: ignore[arg-type]
     _check(name, config)
     return config
 
@@ -196,7 +213,12 @@ def with_overrides(name: str, config: Config, changes: Mapping[str, object]) -> 
 
 
 def config_hash(config: Config) -> str:
-    """SHA-256 (hex) of the config's fields but `HASH_EXCLUDED`, as sorted-key JSON."""
-    values = {key: value for key, value in asdict(config).items() if key not in HASH_EXCLUDED}
+    """SHA-256 (hex) of the config's fields but `HASH_EXCLUDED` and the `PHASE2_FIELDS` that are
+    None, as sorted-key JSON."""
+    values = {
+        key: value
+        for key, value in asdict(config).items()
+        if key not in HASH_EXCLUDED and not (key in PHASE2_FIELDS and value is None)
+    }
     text = json.dumps(values, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(text.encode("utf-8")).hexdigest()

@@ -5,7 +5,7 @@ On the synthetic fixture (written into a temporary directory) and on the real me
 else a missing root fails). A failure on the real metadata prints numbers, never an id or a record
 (R03): asserts compare counts or booleans computed beforehand. Also checks the look-at-the-data
 notebook's shape (outputs cleared, train images only, the citation) and runs its arm B crop check
-(item 8.08) on the synthetic fixture.
+(item 8.08) and its arm C paste check (item 13.04) on the synthetic fixture.
 """
 
 import ast
@@ -15,15 +15,19 @@ import re
 from collections import Counter
 from dataclasses import replace
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
+import numpy as np
 import pytest
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
 from matplotlib.text import Text
+from PIL import Image
 
 from trailcam.data import boxcrop, datavis
 from trailcam.data.classes import CLASSES
+from trailcam.data.copypaste import CopyPaste, background_pool
 from trailcam.data.dataset import ControlCropSampler
 from trailcam.data.datavis import (
     ARM_B_FILL,
@@ -36,6 +40,7 @@ from trailcam.data.datavis import (
 )
 from trailcam.data.metadata import (
     SPLITS,
+    EmptyFrame,
     Metadata,
     capture_hour,
     find_annotation_files,
@@ -569,4 +574,146 @@ def test_the_crop_check_draws_the_sampler_s_crops_on_the_fixture(
     assert "Beery et al. 2018" in suptitle and "CDLA-Permissive 1.0" in suptitle
     texts = [suptitle, out, *(ax.get_title() for ax in figure.axes)]
     assert not [text for text in texts if "syn-img-" in text or "syn-seq-" in text]
+    plt.close(figure)
+
+
+# The arm C paste check of the look-at-the-data notebook (item 13.04)
+
+
+def test_the_paste_check_uses_the_real_pool_and_paste_step() -> None:
+    """The paste check builds the pool and the step as `train.py` does (`background_pool` of the
+    metadata and the split, `CopyPaste` on the cache's images), runs them through
+    `TrainTransform("C")` and the dataset, and keeps what the step returns: it calls no geometry
+    or draw of its own, reads no pool frame and draws no random number for a paste."""
+    source = _look_cell("paste")
+    tree = ast.parse(source)
+    calls = {ast.unparse(n.func) for n in ast.walk(tree) if isinstance(n, ast.Call)}
+    assert {"background_pool", "CopyPaste", "TrainTransform", "CCT20Dataset", "step"} <= calls
+    assert "pool = background_pool(meta, split)" in source
+    assert 'step = CopyPaste(pool, DATA_ROOT / "images", p=1.0)' in source
+    assert 'TrainTransform("C", paste=keep_composite)' in source
+    named = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)}
+    named |= {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
+    for bypass in (
+        "paste_box",
+        "draw_background",
+        "candidates",
+        "load_background",
+        "check_pool",
+        "empties",
+        "frames",
+        "ControlCropSampler",
+    ):
+        assert bypass not in named
+    for drawn in ("torch.rand", "torch.randint", "torch.normal", "random.uniform"):
+        assert drawn not in calls
+    defined = [n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef | ast.ClassDef)]
+    assert defined == ["keep_composite"]
+    assert not [n for n in ast.walk(tree) if isinstance(n, ast.Lambda)]
+    imported = {
+        alias.name
+        for n in ast.walk(tree)
+        if isinstance(n, ast.ImportFrom) and n.module and n.module.startswith("trailcam")
+        for alias in n.names
+    }
+    assert imported == {
+        "to_pixels",
+        "CLASSES",
+        "CopyPaste",
+        "background_pool",
+        "IMAGENET_MEAN",
+        "IMAGENET_STD",
+        "CCT20Dataset",
+        "TrainTransform",
+    }
+
+
+def test_the_paste_check_says_its_outputs_stay_in_the_session() -> None:
+    """R03 and R04, as for the crop check; and what the pool is (R28)."""
+    note = " ".join(_look_cell("paste-md").split())
+    for needle in (
+        "for your eyes in this session only",
+        "Edit > Clear All Outputs",
+        "never put any of them into `docs/figures/` (R03, R04)",
+        "changes no training code",
+        "`background_pool(meta, split)`",
+        "never one of a val or evaluation-split sequence (R28)",
+        "title shows its class and day or night only, never a file name or a camera",
+    ):
+        assert needle in note
+
+
+def test_the_paste_check_draws_the_steps_composites_on_the_fixture(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The cell run as written on the synthetic fixture, a day and a night empty frame planted at
+    each cis camera so every photo has a background of its flag elsewhere (the fixture's own pool
+    is three night frames at one camera): boxed train photos, day and night by turns, each handed
+    to the real paste step (spied on, not replaced) with its own boxes, flag and camera; each row
+    shows the photo, the step's composite with the pasted box and the 224 px training input.
+    Titles give the class and day or night or the arm; no text shows a file name."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    root = tmp_path / "fixture"
+    fixture = write_synthetic_fixture(root)
+    meta = load_metadata(root, fixture.paths["sidecar"])
+    split = make_split(meta, SEED)
+    planted = []
+    for location in (101, 102):
+        for night in (False, True):
+            name = f"plant-{location}-{'n' if night else 'd'}"
+            frame = EmptyFrame(name, f"{name}.jpg", "cis_val", location, f"seq-{name}", night)
+            colour = (70, 70, 70) if night else (40, 180, 220)
+            Image.new("RGB", (WIDTH, HEIGHT), colour).save(fixture.image_root / frame.file_name)
+            planted.append(frame)
+    empties = {**meta.empties, "cis_val": (*meta.empties["cis_val"], *planted)}
+    meta = replace(meta, empties=MappingProxyType(empties))
+    train = split.records["train"]
+    calls: list[tuple[Any, ...]] = []
+    original = CopyPaste.__call__
+
+    def spy(self: CopyPaste, image: Any, boxes: Any, night: Any, location: Any) -> Any:
+        returned = original(self, image, boxes, night, location)
+        calls.append((tuple(boxes), night, location, self.p, returned))
+        return returned
+
+    monkeypatch.setattr(CopyPaste, "__call__", spy)
+    shown: list[Any] = []
+    monkeypatch.setattr(plt, "show", lambda: shown.append(plt.gcf()))
+    parameters: dict[str, Any] = {}
+    exec(compile(_look_cell("parameters"), "parameters", "exec"), parameters)
+    photos = parameters["ARM_C_PHOTOS"]
+    assert photos == 6
+    names = {"train": train, "meta": meta, "split": split, "DATA_ROOT": root, "SPLIT_SEED": SEED}
+    names["ARM_C_PHOTOS"] = photos
+    exec(compile(_look_cell("paste"), "paste", "exec"), names)
+
+    (figure,) = shown
+    picked = names["picked"]
+    assert len(picked) == photos
+    assert all(r.split == "train" and r.boxes for r in picked)
+    assert [r.night for r in picked] == [k % 2 == 1 for k in range(photos)]
+    assert [(c[0], c[1], c[2]) for c in calls] == [(r.boxes, r.night, r.location) for r in picked]
+    assert {c[3] for c in calls} == {1.0}
+    assert len(figure.axes) == 3 * photos
+    for row, record in enumerate(picked):
+        composite, boxes = calls[row][4]
+        assert composite.size == (WIDTH, HEIGHT) and boxes != record.boxes and len(boxes) == 1
+        axes = figure.axes[row * 3 : (row + 1) * 3]
+        night = "night" if record.night else "day"
+        assert axes[0].get_title() == f"{CLASSES[record.label]}, {night}"
+        assert axes[1].get_title() == f"arm C, {night} background"
+        assert np.array_equal(axes[1].images[0].get_array(), np.asarray(composite))
+        assert axes[2].get_title() == "arm C training input, 224 px"
+        assert axes[2].images[0].get_array().shape == (224, 224, 3)
+    out = capsys.readouterr().out
+    assert background_pool(meta, split).summary() in out
+    assert f"arm C: {photos} of {photos} photos pasted (p=1.0 here, 0.5 in training)" in out
+    suptitle = figure.get_suptitle()
+    assert "Beery et al. 2018" in suptitle and "CDLA-Permissive 1.0" in suptitle
+    texts = [suptitle, out, *(ax.get_title() for ax in figure.axes)]
+    assert not [t for t in texts if "syn-img-" in t or "syn-seq-" in t or "plant-" in t]
     plt.close(figure)

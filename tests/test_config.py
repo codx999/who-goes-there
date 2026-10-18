@@ -1,16 +1,23 @@
 """trailcam/train/config.py and the root config.yaml (item 5.02; R25 arm A and arm B differ in
-`arm` alone, R31 the training recipe of plan.md section 5).
+`arm` alone, R31 the training recipe of plan.md section 5; item 13.04: arm C's `paste_p`, the
+first phase-2 setting, and the phase-1 config hashes it must leave unchanged).
 
 The first tests read the committed config.yaml; the rest feed `parse_configs` small texts built
 from it, so each refusal is checked against a file that is otherwise valid.
 """
 
+import hashlib
+import json
+from collections.abc import Sequence
 from dataclasses import asdict, fields, replace
+from pathlib import Path
 
 import pytest
 import yaml
+from PIL import Image
 
 from trailcam.data.dataset import ARMS, TrainTransform
+from trailcam.data.metadata import Box
 from trailcam.model import factory
 from trailcam.train import config as config_module
 from trailcam.train.config import (
@@ -19,6 +26,7 @@ from trailcam.train.config import (
     FIELDS,
     HASH_EXCLUDED,
     MODEL_NAMES,
+    PHASE2_FIELDS,
     Config,
     ConfigError,
     config_hash,
@@ -27,8 +35,11 @@ from trailcam.train.config import (
     parse_configs,
     with_overrides,
 )
+from trailcam.train.ledger import check_ledger
 
 FULL = ("small_cnn", "resnet18_arm_a", "resnet18_arm_b")
+PHASE2 = ("p2_arm_c",)
+LEDGER = Path(__file__).resolve().parents[1] / "docs" / "ledger.md"
 
 
 @pytest.fixture(scope="module")
@@ -37,7 +48,7 @@ def configs() -> dict[str, Config]:
 
 
 def test_all_configs_load(configs: dict[str, Config]) -> None:
-    assert list(configs) == [DRY_RUN, *FULL]
+    assert list(configs) == [DRY_RUN, *FULL, *PHASE2]
     assert all(isinstance(c, Config) for c in configs.values())
     assert load_config("resnet18_arm_b") == configs["resnet18_arm_b"]
 
@@ -59,7 +70,7 @@ def test_every_config_has_both_seeds(configs: dict[str, Config]) -> None:
 
 
 def test_every_config_has_loader_settings(configs: dict[str, Config]) -> None:
-    for name in FULL:
+    for name in (*FULL, *PHASE2):
         assert (configs[name].num_workers, configs[name].pin_memory) == (4, True), name
         assert configs[name].fixture is False, name
 
@@ -104,11 +115,32 @@ def test_the_full_configs_carry_the_recipe(configs: dict[str, Config]) -> None:
     )
 
 
+def _no_paste(
+    image: Image.Image, boxes: Sequence[Box], night: bool | None, location: int | None
+) -> tuple[Image.Image, tuple[Box, ...]]:
+    return image, tuple(boxes)
+
+
 def test_every_arm_is_a_training_transform_arm(configs: dict[str, Config]) -> None:
+    """Arm C's transform needs the run's paste step, which train.py builds from the background
+    pool; a stand-in that pastes nothing is enough here."""
     for config in configs.values():
         assert config.arm in ARMS
-        assert TrainTransform(config.arm).arm == config.arm
+        paste = _no_paste if config.arm == "C" else None
+        assert TrainTransform(config.arm, paste=paste).arm == config.arm
         assert config.model in MODEL_NAMES
+    assert ARMS == ("A", "B", "C")
+
+
+def test_arm_c_is_arm_a_with_arm_c_and_its_paste_probability(configs: dict[str, Config]) -> None:
+    """Item 13.04: the phase-2 arm C config is resnet18_arm_a's recipe, field for field, but
+    `arm` and `paste_p` (R25's rule for arm C against arm A); only arm C sets `paste_p`."""
+    a, c = asdict(configs["resnet18_arm_a"]), asdict(configs["p2_arm_c"])
+    assert [key for key in FIELDS if a[key] != c[key]] == ["arm", "paste_p"]
+    assert (c["arm"], c["paste_p"]) == ("C", 0.5)
+    assert all(name.startswith("p2_") for name in PHASE2)
+    for name, config in configs.items():
+        assert (config.paste_p is not None) == (config.arm == "C"), name
 
 
 def test_the_model_names_are_the_factorys() -> None:
@@ -131,7 +163,8 @@ def test_arm_a_and_arm_b_share_the_config_hash(configs: dict[str, Config]) -> No
 
 @pytest.mark.parametrize("field", [f for f in FIELDS if f not in ("arm", "run_seed")])
 def test_every_other_field_changes_the_config_hash(configs: dict[str, Config], field: str) -> None:
-    c = configs["resnet18_arm_b"]
+    """A phase-2 field is checked on the config that sets it."""
+    c = configs["p2_arm_c" if field in PHASE2_FIELDS else "resnet18_arm_b"]
     value = getattr(c, field)
     if isinstance(value, bool):
         other: object = not value
@@ -142,6 +175,36 @@ def test_every_other_field_changes_the_config_hash(configs: dict[str, Config], f
     else:
         other = value + "x"
     assert config_hash(replace(c, **{field: other})) != config_hash(c)
+
+
+def test_the_phase_1_config_hashes_are_the_ledgers(configs: dict[str, Config]) -> None:
+    """docs/phase2-plan.md section 4: a phase-2 setting must leave the phase-1 hashes as they
+    are, or `score_test.py` refuses the phase-1 checkpoints. Every row of `docs/ledger.md` names a
+    phase-1 config whose hash today is the row's, and every phase-1 config but the dry run has
+    rows (seven at 7.03: one small CNN, three seeds of each ResNet-18 arm)."""
+    rows, problems = check_ledger(LEDGER)
+    assert problems == []
+    assert len(rows) >= 7
+    assert {row["config"] for row in rows} == set(FULL)
+    for row in rows:
+        assert config_hash(configs[row["config"]]) == row["config hash"], row.line
+    for name in FULL:
+        assert all(getattr(configs[name], key) is None for key in PHASE2_FIELDS), name
+
+
+def test_a_phase_2_field_is_hashed_only_when_set(configs: dict[str, Config]) -> None:
+    """Left out (None), a phase-2 field leaves the hash as it was before the field existed: the
+    hash of the other fields, `arm` and `run_seed` aside. Set, it changes the hash, so arm C does
+    not share arm A's hash (its rows go to the phase-2 ledger, item 13.02)."""
+    a = configs["resnet18_arm_a"]
+    before = {k: v for k, v in asdict(a).items() if k not in (*HASH_EXCLUDED, *PHASE2_FIELDS)}
+    text = json.dumps(before, sort_keys=True, separators=(",", ":"))
+    assert config_hash(a) == hashlib.sha256(text.encode("utf-8")).hexdigest()
+    assert PHASE2_FIELDS == ("paste_p",) and HASH_EXCLUDED == ("arm", "run_seed")
+    c = configs["p2_arm_c"]
+    assert config_hash(c) != config_hash(a)
+    assert config_hash(replace(c, arm="A", paste_p=None)) == config_hash(a)
+    assert config_hash(replace(c, paste_p=0.25)) != config_hash(c)
 
 
 def test_with_overrides_applies_and_checks(configs: dict[str, Config]) -> None:
@@ -156,6 +219,10 @@ def test_with_overrides_applies_and_checks(configs: dict[str, Config]) -> None:
     arm = configs["resnet18_arm_a"]
     with pytest.raises(ConfigError, match="head_only_epochs"):
         with_overrides("resnet18_arm_a", arm, {"max_epochs": 1})
+    with pytest.raises(ConfigError, match="only arm C pastes"):
+        with_overrides("resnet18_arm_a", arm, {"paste_p": 0.5})
+    with pytest.raises(ConfigError, match="paste_p: expected float"):
+        with_overrides("p2_arm_c", configs["p2_arm_c"], {"paste_p": None})
 
 
 # --- refusals, each on a copy of the committed file with one change ---
@@ -197,6 +264,16 @@ def test_the_dumped_copy_parses_the_same() -> None:
         ("dryrun", "max_epochs", 0, "at least 1"),
         ("resnet18_arm_a", "head_only_epochs", 10, "head_only_epochs"),
         ("dryrun", "warmup_epochs", 2, "warmup_epochs"),
+        # Arm C's paste probability (item 13.04): a float from 0 to 1, for arm C alone.
+        ("p2_arm_c", "paste_p", 1.5, r"p2_arm_c\.paste_p: must be between 0 and 1"),
+        ("p2_arm_c", "paste_p", -0.1, r"p2_arm_c\.paste_p: must be between 0 and 1"),
+        ("p2_arm_c", "paste_p", float("nan"), r"p2_arm_c\.paste_p: must be between 0 and 1"),
+        ("p2_arm_c", "paste_p", None, r"p2_arm_c\.paste_p: expected float"),
+        ("p2_arm_c", "paste_p", "0.5", r"p2_arm_c\.paste_p: expected float"),
+        ("p2_arm_c", "paste_p", True, r"p2_arm_c\.paste_p: expected float"),
+        ("p2_arm_c", "arm", "A", r"p2_arm_c\.paste_p: only arm C pastes; arm A"),
+        ("resnet18_arm_b", "paste_p", 0.5, r"resnet18_arm_b\.paste_p: only arm C pastes"),
+        ("common", "paste_p", 0.5, r"dryrun\.paste_p: only arm C pastes"),
     ],
 )
 def test_a_bad_value_is_refused(block: str, key: str, value: object, message: str) -> None:
@@ -215,13 +292,24 @@ def test_an_unknown_field_is_refused() -> None:
         _parse(raw)
 
 
-@pytest.mark.parametrize("key", [f.name for f in fields(Config)])
+@pytest.mark.parametrize("key", [f.name for f in fields(Config) if f.name not in PHASE2_FIELDS])
 def test_a_missing_field_is_refused(key: str) -> None:
     raw = _raw()
     for block in (raw["common"], *raw["configs"].values()):
         assert isinstance(block, dict)
         block.pop(key, None)
     with pytest.raises(ConfigError, match=f"missing fields \\['{key}'\\]"):
+        _parse(raw)
+
+
+def test_a_phase_2_field_may_be_left_out_but_arm_c_needs_paste_p() -> None:
+    """The phase-1 configs name no phase-2 field and load with it None; arm C without its paste
+    probability is refused, as is the field written out as null."""
+    for name in FULL:
+        assert "paste_p" not in _raw()["configs"][name]
+    raw = _raw()
+    del raw["configs"]["p2_arm_c"]["paste_p"]  # type: ignore[attr-defined]
+    with pytest.raises(ConfigError, match=r"p2_arm_c\.arm: arm C needs paste_p"):
         _parse(raw)
 
 

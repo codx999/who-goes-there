@@ -340,10 +340,12 @@ def test_arm_a_and_arm_b_are_identical_when_the_box_path_is_disabled(
 
 
 def test_the_arms_differ_only_in_the_crop_sampler() -> None:
-    """The `arm` switch picks the sampler and nothing else (R25 for the transform)."""
+    """The `arm` switch picks the sampler and nothing else (R25 for the transform); arms A and B
+    take no paste step (arm C's, item 13.04, is `tests/test_copypaste.py`'s)."""
     arm_a, arm_b = TrainTransform("A"), TrainTransform("B")
     assert TrainTransform().arm == "A" and (arm_a.arm, arm_b.arm) == ("A", "B")
-    assert set(vars(arm_a)) == set(vars(arm_b)) == {"arm", "sampler", "after_crop"}
+    assert set(vars(arm_a)) == set(vars(arm_b)) == {"arm", "sampler", "paste", "after_crop"}
+    assert arm_a.paste is None and arm_b.paste is None
     assert repr(arm_a.after_crop) == repr(arm_b.after_crop)
     assert type(arm_a.sampler) is ControlCropSampler
     assert type(arm_b.sampler) is BoxCropSampler
@@ -419,7 +421,7 @@ def test_bad_arguments_are_refused(fixture: tuple[Split, Path]) -> None:
     for p in (-0.1, 1.5, math.nan):
         with pytest.raises(ValueError, match=r"^p must be between 0 and 1"):
             BoxCropSampler(p=p)
-    for arm in ("C", "b", ""):
+    for arm in ("D", "b", "c", ""):
         with pytest.raises(ValueError, match=r"^arm must be one of"):
             TrainTransform(arm)
     with pytest.raises(ValueError, match=r"^pass an arm or a sampler, not both"):

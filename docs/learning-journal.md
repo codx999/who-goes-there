@@ -773,6 +773,16 @@ arm A rows: that spread is the noise every phase-2 change has to beat.
 uv run python -m trailcam.train.ledger --check docs/ledger.md
 ```
 
+**Added by 13.04, arm C (copy-paste).** Arm B's crops kept the animal on its own camera's scene,
+so "this scene means this species" still paid. Arm C pastes the box onto an empty frame of another
+training camera, night onto night, so the scene stops predicting the label. The backgrounds are
+training data too: cis_val's empty frames at training cameras only, never a test file's, a val
+burst's or a trans camera's, or trans_val would score a camera the model trained on. Try:
+
+```bash
+uv run pytest -q tests/test_copypaste.py -k "pool or eval"
+```
+
 ---
 
 ## Surprises and lessons

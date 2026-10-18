@@ -232,6 +232,21 @@ trans_val macro-F1 0 to +0.06 (about +0.03), val flat to -0.005; smaller than th
 +5.7 because our backgrounds are training cameras only, no detector, 224 px. Three seeds; if the
 result is positive but under about 4 points, seeds 3 and 4 are added before it is claimed.
 
+*Built in item 13.04* (`trailcam/data/copypaste.py`, config `p2_arm_c`, invariant R28). The pool
+keeps an empty frame only if it comes from a pooled file (official train or cis_val; train has
+none), sits at a train location and its sequence has no image in val, trans_val, cis_test or
+trans_test; it is the user's three rules of 2026-10-17 with this section's file rule on top. On
+the real metadata (split seed 42) that is cis_val's 995 empty frames, day 531 and night 464, at all
+10 train cameras, hash `87c5d379…`; the sequence rule removes none of them today (none shares a
+burst with val, train or an evaluation file) and stays as the guard. The paste: one box drawn
+uniformly, its rectangle rounded out to whole pixels, the same width and height fractions of the
+frame (the cache's 512 x 373 and 512 x 384 frames stretch it by 3% at most), a uniform position
+wholly inside the frame with its bottom edge in the lower half (Mesnage et al. 2025, section 2.4;
+their ±5% scale and ±5° rotation are not taken), a background of the image's day/night flag at
+another camera drawn uniformly (every boxed train image has at least 350), then arm A's training
+transform. Not yet run: the hypothesis line above goes into the step's pinned commit once 13.02
+has merged, since a run before it would append its row to `docs/ledger.md`.
+
 **2. SWA over the late epochs** (`torch.optim.swa_utils`: a running average of the weights over
 the last epochs, batch-norm statistics recomputed on the training data). *Needs code* in
 `train.py`; the item decides how the average meets early stopping (for example, scored on val as
@@ -347,7 +362,13 @@ adds:
   row and fails `check.sh`).
 
 Not in 13.02 as agreed, and needed by the first code step that adds a setting (section 4): the
-form that keeps the phase-1 config hashes unchanged, and the test that pins them. CLAUDE.md's
+form that keeps the phase-1 config hashes unchanged, and the test that pins them. Built in item
+13.04: a phase-2 setting is one of `PHASE2_FIELDS` in `trailcam/train/config.py`, None when a
+config leaves it out and then left out of the hash, so the phase-1 hashes stay those of
+`docs/ledger.md`; `tests/test_config.py` checks every ledger row's hash against its config. A set
+phase-2 field is hashed, so `p2_arm_c` does not share `resnet18_arm_a`'s hash: a check that
+pairs arm C's rows with arm A's (13.02) cannot pair them by the config hash, as phase 1's checker
+pairs arm A and arm B. CLAUDE.md's
 "every choice is made on val" describes phase 1; whether it gets a phase-2 line is open question 7.
 
 ## 10. Beyond the ladder (future work, for the slides' closing)

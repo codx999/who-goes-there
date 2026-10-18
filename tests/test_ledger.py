@@ -255,7 +255,7 @@ def test_a_run_id_not_of_its_own_config_and_seed_fails(tmp_path: Path, run_id: s
     ("changes", "column"),
     [
         ({"model": "resnet50"}, "model"),
-        ({"arm": "C"}, "arm"),
+        ({"arm": "D"}, "arm"),  # arm C is phase 2's (item 13.04)
         ({"split_seed": "-1"}, "split seed"),
         ({"run_seed": "01", "run_id": "resnet18_arm_a-seed01-20261015T101500Z"}, "run seed"),
         ({"epochs_run": "eight"}, "epochs run"),

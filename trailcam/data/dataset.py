@@ -3,14 +3,17 @@
 `CCT20Dataset` follows the custom-`Dataset` pattern of the course's chapter 04: it holds the
 records of one split (for example `split.records["train"]`) and the folder of images they name,
 loads an image with `load_image` and returns `(tensor, class index)` from `__getitem__`. The
-boxes never leave it (R23): it hands a record's boxes to the training transform, whose crop
-sampler may read them, and calls the eval transform with the image alone.
+boxes never leave it (R23): it hands a record's boxes, day/night flag and location to the training
+transform, whose crop sampler and paste step may read them, and calls the eval transform with the
+image alone.
 
 - `TrainTransform`: a crop drawn by the crop sampler and resized to 224 x 224, horizontal flip,
   mild colour jitter, random grayscale with probability 0.1 and ImageNet normalisation. Its `arm`
   switch picks the sampler and nothing else (R25): arm A, the control, draws torchvision's random
   resized crop at scale 0.65 to 1.0 and ignores the boxes; arm B draws box-guided crops
-  (`trailcam/data/boxcrop.py`, item 4.04) and falls back to the control sampler.
+  (`trailcam/data/boxcrop.py`, item 4.04) and falls back to the control sampler. Arm C (phase 2,
+  item 13.04) is arm A with a paste step before the crop: `trailcam/data/copypaste.py` pastes a
+  box onto an empty frame of another camera, and the composite takes arm A's crop and the rest.
 - `EvalTransform`, for val, the tests, the demo and the Space: resize so the shorter side is 256,
   centre crop 224 and ImageNet normalisation. It takes an image and nothing else, so no box can
   reach it.
@@ -43,7 +46,9 @@ IMAGENET_STD: Final = (0.229, 0.224, 0.225)
 # saturation by up to 20%, no hue shift.
 CROP_SCALE: Final = (0.65, 1.0)
 CROP_RATIO: Final = (3 / 4, 4 / 3)  # torchvision's default aspect-ratio range
-ARMS: Final = ("A", "B")  # arm A the control, arm B box-guided crops (plan.md section 6)
+# Arm A the control, arm B box-guided crops (plan.md section 6); arm C copy-paste onto other
+# cameras' empty frames, then arm A (docs/phase2-plan.md section 6, step 1).
+ARMS: Final = ("A", "B", "C")
 FLIP_P: Final = 0.5
 JITTER: Final = 0.2
 GRAYSCALE_P: Final = 0.1
@@ -58,6 +63,15 @@ class CropSampler(Protocol):
     def __call__(self, image: Image.Image, boxes: Sequence[Box]) -> Crop: ...
 
 
+class PasteStep(Protocol):
+    """Arm C's step before the crop (`trailcam.data.copypaste.CopyPaste`): the image, or a
+    composite, and the boxes that go with it."""
+
+    def __call__(
+        self, image: Image.Image, boxes: Sequence[Box], night: bool | None, location: int | None
+    ) -> tuple[Image.Image, tuple[Box, ...]]: ...
+
+
 class ControlCropSampler:
     """Arm A: torchvision's random resized crop at scale 0.65 to 1.0. The boxes are not read."""
 
@@ -69,8 +83,8 @@ class ControlCropSampler:
 
 
 def make_sampler(arm: str) -> CropSampler:
-    """The crop sampler of `arm`: "A" the control sampler, "B" the box-guided sampler."""
-    if arm == "A":
+    """The crop sampler of `arm`: "A" and "C" the control sampler, "B" the box-guided sampler."""
+    if arm in ("A", "C"):
         return ControlCropSampler()
     if arm == "B":
         # Imported on use: loading this module, and with it the eval transform, never loads the
@@ -82,14 +96,23 @@ def make_sampler(arm: str) -> CropSampler:
 
 
 class TrainTransform:
-    """The training transform: the sampler's crop, resized to 224 x 224, then flip, colour
-    jitter, random grayscale, tensor and normalisation. Train records only.
+    """The training transform: arm C's paste step, then the sampler's crop, resized to 224 x 224,
+    then flip, colour jitter, random grayscale, tensor and normalisation. Train records only.
 
-    `arm` ("A" by default, or "B") picks the crop sampler, the one difference between the arms.
-    `sampler` replaces it with another (the tests' spies); pass one or the other, not both.
+    `arm` ("A" by default, "B" or "C") picks the crop sampler and the paste step, the one
+    difference between the arms: arm C takes arm A's sampler and needs `paste`, a `CopyPaste`
+    built on the run's background pool (the transform cannot build the pool itself); arms A and B
+    take none. `sampler` replaces the arm's sampler with another (the tests' spies); pass one or
+    the other, not both.
     """
 
-    def __init__(self, arm: str | None = None, *, sampler: CropSampler | None = None) -> None:
+    def __init__(
+        self,
+        arm: str | None = None,
+        *,
+        sampler: CropSampler | None = None,
+        paste: PasteStep | None = None,
+    ) -> None:
         if sampler is None:
             self.arm: str | None = "A" if arm is None else arm
             self.sampler: CropSampler = make_sampler(self.arm)
@@ -97,6 +120,13 @@ class TrainTransform:
             self.arm, self.sampler = None, sampler
         else:
             raise ValueError("pass an arm or a sampler, not both")
+        if self.arm == "C" and paste is None:
+            raise ValueError(
+                "arm C needs its paste step: TrainTransform('C', paste=CopyPaste(...))"
+            )
+        if self.arm in ("A", "B") and paste is not None:
+            raise ValueError(f"only arm C pastes; arm {self.arm} takes no paste step")
+        self.paste: PasteStep | None = paste
         self.after_crop: Callable[[Image.Image], Tensor] = T.Compose(
             [
                 T.RandomHorizontalFlip(p=FLIP_P),
@@ -107,7 +137,16 @@ class TrainTransform:
             ]
         )
 
-    def __call__(self, image: Image.Image, boxes: Sequence[Box]) -> Tensor:
+    def __call__(
+        self,
+        image: Image.Image,
+        boxes: Sequence[Box],
+        night: bool | None = None,
+        location: int | None = None,
+    ) -> Tensor:
+        """`night` and `location` are the record's; only arm C's paste step reads them."""
+        if self.paste is not None:
+            image, boxes = self.paste(image, boxes, night, location)
         top, left, height, width = self.sampler(image, boxes)
         cropped: Image.Image = F.resized_crop(
             image, top, left, height, width, [INPUT_SIZE, INPUT_SIZE], antialias=True
@@ -186,7 +225,7 @@ class CCT20Dataset(Dataset[tuple[Tensor, int]]):
         record = self.records[index]
         image = self.load_image(index)
         if isinstance(self.transform, TrainTransform):
-            tensor = self.transform(image, record.boxes)
+            tensor = self.transform(image, record.boxes, record.night, record.location)
         else:
             tensor = self.transform(image)
         return tensor, record.label

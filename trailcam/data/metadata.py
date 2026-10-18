@@ -12,6 +12,11 @@ Images are dropped by these rules, checked in this order:
 3. `rare`: badger, fox and deer.
 4. `unannotated`: no annotation at all (none in CCT20; counted so it cannot pass silently).
 
+An image dropped by the `empty` rule is also kept aside as an `EmptyFrame` (its location, sequence
+id and night flag, no label and no box), per official file in `Metadata.empties`: arm C's
+background pool (`trailcam/data/copypaste.py`, docs/phase2-plan.md step 1) chooses among them.
+They never become records, so the split and its hash do not see them.
+
 The five files keep their official split names here; pooling and re-splitting train and cis_val is
 `trailcam/data/split.py`. `python -m trailcam.data.metadata --root <dir>` prints counts only.
 """
@@ -22,9 +27,10 @@ import argparse
 import json
 from collections import Counter
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, field, fields
 from datetime import datetime
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, Final
 
 from trailcam.data.classes import CLASSES, DROPPED_CCT_IDS, NUM_CLASSES, index_of_cct_id
@@ -85,16 +91,46 @@ class Record:
 
 
 @dataclass(frozen=True, repr=False)
+class EmptyFrame:
+    """One image dropped by the `empty` rule: no label and no box. `split` is the official file
+    it came from; `night` is the sidecar's flag, None without a sidecar or when the sidecar lacks
+    it. The repr shows the split, location and night flag, never the image id, file name or
+    sequence id (R03); `__eq__` is written out, as `Record`'s is, so pytest explains a failed `==`
+    with the repr."""
+
+    image_id: str
+    file_name: str
+    split: str
+    location: int
+    seq_id: str
+    night: bool | None
+
+    def __eq__(self, other: object) -> bool:
+        """Every field in order; the dataclass still adds the frozen `__hash__`."""
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        names = [f.name for f in fields(self)]
+        return [getattr(self, n) for n in names] == [getattr(other, n) for n in names]
+
+    def __repr__(self) -> str:
+        return f"EmptyFrame(split={self.split}, location={self.location}, night={self.night})"
+
+
+@dataclass(frozen=True, repr=False)
 class Metadata:
     """Kept records per official split, in file order, images dropped per split per rule, and
-    the number of kept boxes per split that ran past the frame and were clipped. The repr shows
-    records per split, drops per rule and clipped boxes summed over the splits, never a record
-    (R03).
+    the number of kept boxes per split that ran past the frame and were clipped. `empties` holds
+    the images of the `empty` rule per official split, in file order (empty when not loaded by
+    `load_metadata`). The repr shows records per split, drops per rule and clipped boxes summed
+    over the splits, never a record (R03).
     """
 
     records: Mapping[str, tuple[Record, ...]]
     dropped: Mapping[str, Mapping[str, int]]
     clipped_boxes: Mapping[str, int]
+    empties: Mapping[str, tuple[EmptyFrame, ...]] = field(
+        default_factory=lambda: MappingProxyType({})
+    )
 
     def __repr__(self) -> str:
         sizes = ", ".join(f"{split}={len(rs)}" for split, rs in self.records.items())
@@ -179,10 +215,18 @@ def load_night_flags(path: Path) -> dict[str, bool]:
     return flags
 
 
+def _location(image: Mapping[str, Any], split: str) -> int:
+    location = image["location"]
+    if not isinstance(location, int) or isinstance(location, bool):
+        raise ValueError(f"{split}: a location is not an integer")
+    return location
+
+
 def load_split(
     path: Path, split: str, night_flags: Mapping[str, bool] | None = None
-) -> tuple[tuple[Record, ...], dict[str, int], int]:
-    """Kept records of one annotation file, images dropped per rule and boxes clipped."""
+) -> tuple[tuple[Record, ...], dict[str, int], int, tuple[EmptyFrame, ...]]:
+    """Kept records of one annotation file, images dropped per rule, boxes clipped and the images
+    of the `empty` rule."""
     data = json.loads(path.read_text())
     _check_categories(data["categories"], split)
 
@@ -200,6 +244,7 @@ def load_split(
     dropped = dict.fromkeys(DROP_RULES, 0)
     clipped = 0
     records: list[Record] = []
+    empties: list[EmptyFrame] = []
     for image in data["images"]:
         anns = annotations.get(image["id"], [])
         categories = {int(ann["category_id"]) for ann in anns}
@@ -212,13 +257,21 @@ def load_split(
         (cct_id,) = categories
         if cct_id == EMPTY_CCT_ID:
             dropped["empty"] += 1
+            empties.append(
+                EmptyFrame(
+                    image_id=image["id"],
+                    file_name=image["file_name"],
+                    split=split,
+                    location=_location(image, split),
+                    seq_id=image["seq_id"],
+                    night=None if night_flags is None else night_flags.get(image["id"]),
+                )
+            )
             continue
         if cct_id in DROPPED_CCT_IDS:
             dropped["rare"] += 1
             continue
-        location = image["location"]
-        if not isinstance(location, int) or isinstance(location, bool):
-            raise ValueError(f"{split}: a location is not an integer")
+        location = _location(image, split)
         width, height = int(image["width"]), int(image["height"])
         boxes: list[Box] = []
         for ann in anns:
@@ -247,7 +300,7 @@ def load_split(
         missing = sum(1 for r in records if r.night is None)
         if missing:
             raise ValueError(f"{split}: {missing} kept images missing from the day/night sidecar")
-    return tuple(records), dropped, clipped
+    return tuple(records), dropped, clipped, tuple(empties)
 
 
 def load_metadata(root: Path, sidecar: Path | None = None) -> Metadata:
@@ -262,11 +315,14 @@ def load_metadata(root: Path, sidecar: Path | None = None) -> Metadata:
     records: dict[str, tuple[Record, ...]] = {}
     dropped: dict[str, Mapping[str, int]] = {}
     clipped: dict[str, int] = {}
+    empties: dict[str, tuple[EmptyFrame, ...]] = {}
     for split in SPLITS:
-        records[split], dropped[split], clipped[split] = load_split(
+        records[split], dropped[split], clipped[split], empties[split] = load_split(
             files[split], split, night_flags
         )
-    return Metadata(records=records, dropped=dropped, clipped_boxes=clipped)
+    return Metadata(
+        records=records, dropped=dropped, clipped_boxes=clipped, empties=MappingProxyType(empties)
+    )
 
 
 def summary(meta: Metadata) -> str:
