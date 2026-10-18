@@ -4404,3 +4404,40 @@ only keeping both sides. Merged through the sync tool. 11 files conflicted: `con
 `ledger.py` and tests. The playbook calls for a fix round, which the user starts: `/review-session
 89e649a..<this merge> 13.04`. That range is 13.04 as it lands on main; 9.03's and 13.02's own
 changes are not in it. `git show --remerge-diff` on the merge shows the resolutions alone.
+
+## 2026-10-18: fix round of the 89e649a merge: clean, no further round (Opus 5.5)
+
+Review: tier 2, ran `/review-session 89e649a..cae22d7 13.04` (code-reviewer Opus 5.5 xhigh on the
+range, risk-reviewer Fable 5.1 high on its 20 high-stakes files). The range is 13.04 as it lands
+on main after 9.03 and 13.02, with the merge's integration as the focus. Nothing found by either.
+All 27 scenarios held: R01, R03, R05, R06, R07, R10, R14, R15, R16, R17, R20, R21, R23, R24,
+R25, R27, R28, R31, R32, R37, R38, R40, R41, R42, R43, R44 and R45. The code-reviewer checked
+R45; the risk-reviewer could not, since no agent file was in its list. The code-reviewer's own
+`check.sh` was green (1,129 passed).
+
+Both reviewers confirmed:
+
+- the phase-1 config hashes are unchanged;
+- arms A and B and the eval transform are unchanged;
+- the pool and leakage rules are unchanged: no diff since 995624b in `copypaste.py`,
+  `metadata.py`, `split.py` or `boxcrop.py`;
+- `p2_arm_c` follows 13.02's ledger and checkpoint conventions.
+
+The risk-reviewer read the merge's own resolutions in full: every conflict kept both sides' code
+and assertions.
+
+Two near-misses were checked and found sound:
+
+- The dropped 13.04 ledger-hash test. 13.02's pin still checks every ledger row, and "only arm
+  C sets `paste_p`" is still checked across all configs.
+- "C" in the phase-1 ledger's arm column. An arm C row in `docs/ledger.md` is still refused, by
+  the `p2_` prefix and its own config hash.
+
+Noted, outside the range: `.claude/rules/training.md` still says every training run appends to
+`docs/ledger.md`. That is 13.02's wording; it goes to item 13.05, with the user's OK there.
+Could not be verified offline: that the Kaggle cache holds the pool's 995 frames.
+`CopyPaste` refuses before training if any is missing.
+
+No fix, so no further round. This commit changes this log only.
+
+**Next.** Ready to merge.
