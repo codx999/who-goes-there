@@ -173,6 +173,7 @@ def test_the_check_cell_takes_a_config_with_the_ledger_of_its_phase(
     [
         ("p2_head3", LEDGERS[0], "are of different phases"),
         ("p2_baseline", LEDGERS[0], "are of different phases"),
+        ("p2_arm_c_p25", LEDGERS[0], "are of different phases"),
         ("resnet18_arm_a", LEDGERS[1], "are of different phases"),
         ("small_cnn", LEDGERS[1], "are of different phases"),
         ("small_cnn", "docs/test-ledger.md", "LEDGER must be"),

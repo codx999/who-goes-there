@@ -100,6 +100,18 @@ configs:
     lr_body: 1.0e-4
     lr_head: 1.0e-3
 
+  # Step 1's pre-declared follow-up (item 13.08): p2_arm_c with half its paste probability, so
+  # still one change (the arm, with its setting) from p2_baseline; judged by the same rule.
+  p2_arm_c_p25:
+    model: resnet18
+    arm: C
+    paste_p: 0.25
+    pretrained: true
+    max_epochs: 10
+    head_only_epochs: 1
+    lr_body: 1.0e-4
+    lr_head: 1.0e-3
+
   # Step 3: three head-only epochs inside the same 10, so the body trains 7.
   p2_head3:
     model: resnet18

@@ -356,6 +356,32 @@ another camera drawn uniformly (every boxed train image has at least 350), then 
 transform at the config's input size (224). Not yet run: its rows go to `docs/ledger-phase2.md`
 (13.02's conventions), and the hypothesis line above goes into the step's pinned commit.
 
+*Screened, item 13.08* (run seed 0 on Kaggle at commit `69dfe93`, rows in
+`docs/ledger-phase2.md`). `p2_baseline` repeated phase 1's arm A seed 0 bit for bit (every
+epoch's losses and scores, and the config hash), so section 3's control check passed. `p2_arm_c`
+against it: val macro-F1 0.8238 against 0.8542 (-0.0304), trans_val macro-F1 0.3886 against 0.2915
+(+0.0971), final train loss 0.47 against 0.11; the pool on Kaggle was 995 frames (day 531, night
+464), hash `87c5d379…`. Against the hypothesis: trans_val above its range, val far below it.
+**Screened out** by the screen's val condition (the user's decision of 2026-10-18): the drop is
+beyond 0.003, and beyond open question 1's 1 point too. A finding, not a kept change: on one seed,
+copy-paste traded familiar-camera for new-camera performance.
+
+*The pre-declared follow-up*, `p2_arm_c_p25` (the user's decision of 2026-10-18; config in item
+13.08): `p2_arm_c` with `paste_p: 0.25`, so still one change (the arm, with its setting) from
+`p2_baseline`, with a config hash of its own. It is judged by the same screen, confirm and keep
+rule. Its hypothesis line, written before any run (the expectation in the user's words):
+
+```text
+Step 1 follow-up, copy-paste arm C at paste probability 0.25 (p2_arm_c_p25). Expect: about half
+of arm C's val cost, most of its trans_val gain. Because: half as many composites leave more
+training frames on their own scene, which val's familiar cameras reward, while a quarter of the
+boxed images still breaks the link between scene and species.
+```
+
+Against seed 0 that reads as val macro-F1 about -0.015 and trans_val macro-F1 more than about
++0.05. A val drop of 0.015 would still stop at the screen (0.003) and fail the keep rule's 1 point,
+so the variant passes only if its val cost comes out well under the hypothesis.
+
 **2. SWA over the late epochs** (`torch.optim.swa_utils`: a running average of the weights over
 the last epochs, batch-norm statistics recomputed on the training data). *Needs code* in
 `train.py`; the item decides how the average meets early stopping (for example, scored on val as
@@ -382,6 +408,11 @@ the Space to take the size (`load_checkpoint`'s `eval_size`). Evidence weak (the
 WILDS baselines' 448 px may be part of their numbers); at 224 px many animals are a few pixels
 wide (`docs/research-report.md`, Part 2). *Hypothesis*: trans_val 0 to +0.03, val +0.5 point,
 about 2x the run time and the CPU latency. Three seeds this week.
+
+*Screened, item 13.08* (run seed 0 on Kaggle at commit `69dfe93`). Val macro-F1 0.8705 against
+`p2_baseline`'s 0.8542 (+0.0163). Trans_val macro-F1 0.3186 against 0.2915 (+0.0271), though
+trans_val accuracy fell 0.3618 against 0.3724. About 60 s per epoch against 42 s. **Passes the
+screen**, so it goes on to the confirm on seeds 1 and 2. The CPU latency check is still to come.
 
 **5. ResNet-50 at 224 px**, `p2_r50` (torchvision, ImageNet-1k weights; 25.6M parameters and
 about 4.1 GFLOPs, against ResNet-18's 11.7M and 1.8). *Built in 13.02*: `resnet50` in
@@ -517,7 +548,8 @@ Not in 13.02: `score_test.py`'s phase-2 mode and its test ledger (13.06, section
 Item 13.04, merged after 13.02, puts arm C's `paste_p` into `HASH_NEUTRAL` at None, its value when
 a config leaves it out, so the phase-1 hashes hold. `p2_arm_c` sets it and so hashes it: arm C's
 rows carry a config hash of their own and are paired with `p2_baseline`'s by config and run seed,
-not by hash (the user's decision on 13.04).
+not by hash (the user's decision on 13.04). Item 13.08 adds `p2_arm_c_p25` (`paste_p: 0.25`),
+hashed the same way, so its config hash (`42d47bfd…`) is neither `p2_arm_c`'s nor arm A's.
 
 ## 10. Beyond the ladder (future work, for the slides' closing)
 
@@ -540,7 +572,9 @@ not by hash (the user's decision on 13.04).
 1. **The screen's val condition.** As agreed, the screen stops a change whose val macro-F1 drops
    by more than the noise (0.003), but the keep rule accepts a drop of up to 1 point, so the screen
    could stop a change the keep rule would accept. Recommended: the screen's val condition uses the
-   keep rule's 1 point. The user's decision.
+   keep rule's 1 point. The user's decision. Still open after item 13.08: `p2_arm_c`'s screen
+   fails under either version (val macro-F1 -0.0304, beyond both 0.003 and 0.01), so it does not
+   settle the question.
 2. **The screen's trans_val condition.** "Not more than 0.03 worse" passes most changes that do
    nothing (section 7). "Not below the baseline's seed 0" would stop about half of them and keep
    the ladder nearer the runs budgeted, at the cost of sometimes stopping a real but small gain.

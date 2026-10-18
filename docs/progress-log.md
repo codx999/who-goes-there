@@ -4471,3 +4471,109 @@ exists only after 11.03 (the user's decision in this session). Flip it once 11.0
 the user can then flip 9.02.
 
 **Review.** Tier 0, docs only (`README.md`, the journal and this log).
+
+## 2026-10-18: session 13, item 13.08, the first three screens and arm C's pre-declared follow-up (Opus 5.5)
+
+The user approved item 13.08 on 2026-10-18 through the coordinator. It was added to
+`docs/progress.json` (session 13, owner claude, due 2026-10-19).
+
+**Done.**
+
+- `docs/ledger-phase2.md`: the user's Kaggle rows, pasted verbatim (seed 0, commit `69dfe93`):
+  `p2_baseline-seed0-20261018T211046Z` and `p2_arm_c-seed0-20261018T214210Z`, then
+  `p2_res320-seed0-20261018T215623Z`. The third came through the coordinator mid-item, after the
+  item's text was written. The checker
+  (`uv run python -m trailcam.train.ledger --check docs/ledger-phase2.md`) exits 0: "phase-2
+  ledger: 3 rows, every check passed". The three config hashes match today's `config.yaml`
+  (`483aa055…`, `5c7c51c2…`, `5a20cf07…`), and every split hash matches phase 1's (`c78a9c10…`).
+- `config.yaml`: `p2_arm_c_p25`, after `p2_arm_c`. It is `p2_arm_c` with `paste_p: 0.25` and
+  takes `input_size` from `common`. `paste_p` is hashed, so it has its own config hash,
+  `42d47bfda80f99a821b0257a1f1c74543d93587cf2f5966a735899df54410fb9`.
+- Tests:
+  - `tests/test_config.py`: `P2_CHANGES` gains `p2_arm_c_p25: {arm: C, paste_p: 0.25}`, so the
+    one-change and unique-hash tests cover it. A new test checks that it loads as a phase-2
+    config, differs from `p2_baseline` only in `arm` and `paste_p` and from `p2_arm_c` only in
+    `paste_p`, takes 224 from `common`, and hashes apart from both. The "only arm C names
+    `paste_p`" check now reads `P2_CHANGES` instead of naming `p2_arm_c`.
+  - `tests/test_train.py`: `PHASE_MIXUPS` gains `(p2_arm_c_p25, ledger.md)`. A run against a
+    copy of `docs/ledger.md` stops before training, and `append_row` refuses it too. The arm/size
+    test covers it at 224 with its paste step.
+  - `tests/test_notebook.py`: the training notebook's check cell refuses it with
+    `docs/ledger.md`.
+  - Adjusted: arm C's command-line test now appends to the phase-2 ledger's text and header
+    without its rows. The real rows carry the real split hash, and the synthetic split's row
+    would disagree with them ("split seed 42's rows disagree on split hash"). This is the only
+    test the real rows broke.
+  - Mutation check: with `paste_p: 0.5` in `p2_arm_c_p25`, three `test_config.py` tests fail
+    (the one-change test, the unique hashes and the new test).
+- `docs/phase2-plan.md`, step 1: the screen's result, and the follow-up with its hypothesis line,
+  dated before any run. Step 4: `p2_res320`'s screen. Section 9: the new config's hash. Open question 1: a note that arm C
+  fails under either version, so the question stays open. No rule changed.
+- `docs/learning-journal.md`, topic 15: five lines and a command.
+
+**Findings, seed 0.**
+
+- **The control passes.** `p2_baseline` reproduced phase 1's arm A seed 0 bit for bit. Every
+  epoch's losses and scores are identical, from the Kaggle log as the user reported it, and so is
+  the config hash. Every ledger cell matches phase 1's row except the run id and the checkpoint
+  sha256. A differing sha256 is expected: since review 13.02 the checkpoint also records its input
+  size, so the file differs even if the weights are the same. So section 3's baseline check
+  passes, well inside both bands.
+- **`p2_arm_c` is screened out.** Val macro-F1 0.8238 against 0.8542 (-0.0304). Trans_val
+  macro-F1 0.3886 against 0.2915 (+0.0971). Final train loss 0.47 against 0.11. The pool on
+  Kaggle was 995 frames (day 531, night 464), hash `87c5d379…`, as 13.04 measured on the Mac.
+  - Against its hypothesis (trans_val 0 to +0.06, val flat to -0.005): trans_val came out above
+    its range and val far below it. None of section 5's four words fits both halves.
+  - **Screened out by the pre-declared rule**, the user's decision of 2026-10-18. The val drop is
+    beyond the screen's 0.003, and also beyond open question 1's 1-point alternative. Val is never
+    traded for trans_val, and trans_val is one camera, which misled in phase 1 (9.02). The row
+    stays in the ledger, and the baseline is unchanged.
+  - Recorded as a finding: on one seed, copy-paste traded familiar-camera for new-camera
+    performance. The higher train loss fits that: composites are harder to fit.
+- **`p2_res320` passes the screen.** Val macro-F1 0.8705 against 0.8542 (+0.0163, so no drop).
+  Trans_val macro-F1 0.3186 against 0.2915 (+0.0271, not worse). Trans_val accuracy 0.3618
+  against 0.3724 (-0.0106). Both conditions hold, so it goes on to the confirm on seeds 1 and 2.
+  - Run time, as the coordinator reported it: about 60 s per epoch against the baseline's 42 s
+    (11.6 minutes against 8.5, 1.4x).
+  - Against its hypothesis (trans_val 0 to +0.03, val +0.5 point, about 2x the run time):
+    trans_val matched, near the top of its range. Val rose about three times as much as
+    expected, and the run cost less than expected.
+  - Trans_val's macro-F1 and accuracy moved in opposite directions. On one camera that is the
+    noise section 3 warns about, which is what the confirm is for.
+  - Before it can be kept, step 4 also needs the CPU latency check (section 3). Its per-class
+    and bobcat context needs the 320 px follow-up item section 3 names, since the evaluation
+    tools run at 224 only.
+  - Open question 8 (whether `p2_baseline` seeds 1 and 2 are re-run for the confirm) is the
+    user's. For it: `p2_baseline` seed 0 reproduced phase 1's arm A seed 0 bit for bit.
+
+**The pre-declared follow-up**, the user's decision of 2026-10-18: `p2_arm_c_p25`, one change
+from `p2_baseline` (the arm, with its setting). It is judged by the same screen, confirm and keep
+rule. Its hypothesis line, in `docs/phase2-plan.md` step 1 and here, before any run:
+
+```text
+Step 1 follow-up, copy-paste arm C at paste probability 0.25 (p2_arm_c_p25). Expect: about half
+of arm C's val cost, most of its trans_val gain. Because: half as many composites leave more
+training frames on their own scene, which val's familiar cameras reward, while a quarter of the
+boxed images still breaks the link between scene and species.
+```
+
+**For the user.**
+
+- Taken literally, the hypothesis predicts a screen failure. Half of arm C's val cost is about
+  -0.015, which is beyond the screen's 0.003 and the keep rule's 0.01. So the variant passes only
+  if its val cost comes out well under its own hypothesis. The plan says so beside the line.
+- It adds one screen run, about 18 minutes, to section 7's budget (not edited).
+- Its rows need the phase-2 notebook settings: `CONFIG_NAME = "p2_arm_c_p25"` and
+  `LEDGER = "docs/ledger-phase2.md"`, at a commit that contains this item.
+
+**Checks.** The ledger checker exits 0 on both ledgers. `docs/ledger.md` and the phase-1 config
+blocks are unchanged, and the phase-1 hashes are pinned by the test. `uv run pytest
+tests/test_config.py tests/test_notebook.py tests/test_ledger.py tests/test_train.py` passed.
+`bash scripts/check.sh` green (1,135 passed; mypy, ruff and the data guard clean).
+
+**Next.** Review 13.08. Then the user runs `p2_arm_c_p25` seed 0 on Kaggle, with the commit
+pinned, and its row is screened against `p2_baseline` seed 0.
+
+Review: tier 2 (`config.yaml` is high-stakes in `scripts/risk_files.sh`). Command:
+`/review-session 13.08`. Spec changed: `docs/phase2-plan.md` step 1, section 9 and open question
+1 (notes only, no rule).

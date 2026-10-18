@@ -49,6 +49,7 @@ P2_BASE = "resnet18_arm_a"
 P2_CHANGES: dict[str, dict[str, object]] = {
     "p2_baseline": {},  # the control re-run at the phase-2 commit
     "p2_arm_c": {"arm": "C", "paste_p": 0.5},  # copy-paste (item 13.04): the arm and its setting
+    "p2_arm_c_p25": {"arm": "C", "paste_p": 0.25},  # arm C's pre-declared follow-up (item 13.08)
     "p2_head3": {"head_only_epochs": 3},  # the body trains 7 of the 10 epochs
     "p2_res320": {"input_size": 320},  # eval resize round(320 * 256 / 224) = 366
     "p2_r50": {"model": "resnet50"},
@@ -226,6 +227,24 @@ def test_arm_c_is_arm_a_with_arm_c_and_its_paste_probability(configs: dict[str, 
         assert (config.paste_p is not None) == (config.arm == "C"), name
 
 
+def test_arm_c_p25_is_p2_arm_c_at_a_quarter_paste_probability(configs: dict[str, Config]) -> None:
+    """Item 13.08, arm C's pre-declared follow-up: it loads as a phase-2 config, differs from
+    `p2_baseline` in `arm` and `paste_p` alone (one change, as `p2_arm_c` does) and from
+    `p2_arm_c` in `paste_p` alone, and its hashed `paste_p` gives it a config hash of its own, so
+    its rows never pass as `p2_arm_c`'s. Its refusal against docs/ledger.md is in
+    tests/test_train.py (`PHASE_MIXUPS`) and tests/test_notebook.py."""
+    assert load_config("p2_arm_c_p25") == configs["p2_arm_c_p25"]
+    assert is_phase2("p2_arm_c_p25")
+    base, c, p25 = (asdict(configs[n]) for n in ("p2_baseline", "p2_arm_c", "p2_arm_c_p25"))
+    assert [key for key in FIELDS if base[key] != p25[key]] == ["arm", "paste_p"]
+    assert [key for key in FIELDS if c[key] != p25[key]] == ["paste_p"]
+    assert (p25["arm"], p25["paste_p"], p25["input_size"]) == ("C", 0.25, 224)
+    assert "input_size" not in _raw()["configs"]["p2_arm_c_p25"]  # from common
+    digests = [config_hash(configs[n]) for n in ("p2_baseline", "p2_arm_c", "p2_arm_c_p25")]
+    assert len(set(digests)) == 3
+    assert config_hash(replace(configs["p2_arm_c_p25"], paste_p=0.5)) == digests[1]
+
+
 def test_the_model_names_are_the_factorys() -> None:
     """The names are imported from trailcam/model/factory.py, not copied (review 5.02)."""
     assert config_module.MODEL_NAMES is factory.MODEL_NAMES
@@ -378,7 +397,9 @@ def test_a_phase_2_field_may_be_left_out_but_arm_c_needs_paste_p() -> None:
     """The phase-1 configs name no phase-2 field and load with it None; arm C without its paste
     probability is refused, as is the field written out as null."""
     for name in (*PHASE1, *P2_CHANGES):
-        assert ("paste_p" in _raw()["configs"][name]) == (name == "p2_arm_c"), name
+        assert ("paste_p" in _raw()["configs"][name]) == ("paste_p" in P2_CHANGES.get(name, {})), (
+            name
+        )
     raw = _raw()
     del raw["configs"]["p2_arm_c"]["paste_p"]  # type: ignore[attr-defined]
     with pytest.raises(ConfigError, match=r"p2_arm_c\.arm: arm C needs paste_p"):
