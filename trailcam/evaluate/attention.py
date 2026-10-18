@@ -17,6 +17,9 @@ so a map spread evenly over the frame scores the box's share of the frame, not 1
 - Several boxes on one image: the union of their clipped parts. Each box covers every pixel of
   the 224 x 224 grid by the share of that pixel's area it overlaps; where boxes overlap, the
   larger share counts, so no pixel is counted twice.
+- Another input size (phase 2, item 13.05): every 224 above is the config's `input_size` and
+  every 256 `eval_resize(input_size)` (366 for 320), as in the eval transform the model was
+  scored with; the map, the mask and the frame share that side. Phase-1 configs are all 224.
 - Excluded and counted: images without a box (about 10% of animal annotations have none, plan.md
   section 2), and images whose boxes all fall outside the centre crop (the model never saw the
   animal, so neither measure means anything there). Both counts are in the table.
@@ -42,6 +45,10 @@ histogram) into the directory it is given; generated figures for the repo belong
 **Test-set isolation (R17, R26).** The command line accepts `val` and `trans_val` only and reads
 no other split's records; cis_test and trans_test are scored once, at the end, by the final
 scoring (item 9.01), which calls `attention_pass` and `write_report` directly.
+
+**Input size (item 13.05).** The command line scores a checkpoint at its config's `input_size`:
+224 for every phase-1 config, 320 for `p2_res320`. `load_checkpoint` refuses a checkpoint trained
+at another size than the config's, so a model is never scored at a size it was not trained at.
 
     python -m trailcam.evaluate.attention --config-name resnet18_arm_b \\
         --checkpoint <run>.pt --data-root <cache> --split val --split trans_val --out <dir>
@@ -71,7 +78,7 @@ from torch import Tensor, nn
 from torch.utils.data import DataLoader, Dataset
 
 from trailcam.data.classes import CLASSES, NUM_CLASSES
-from trailcam.data.dataset import EVAL_RESIZE, INPUT_SIZE, CCT20Dataset, EvalTransform
+from trailcam.data.dataset import INPUT_SIZE, CCT20Dataset, EvalTransform, eval_resize
 from trailcam.data.metadata import DAY_NIGHT_SIDECAR, Box, Record, load_metadata
 from trailcam.data.split import make_split
 from trailcam.data.synthetic import write_synthetic_fixture
@@ -98,48 +105,51 @@ TABLE_NAME: Final = "attention.md"
 HISTOGRAM_NAME: Final = "attention_in_box.png"
 HISTOGRAM_BINS: Final = 20
 
-# A box in the eval frame: (left, top, right, bottom) in pixels of the 224 x 224 input.
+# A box in the eval frame: (left, top, right, bottom) in pixels of the 224 x 224 input (or of
+# the config's input size, phase 2).
 FrameBox = tuple[float, float, float, float]
 
 
-def eval_geometry(width: int, height: int) -> tuple[int, int, int, int]:
-    """(resized width, resized height, crop left, crop top) of `EvalTransform` for an image of
-    `width` x `height`: torchvision's `Resize(256)` (shorter side to 256, the longer one scaled
-    and truncated) and `CenterCrop(224)` (offsets rounded). `tests/test_attention.py` checks it
-    against the transform itself."""
+def eval_geometry(width: int, height: int, size: int = INPUT_SIZE) -> tuple[int, int, int, int]:
+    """(resized width, resized height, crop left, crop top) of `EvalTransform(size)` for an
+    image of `width` x `height`: torchvision's `Resize(256)` (shorter side to 256, the longer one
+    scaled and truncated) and `CenterCrop(224)` (offsets rounded), or `Resize(eval_resize(size))`
+    and `CenterCrop(size)` for another size. `tests/test_attention.py` checks it against the
+    transform itself."""
     if width <= 0 or height <= 0:
         raise ValueError(f"an image of {width} x {height} pixels")
+    resize = eval_resize(size)
     if width <= height:
-        new_width, new_height = EVAL_RESIZE, int(EVAL_RESIZE * height / width)
+        new_width, new_height = resize, int(resize * height / width)
     else:
-        new_width, new_height = int(EVAL_RESIZE * width / height), EVAL_RESIZE
-    left = int(round((new_width - INPUT_SIZE) / 2.0))
-    top = int(round((new_height - INPUT_SIZE) / 2.0))
+        new_width, new_height = int(resize * width / height), resize
+    left = int(round((new_width - size) / 2.0))
+    top = int(round((new_height - size) / 2.0))
     return new_width, new_height, left, top
 
 
-def box_in_frame(box: Box, width: int, height: int) -> FrameBox | None:
+def box_in_frame(box: Box, width: int, height: int, size: int = INPUT_SIZE) -> FrameBox | None:
     """`box` (fractions of an image of `width` x `height`) in the eval frame, clipped to the
-    224 x 224 crop; None when no part of it lies inside the crop."""
-    new_width, new_height, left, top = eval_geometry(width, height)
+    `size` x `size` crop (224 x 224); None when no part of it lies inside the crop."""
+    new_width, new_height, left, top = eval_geometry(width, height, size)
     x, y, w, h = box
-    x0 = min(max(x * new_width - left, 0.0), float(INPUT_SIZE))
-    x1 = min(max((x + w) * new_width - left, 0.0), float(INPUT_SIZE))
-    y0 = min(max(y * new_height - top, 0.0), float(INPUT_SIZE))
-    y1 = min(max((y + h) * new_height - top, 0.0), float(INPUT_SIZE))
+    x0 = min(max(x * new_width - left, 0.0), float(size))
+    x1 = min(max((x + w) * new_width - left, 0.0), float(size))
+    y0 = min(max(y * new_height - top, 0.0), float(size))
+    y1 = min(max((y + h) * new_height - top, 0.0), float(size))
     if x1 <= x0 or y1 <= y0:
         return None
     return x0, y0, x1, y1
 
 
-def box_mask(boxes: Sequence[Box], width: int, height: int) -> Tensor:
-    """The union of `boxes` on the 224 x 224 eval frame: each pixel holds the share of its area
-    inside the boxes (the largest share where boxes overlap). All zero when every box falls
-    outside the crop."""
-    mask = torch.zeros(INPUT_SIZE, INPUT_SIZE, dtype=torch.float64)
-    edges = torch.arange(INPUT_SIZE, dtype=torch.float64)
+def box_mask(boxes: Sequence[Box], width: int, height: int, size: int = INPUT_SIZE) -> Tensor:
+    """The union of `boxes` on the `size` x `size` eval frame (224 x 224): each pixel holds the
+    share of its area inside the boxes (the largest share where boxes overlap). All zero when
+    every box falls outside the crop."""
+    mask = torch.zeros(size, size, dtype=torch.float64)
+    edges = torch.arange(size, dtype=torch.float64)
     for box in boxes:
-        framed = box_in_frame(box, width, height)
+        framed = box_in_frame(box, width, height, size)
         if framed is None:
             continue
         x0, y0, x1, y1 = framed
@@ -196,14 +206,15 @@ def blank_boxes(image: Image.Image, boxes: Sequence[Box]) -> Image.Image:
 
 class AttentionDataset(Dataset[tuple[Tensor, Tensor, Tensor, int]]):
     """The boxed records of one split. An item is (image, blanked image, box mask, label): both
-    images through `EvalTransform`, the mask on the same 224 x 224 frame. The model is given the
-    two images only; the mask is for scoring (R23)."""
+    images through `EvalTransform(size)`, the mask on the same `size` x `size` frame (224 x 224).
+    The model is given the two images only; the mask is for scoring (R23)."""
 
-    def __init__(self, records: Sequence[Record], image_root: Path) -> None:
+    def __init__(self, records: Sequence[Record], image_root: Path, size: int = INPUT_SIZE) -> None:
         unboxed = sum(1 for r in records if not r.boxes)
         if unboxed:
             raise ValueError(f"{unboxed} of {len(records)} records have no box")
-        self.transform = EvalTransform()
+        self.size = size
+        self.transform = EvalTransform(size)
         self.images = CCT20Dataset(records, image_root, self.transform)
 
     def __len__(self) -> int:
@@ -214,15 +225,15 @@ class AttentionDataset(Dataset[tuple[Tensor, Tensor, Tensor, int]]):
         image = self.images.load_image(index)
         original = self.transform(image)
         blanked = self.transform(blank_boxes(image, record.boxes))
-        mask = box_mask(record.boxes, *image.size).to(torch.float32)
+        mask = box_mask(record.boxes, *image.size, self.size).to(torch.float32)
         return original, blanked, mask, record.label
 
 
 @dataclass(frozen=True)
 class ImageResult:
     """One boxed image; `attention` is NaN when `box_visible` is false or the map is zero.
-    `box_share` is the boxes' share of the 224 x 224 frame: what a map spread evenly over the
-    frame would score, the baseline `attention` is read against."""
+    `box_share` is the boxes' share of the eval frame (224 x 224): what a map spread evenly over
+    the frame would score, the baseline `attention` is read against."""
 
     label: int
     prediction: int
@@ -241,12 +252,14 @@ class ImageResult:
 @dataclass(frozen=True)
 class SplitRun:
     """The results of one split: `images` records in all, `unboxed` of them without a box (not
-    scored), and one result per boxed image, in record order."""
+    scored), and one result per boxed image, in record order, on an eval frame of side
+    `input_size` (224, or a phase-2 config's)."""
 
     split: str
     images: int
     unboxed: int
     results: tuple[ImageResult, ...]
+    input_size: int = INPUT_SIZE
 
     @property
     def group(self) -> str:
@@ -275,10 +288,13 @@ def attention_pass(
     batch_size: int,
     num_workers: int = 0,
     pin_memory: bool = False,
+    size: int = INPUT_SIZE,
 ) -> SplitRun:
-    """Both measures over the boxed records of `split`, a key of `CAMERA_GROUPS`. Every record
-    must belong to `split`. This function scores any split it is given; keeping cis_test and
-    trans_test for the final scoring is the caller's duty (the command line refuses them)."""
+    """Both measures over the boxed records of `split`, a key of `CAMERA_GROUPS`, through the
+    eval transform of side `size` (224; a phase-2 config's `input_size` from the command line).
+    Every record must belong to `split`. This function scores any split it is given; keeping
+    cis_test and trans_test for the final scoring is the caller's duty (the command line refuses
+    them)."""
     if split not in CAMERA_GROUPS:
         raise ValueError(f"split must be one of {tuple(CAMERA_GROUPS)}, got {split!r}")
     others = sum(1 for r in records if r.split != split)
@@ -290,7 +306,7 @@ def attention_pass(
     results: list[ImageResult] = []
     if boxed:
         loader: DataLoader[tuple[Tensor, Tensor, Tensor, int]] = DataLoader(
-            AttentionDataset(boxed, image_root),
+            AttentionDataset(boxed, image_root, size),
             batch_size=batch_size,
             shuffle=False,
             num_workers=num_workers,
@@ -313,12 +329,12 @@ def attention_pass(
                         confidence=float(confidence[i]),
                         box_visible=visible,
                         attention=fraction_inside(maps[i], masks[i]) if visible else math.nan,
-                        box_share=float(masks[i].sum()) / INPUT_SIZE**2,
+                        box_share=float(masks[i].sum()) / size**2,
                         blanked_prediction=int(blanked_prediction[i]),
                         blanked_confidence=float(blanked_confidence[i]),
                     )
                 )
-    return SplitRun(split, len(records), len(records) - len(boxed), tuple(results))
+    return SplitRun(split, len(records), len(records) - len(boxed), tuple(results), size)
 
 
 @dataclass(frozen=True)
@@ -389,6 +405,10 @@ def render_report(runs: Sequence[SplitRun], header: Sequence[str] = ()) -> str:
     `header` lines (the model, checkpoint and split) go first."""
     if not runs:
         raise ValueError("no split to report")
+    sizes = sorted({run.input_size for run in runs})
+    if len(sizes) != 1:
+        raise ValueError(f"the splits were scored at different input sizes, {sizes}")
+    side = sizes[0]
     rows = [row for run in runs for row in summarise(run)]
     lines = [
         "# Attention-in-box and the animal-removed test",
@@ -396,7 +416,8 @@ def render_report(runs: Sequence[SplitRun], header: Sequence[str] = ()) -> str:
         *header,
         *([""] if header else []),
         "Boxes are read from the metadata and used to score and to blank only. Attention-in-box:",
-        "the share of the top-1 class's Grad-CAM mass, normalised over the whole 224 x 224 input,",
+        f"the share of the top-1 class's Grad-CAM mass, normalised over the whole {side} x {side}"
+        " input,",
         "that falls inside the union of the image's boxes; a map spread evenly over the frame",
         "would score the boxes' share of the frame, given for comparison. Animal-removed: every",
         "box filled with the image's per-channel mean, then predicted again through the same eval",
@@ -546,17 +567,20 @@ def load_checkpoint(path: Path, config: Config, *, eval_size: int = INPUT_SIZE) 
     evaluation tools, the final scoring, the demo, the Space and its deploy script.
 
     First, before the file is read, it refuses a config whose input size is not `eval_size`, the
-    side of the caller's eval transform. Every caller today uses `EvalTransform()` at 224 px and
-    passes none, so a phase-2 config such as `p2_res320` is refused there rather than scored at
-    the wrong size (its val and trans_val scores are `train.py`'s; its test scoring is item
-    13.06's). Then it refuses a checkpoint of another model, class map or input size. Since item
-    13.02 `train.py` saves the input size (`CHECKPOINT_KEYS`); a checkpoint without one holds
-    exactly `PHASE1_CHECKPOINT_KEYS`, as phase 1's do, and was trained at 224 px.
+    side of the caller's eval transform. The three evaluation command lines (`evaluate.py`, this
+    module's and `slices.py`, item 13.05) build their eval transform at the config's input size
+    and pass that side, so a phase-2 config such as `p2_res320` is scored at 320 px on val and
+    trans_val. The final scoring, the demo, the Space and its deploy script use `EvalTransform()`
+    at 224 px and pass none, so such a config is refused there rather than scored or served at
+    the wrong size (its test scoring is item 13.06's). Then it refuses a checkpoint of another
+    model, class map or input size. Since item 13.02 `train.py` saves the input size
+    (`CHECKPOINT_KEYS`); a checkpoint without one holds exactly `PHASE1_CHECKPOINT_KEYS`, as phase
+    1's do, and was trained at 224 px.
     """
     if config.input_size != eval_size:
         raise ValueError(
             f"the config's input size is {config.input_size} px; this tool's eval transform is "
-            f"{eval_size} px (the evaluation tools, the demo and the Space run at {INPUT_SIZE} px "
+            f"{eval_size} px (the final scoring, the demo and the Space run at {INPUT_SIZE} px "
             "only; docs/phase2-plan.md section 4)"
         )
     saved = torch.load(path, map_location="cpu", weights_only=True)
@@ -577,6 +601,12 @@ def load_checkpoint(path: Path, config: Config, *, eval_size: int = INPUT_SIZE) 
     model = build_model(config.model, pretrained=False)
     model.load_state_dict(saved["state_dict"])
     return model
+
+
+def size_note(config: Config) -> str:
+    """`, input size <n> px` for a config of another input size than 224 (phase 2), for the
+    tables' header lines; nothing for 224, so a phase-1 header reads as before."""
+    return "" if config.input_size == INPUT_SIZE else f", input size {config.input_size} px"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -638,6 +668,7 @@ def run_splits(
             batch_size=config.batch_size,
             num_workers=config.num_workers,
             pin_memory=config.pin_memory,
+            size=config.input_size,
         )
         for name, split_records in records.items()
     ]
@@ -663,13 +694,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             runs = run_splits(model, records, fixture.image_root, config)
         header = [f"Model {config.model}, random weights (dry run on the synthetic fixture)."]
     else:
-        model = load_checkpoint(args.checkpoint, config)
+        # The eval transform is built at the config's input size (224 for phase 1), and the
+        # checkpoint must have been trained at it (item 13.05).
+        model = load_checkpoint(args.checkpoint, config, eval_size=config.input_size)
         root = args.data_root
         meta = load_metadata(root / CACHE_ANNOTATIONS, root / DAY_NIGHT_SIDECAR)
         split = make_split(meta, config.split_seed)
         records = {s: split.records[s] for s in splits}
         header = [
-            f"Model {config.model}, config {name}, checkpoint sha256 "
+            f"Model {config.model}, config {name}{size_note(config)}, checkpoint sha256 "
             f"{file_sha256(args.checkpoint)}, split seed {config.split_seed}, split hash "
             f"{split.hash}.",
         ]

@@ -124,10 +124,13 @@ winner's own confirm shows that).
   recall and trans_val's per-class table beside them as context, so a gain that is all bobcat at
   camera 125 shows as one. That context selects nothing: the rule stays on val macro-F1 and
   trans_val macro-F1, and no selection metric is added. The per-class table and bobcat recall
-  come from `trailcam/evaluate/evaluate.py` on val and trans_val; its notebook (8.08) reads
-  `docs/ledger.md` only, and the evaluation tools run at 224 px only, so for phase-2 checkpoints
-  (and `p2_res320` in particular) that context needs a small follow-up item; until it exists it is
-  reported where it can be.
+  come from `trailcam/evaluate/evaluate.py` on val and trans_val. Item 13.05 runs it on phase-2
+  checkpoints: the evaluation notebook (8.08) takes `LEDGER = "docs/ledger-phase2.md"` and
+  matches the attached checkpoints to that ledger's rows by SHA-256, and the three evaluation
+  tools score each checkpoint at its config's input size (`p2_res320` at 320). Its slices put
+  each variant beside `p2_baseline` at the same run seed by default. trans_val is reported per
+  class because it is one camera: a macro-F1 change there can be one class at camera 125, and the
+  per-class rows show which.
 
 **Kept changes stack.** The kept changes are combined into one recipe (a config with several
 changes, so `tests/test_config.py`'s one-change rule needs a named exception for it) and run on
@@ -186,10 +189,12 @@ only a rough estimate.
   `p2_res320` trains on 320 px crops and is evaluated with the shorter side resized to 366 and a
   320 px centre crop, everything else identical. The 256 and 224 of CLAUDE.md, `.claude/rules/`
   and R20 stay true for every phase-1 config, the demo and the Space (the user approved this
-  plan, 2026-10-17). The evaluation tools, the demo and the Space run at 224 only, and
-  `load_checkpoint` (`trailcam/evaluate/attention.py`), which they all use, refuses a config of
-  another input size, so a 320 px model's val and trans_val scores are `train.py`'s, and its test
-  scoring needs 13.06's mode. The checkpoint carries its input size too (review 13.02, the
+  plan, 2026-10-17). The three evaluation tools (`evaluate.py`, `attention.py` and `slices.py`)
+  build their eval transform at the config's input size since item 13.05, so a 320 px model is
+  evaluated at 320 on val and trans_val, Grad-CAM and the attention frame included. The final
+  scoring, the demo and the Space run at 224 only, and `load_checkpoint`
+  (`trailcam/evaluate/attention.py`), which they all use, refuses there a config of another
+  input size, so a 320 px model's test scoring needs 13.06's mode. The checkpoint carries its input size too (review 13.02, the
   user's decision): `train.py` saves `input_size` beside the model, the class list and the
   weights, and `load_checkpoint` refuses a checkpoint whose size is not the config's, so a
   `p2_res320` checkpoint loaded under a 224 config (`resnet18_arm_a` on a command line, or the
@@ -376,9 +381,9 @@ at 366 (round(320 x 256/224), the same margin as now; the 512 px cache's shorter
 (hash-neutral at 224, section 4), taken by the training transform of both arms and the eval
 transform through `train.py` and `make_loaders`. The checkpoint records its input size, and
 `load_checkpoint` refuses a checkpoint of another size than its config's (section 4). The
-evaluation tools, the demo and the Space stay at 224 and refuse a config of another size, so
-deploying a 320 px model (open question 6) would need the attention frame, Grad-CAM, the demo and
-the Space to take the size (`load_checkpoint`'s `eval_size`). Evidence weak (the
+evaluation tools score it at 320 on val and trans_val since item 13.05. The demo and the Space
+stay at 224 and refuse a config of another size, so deploying a 320 px model (open question 6)
+would need the demo and the Space to take the size (`load_checkpoint`'s `eval_size`). Evidence weak (the
 WILDS baselines' 448 px may be part of their numbers); at 224 px many animals are a few pixels
 wide (`docs/research-report.md`, Part 2). *Hypothesis*: trans_val 0 to +0.03, val +0.5 point,
 about 2x the run time and the CPU latency. Three seeds this week.
@@ -518,6 +523,22 @@ Item 13.04, merged after 13.02, puts arm C's `paste_p` into `HASH_NEUTRAL` at No
 a config leaves it out, so the phase-1 hashes hold. `p2_arm_c` sets it and so hashes it: arm C's
 rows carry a config hash of their own and are paired with `p2_baseline`'s by config and run seed,
 not by hash (the user's decision on 13.04).
+
+Item 13.05 (evaluation code and the notebook) gives the screens and confirms their per-class
+context on val and trans_val, never a test split:
+
+- `evaluate.py`, `attention.py` and `slices.py` take the eval size from the config's
+  `input_size` and pass it to `load_checkpoint` as `eval_size`. So a checkpoint is scored, its
+  Grad-CAM drawn and its boxes mapped at the size it was trained at, and one of another size than
+  its config's is refused. Phase-1 configs are all 224, and their outputs are byte for byte those
+  of before. The final scoring, the demo and the Space keep the 224 defaults.
+- `slices.py` labels a phase-2 checkpoint by its config name, so `p2_baseline` and a variant of
+  the same model and arm can be compared, and refuses a phase-1 and a phase-2 checkpoint in one
+  run.
+- `notebooks/kaggle_evaluate.ipynb`: `LEDGER` (`docs/ledger.md` by default, or
+  `docs/ledger-phase2.md`), the SHA-256 check against that ledger's rows, and `SLICE_PAIRS`: by
+  default arm A beside arm B per seed in phase 1, and each config beside `p2_baseline` at the
+  same run seed in phase 2.
 
 ## 10. Beyond the ladder (future work, for the slides' closing)
 

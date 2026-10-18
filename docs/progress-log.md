@@ -4441,3 +4441,116 @@ Could not be verified offline: that the Kaggle cache holds the pool's 995 frames
 No fix, so no further round. This commit changes this log only.
 
 **Next.** Ready to merge.
+
+## 2026-10-18: session 13, item 13.05, phase-2 evaluation support (Opus 5.5)
+
+The user approved item 13.05 on 2026-10-17 through the coordinator. It was added to
+`docs/progress.json` (session 13, owner claude, due 2026-10-20) with the description and steps
+given. Base `03fee36`; main has not moved. Val and trans_val only: no code path added here reads a
+test split, and `score_test.py` is not changed.
+
+**Done.**
+
+- **The eval size comes from the config.** `evaluate.py`, `attention.py` and `slices.py` build
+  their eval transform at `config.input_size` and pass the same side to `load_checkpoint` as
+  `eval_size`. So `p2_res320` is scored at 320 (shorter side 366, centre crop 320), and a
+  checkpoint whose recorded size is not its config's is refused before any image is read.
+  - New keywords, each defaulting to 224: `size` on `evaluate.predict`, `write_overlays`,
+    `attention_pass`, `AttentionDataset`, `eval_geometry`, `box_in_frame`, `box_mask`,
+    `slices.predict_split`, and Grad-CAM's `overlay`, `overlay_photo` and `write_overlay`.
+  - `SplitRun.input_size`, also 224 by default. `render_report` refuses splits scored at two
+    sizes.
+  - The final scoring, the demo, the Space and its deploy pass none of these, so they stay at 224.
+    `load_checkpoint`'s message now names them as the 224-only callers.
+- **Attention-in-box at 320.** The box is mapped through `eval_resize(size)` and the `size` crop.
+  The mask, the Grad-CAM map and the box share are all on the `size` x `size` frame.
+- **Headers.** A table of a non-224 config says `input size <n> px` (`attention.size_note`), and
+  the attention text names the frame (`320 x 320`). At 224 the text is exactly as before.
+- **Slices: the pair is the user's.** A phase-2 checkpoint is labelled by its config name
+  (`slices.model_label`), since `p2_baseline`, `p2_head3` and `p2_res320` are all ResNet-18 arm A.
+  A phase-1 one keeps `checkpoint_label`, which the final scoring also uses. A run that mixes
+  phase-1 and phase-2 checkpoints is refused: phase 2 compares with `p2_baseline` only.
+- **`notebooks/kaggle_evaluate.ipynb`** (outputs cleared):
+  - `LEDGER = "docs/ledger.md"` (or `"docs/ledger-phase2.md"`), with `LEDGER_PATH = CLONE /
+    LEDGER`. The check cell refuses any other value. The attached `.pt` files are matched by
+    SHA-256 to that ledger's rows, as before.
+  - With the phase-2 ledger, the clone cell also refuses a `COMMIT` without 13.05's code.
+  - `SLICE_PAIRS = None` keeps phase 1's arm A beside arm B per seed, in `slices-seed<n>`. In
+    phase 2 it pairs each config with `p2_baseline` at the same run seed, in
+    `slices-p2_baseline-<config>-seed<n>`.
+  - A named list of config pairs replaces the default; `[]` means no slices.
+  - Refused before the cache is unpacked: a named config with no row, the small CNN, a named pair
+    that shares no seed, and two rows of one config and seed (a re-run), named by run id. A
+    default pair that shares no seed is skipped, and the notebook says so.
+  - How to run: a second checkpoint dataset for phase 2 (`trailcam-checkpoints-p2`), and nothing
+    of phase 2 copied into `docs/figures/`. The batch's entry here quotes the summary and
+    trans_val's per-class rows.
+- **`.claude/rules/training.md`**: the ledger sentence now reads "Every training run appends one
+  row to its phase's ledger: phase-1 runs to `docs/ledger.md`, phase-2 (`p2_`) runs to
+  `docs/ledger-phase2.md`". The user approved this exact wording in this session (2026-10-18),
+  and nothing else in the file changed.
+- **Tests.**
+  - `tests/test_phase2_eval.py`, new, 35 tests, about 60 s, on a cache-shaped fixture:
+    - a 320 px checkpoint evaluated end to end, with every batch 320 x 320 in all three tools
+      and the overlay;
+    - a phase-1 checkpoint at 224 with the old headers;
+    - each mismatched pair refused by each tool;
+    - the phase mix refused;
+    - the labels;
+    - the 320 geometry against `EvalTransform(320)` for seven image sizes;
+    - the 320 mask and box share;
+    - the 224 defaults.
+  - `tests/test_evaluate_notebook.py`, 13 new tests:
+    - the `LEDGER` and `SLICE_PAIRS` checks;
+    - the ledger the files are matched to, and both phase mix-ups refused;
+    - the default and named pairs, in both phases;
+    - the refusals;
+    - the clone cell run with git replaced;
+    - the full phase-2 run on the fixture (224 and 320 px checkpoints): every table, both slice
+      folders, the summary, and no test split.
+  - Existing tests adjusted for the parameter's new form only: `PARAMETERS`,
+    `test_the_parameters`, and `_write_ledger` now writes to `LEDGER_PATH`. Every other existing
+    test is unchanged, including the ones that forbid a test split or the final scoring in the
+    notebook.
+- **Docs.**
+  - `docs/phase2-plan.md`: section 3's follow-up is now built, and says why trans_val is read per
+    class. Sections 4 and 6 (step 4) say where 224 still holds; section 9 has 13.05's paragraph.
+  - `docs/review/invariants.md`: R17, R20 and R26 (rule text, where, tests) and the header.
+  - Journal topic 15 gains 13.05's lines.
+
+**Checks.**
+
+- **Phase 1 unchanged, byte for byte.** HEAD's code (`git archive` into a scratch folder) and this
+  tree ran the same evaluate and attention runs (ResNet-18 arm A and the small CNN, with an
+  overlay), the arm A and B slices, and the three dry runs. All on one fixture, one config and the
+  same phase-1-format checkpoints. All 31 output files are identical: tables, every PNG and both
+  overlays.
+- **Mutation checks**, on a scratch copy of the tree (the worktree untouched), 31 planted faults,
+  each caught by a test:
+  - 20 in the code: each place the size is dropped or replaced by 224 (predict, the overlays, both
+    `run_splits`, each tool's `load_checkpoint` call, the geometry, the mask, the attention
+    dataset, the box share, `predict_split`, `overlay_photo`), the mixed-size report, both
+    `load_checkpoint` size checks, the phase-2 label, the phase-mix refusal;
+  - 11 in the notebook: `LEDGER_PATH` not following `LEDGER`, no `LEDGER` or `SLICE_PAIRS` check,
+    the check reading `docs/ledger.md` always, unknown or missing checkpoints not caught, no 13.05
+    code check, phase 2 taking phase 1's pairing, re-runs allowed, a named pair with no seed or no
+    row allowed.
+- The journal's command runs green (20 passed).
+- `bash scripts/check.sh` green: 1,177 passed (1,129 before, 48 new), mypy, ruff and the data guard
+  clean.
+
+**For the user.**
+
+- The phase-2 checkpoints go into a separate private Kaggle dataset; the How-to-run step suggests
+  `trailcam-checkpoints-p2`, but any slug works through `CHECKPOINTS_ROOT`.
+- A re-run of `p2_baseline` at a later commit (plan section 4) gives two rows of one config and
+  seed. Its default slices are then refused by run id, so the evaluation stops in seconds; set
+  `SLICE_PAIRS` to pairs without it, or `[]`. Evaluate and attention are unaffected.
+
+Review: tier 2 by the playbook (evaluation code, the notebook, `.claude/rules/` and tests are
+high-stakes; no split code, no final scoring). Command: `/review-session 13.05`. Spec changed:
+`.claude/rules/training.md` (TR), `docs/phase2-plan.md` sections 3, 4, 6 and 9 (P2, cited by R17,
+R20, R26), `docs/review/invariants.md`.
+
+**Next.** The review, which the user starts. Then the merge; sync first if main has moved (9.02's
+test-ledger rows today).

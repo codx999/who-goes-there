@@ -794,6 +794,18 @@ burst's or a trans camera's, or trans_val would score a camera the model trained
 uv run pytest -q tests/test_copypaste.py -k "pool or eval"
 ```
 
+**Added by 13.05, evaluating phase 2.** A model trained on 320 px crops learned what an animal looks
+like at that scale; shown 224 px crops, every animal is about 30% smaller in pixels than anything it
+was trained on, so its score would measure the size mismatch, not the recipe. So evaluation now uses
+the training size from the config, and a checkpoint of another size is refused, never scored.
+trans_val is one camera, so a macro-F1 change there can be one class, such as bobcats at camera 125.
+Phase 2 reads trans_val's per-class rows beside its macro-F1 to see which classes moved; the keep
+rule itself does not change. Try:
+
+```bash
+uv run pytest -q tests/test_phase2_eval.py -k "geometry or refused"
+```
+
 ---
 
 ## Surprises and lessons

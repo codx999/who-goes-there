@@ -11,8 +11,9 @@ paths:
   fixture images) first, and leave real runs to the Kaggle notebook started by the user.
 - If a run or verification script fails 2 times in a row, STOP, print the short stack trace
   summary, and wait for the user. Do not loop to self-heal.
-- Every run sets and logs its seeds. Every training run appends one row to `docs/ledger.md` (the
-  dry run prints its row and never appends) with the fields of `docs/plan.md` section 5, "Ledger"
+- Every run sets and logs its seeds. Every training run appends one row to its phase's ledger:
+  phase-1 runs to `docs/ledger.md`, phase-2 (`p2_`) runs to `docs/ledger-phase2.md` (the dry run
+  prints its row and never appends) with the fields of `docs/plan.md` section 5, "Ledger"
   row, in this order: run id, model, arm, config, config hash, split seed, run seed, split hash,
   epochs run, best epoch, scheduler, val accuracy, val macro-F1, trans_val accuracy, trans_val
   macro-F1, checkpoint hash. The ledger row is what gets reviewed.
