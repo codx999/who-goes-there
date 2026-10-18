@@ -46,12 +46,15 @@ def make_loaders(
     num_workers: int,
     pin_memory: bool,
     train_transform: TrainTransform | None = None,
+    eval_transform: EvalTransform | None = None,
     generator: torch.Generator | None = None,
 ) -> Mapping[str, Loader]:
     """One loader per split in `SPLIT_NAMES` order; shuffle on train only.
 
     `train_transform` defaults to the control arm; the training script passes
-    `TrainTransform(arm)` for the run's arm.
+    `TrainTransform(arm, size=...)` for the run's arm and input size. `eval_transform` defaults to
+    `EvalTransform()` (224 px); the training script passes `EvalTransform(size)` of the same input
+    size, one object shared by the four eval splits.
     """
     if not isinstance(split, Split):
         raise TypeError("make_loaders takes the Split from make_split, not a list of records")
@@ -92,8 +95,15 @@ def make_loaders(
 
     if train_transform is None:
         train_transform = TrainTransform()
+    if eval_transform is None:
+        eval_transform = EvalTransform()
+    if train_transform.size != eval_transform.size:
+        raise ValueError(
+            f"the training transform outputs {train_transform.size} px, the eval transform "
+            f"{eval_transform.size} px"
+        )
     loaders = {"train": loader(CCT20Dataset(train, image_root, train_transform), shuffle=True)}
     for name in EVAL_SPLITS:
-        dataset = CCT20Dataset(split.records[name], image_root, EvalTransform())
+        dataset = CCT20Dataset(split.records[name], image_root, eval_transform)
         loaders[name] = loader(dataset, shuffle=False)
     return MappingProxyType(loaders)

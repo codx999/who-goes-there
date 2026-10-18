@@ -1,6 +1,10 @@
 """trailcam/train/config.py and the root config.yaml (item 5.02; R25 arm A and arm B differ in
-`arm` alone, R31 the training recipe of plan.md section 5; item 13.04: arm C's `paste_p`, the
-first phase-2 setting, and the phase-1 config hashes it must leave unchanged).
+`arm` alone, R31 the training recipe of plan.md section 5, for the phase-1 configs).
+
+Phase 2 (item 13.02, docs/phase2-plan.md): every `p2_` config is `resnet18_arm_a` with the one
+change `P2_CHANGES` names for it, so a phase-2 comparison changes one thing; arm C's one change
+(item 13.04) is the arm with its own setting, `paste_p`. `input_size` and `paste_p`, the fields
+phase 2 adds, leave every phase-1 config hash as `docs/ledger.md` records it.
 
 The first tests read the committed config.yaml; the rest feed `parse_configs` small texts built
 from it, so each refusal is checked against a file that is otherwise valid.
@@ -10,13 +14,12 @@ import hashlib
 import json
 from collections.abc import Sequence
 from dataclasses import asdict, fields, replace
-from pathlib import Path
 
 import pytest
 import yaml
 from PIL import Image
 
-from trailcam.data.dataset import ARMS, TrainTransform
+from trailcam.data.dataset import ARMS, INPUT_SIZE, TrainTransform
 from trailcam.data.metadata import Box
 from trailcam.model import factory
 from trailcam.train import config as config_module
@@ -25,21 +28,38 @@ from trailcam.train.config import (
     DRY_RUN,
     FIELDS,
     HASH_EXCLUDED,
+    HASH_NEUTRAL,
     MODEL_NAMES,
-    PHASE2_FIELDS,
+    OPTIONAL_FIELDS,
+    PHASE2_PREFIX,
     Config,
     ConfigError,
     config_hash,
+    is_phase2,
     load_config,
     load_configs,
     parse_configs,
     with_overrides,
 )
 from trailcam.train.ledger import check_ledger
+from trailcam.train.train import LEDGER_PATH
 
-FULL = ("small_cnn", "resnet18_arm_a", "resnet18_arm_b")
-PHASE2 = ("p2_arm_c",)
-LEDGER = Path(__file__).resolve().parents[1] / "docs" / "ledger.md"
+PHASE1 = ("small_cnn", "resnet18_arm_a", "resnet18_arm_b")  # the training configs R31 holds for
+P2_BASE = "resnet18_arm_a"
+P2_CHANGES: dict[str, dict[str, object]] = {
+    "p2_baseline": {},  # the control re-run at the phase-2 commit
+    "p2_arm_c": {"arm": "C", "paste_p": 0.5},  # copy-paste (item 13.04): the arm and its setting
+    "p2_head3": {"head_only_epochs": 3},  # the body trains 7 of the 10 epochs
+    "p2_res320": {"input_size": 320},  # eval resize round(320 * 256 / 224) = 366
+    "p2_r50": {"model": "resnet50"},
+}
+# The config hashes of docs/ledger.md's rows (items 6.04, 6.05, 7.02, 7.03); score_test.py
+# refuses a config whose hash no longer matches its row.
+PHASE1_HASHES = {
+    "small_cnn": "f40ed6e3960104f10a78e3d33a8f530cde82e23a555def76f694e19ab09a3e95",
+    "resnet18_arm_a": "483aa055ab221fe445add05623a061a980fdf728f63c819c78caccd5a94c6203",
+    "resnet18_arm_b": "483aa055ab221fe445add05623a061a980fdf728f63c819c78caccd5a94c6203",
+}
 
 
 @pytest.fixture(scope="module")
@@ -48,7 +68,7 @@ def configs() -> dict[str, Config]:
 
 
 def test_all_configs_load(configs: dict[str, Config]) -> None:
-    assert list(configs) == [DRY_RUN, *FULL, *PHASE2]
+    assert list(configs) == [DRY_RUN, *PHASE1, *P2_CHANGES]
     assert all(isinstance(c, Config) for c in configs.values())
     assert load_config("resnet18_arm_b") == configs["resnet18_arm_b"]
 
@@ -69,8 +89,19 @@ def test_every_config_has_both_seeds(configs: dict[str, Config]) -> None:
         assert config.split_seed == 42  # the seed of the pinned split tests and the data card
 
 
+def test_the_phase_of_a_config_is_its_name(configs: dict[str, Config]) -> None:
+    """Phase 2 is named by the prefix alone: the unprefixed training configs are phase 1's, the
+    `p2_` ones are `P2_CHANGES`, and the dry run is neither."""
+    assert PHASE2_PREFIX == "p2_"
+    training = {name for name, c in configs.items() if not c.fixture}
+    assert {name for name in training if not is_phase2(name)} == set(PHASE1)
+    assert {name for name in configs if is_phase2(name)} == set(P2_CHANGES)
+    assert configs[DRY_RUN].fixture and not is_phase2(DRY_RUN)
+    assert is_phase2("p2_anything") and not is_phase2("resnet18_p2_")
+
+
 def test_every_config_has_loader_settings(configs: dict[str, Config]) -> None:
-    for name in (*FULL, *PHASE2):
+    for name in (*PHASE1, *P2_CHANGES):
         assert (configs[name].num_workers, configs[name].pin_memory) == (4, True), name
         assert configs[name].fixture is False, name
 
@@ -83,11 +114,12 @@ def test_arm_a_and_arm_b_differ_in_arm_alone(configs: dict[str, Config]) -> None
 
 
 def test_the_full_configs_carry_the_recipe(configs: dict[str, Config]) -> None:
-    """R31: AdamW 1e-4 body / 1e-3 head, weight decay 1e-2, cosine with a one-epoch warmup,
-    patience 3, batch 64, mixed precision; up to 10 backbone epochs in all, the first of them
-    head-only (it counts inside max_epochs, item 5.03), up to 15 for the small CNN, which has no
-    pretrained body and trains it at the head's rate."""
-    for name in FULL:
+    """R31, for the phase-1 configs: AdamW 1e-4 body / 1e-3 head, weight decay 1e-2, cosine with
+    a one-epoch warmup, patience 3, batch 64 at 224 px, mixed precision; up to 10 backbone epochs
+    in all, the first of them head-only (it counts inside max_epochs, item 5.03), up to 15 for the
+    small CNN, which has no pretrained body and trains it at the head's rate. The phase-2 configs
+    are held to arm A's recipe with one change instead (`test_every_p2_config_...`)."""
+    for name in PHASE1:
         c = configs[name]
         assert (c.weight_decay, c.scheduler, c.warmup_epochs, c.patience) == (
             1e-2,
@@ -96,6 +128,7 @@ def test_the_full_configs_carry_the_recipe(configs: dict[str, Config]) -> None:
             3,
         ), name
         assert (c.batch_size, c.mixed_precision, c.lr_head) == (64, True, 1e-3), name
+        assert c.input_size == INPUT_SIZE == 224, name
     for name in ("resnet18_arm_a", "resnet18_arm_b"):
         c = configs[name]
         assert (c.model, c.pretrained, c.lr_body, c.max_epochs, c.head_only_epochs) == (
@@ -113,6 +146,56 @@ def test_the_full_configs_carry_the_recipe(configs: dict[str, Config]) -> None:
         15,
         0,
     )
+
+
+@pytest.mark.parametrize("name", list(P2_CHANGES))
+def test_every_p2_config_is_arm_a_with_its_one_change(
+    configs: dict[str, Config], name: str
+) -> None:
+    """Phase 2's one change per comparison: the config differs from `resnet18_arm_a` in exactly
+    the fields `P2_CHANGES` names, to exactly those values, and in nothing else. An arm's own
+    setting (`OPTIONAL_FIELDS`: arm C's `paste_p`) belongs to the arm's change, not a second one."""
+    base, variant = asdict(configs[P2_BASE]), asdict(configs[name])
+    changed = {key: variant[key] for key in FIELDS if variant[key] != base[key]}
+    assert changed == P2_CHANGES[name]
+    assert len(set(changed) - set(OPTIONAL_FIELDS)) <= 1
+
+
+def test_the_p2_config_hashes(configs: dict[str, Config]) -> None:
+    """The control re-run shares arm A's config hash (it is arm A); every variant has its own,
+    so its rows can never pass as another recipe's."""
+    arm_a = config_hash(configs[P2_BASE])
+    assert config_hash(configs["p2_baseline"]) == arm_a
+    variants = [config_hash(configs[name]) for name in P2_CHANGES if name != "p2_baseline"]
+    assert len(set(variants)) == len(variants)
+    assert arm_a not in variants and config_hash(configs["small_cnn"]) not in variants
+
+
+def test_the_phase1_config_hashes_are_the_ledgers(configs: dict[str, Config]) -> None:
+    """Adding `input_size` and `paste_p` left every phase-1 config hash as it was: each
+    docs/ledger.md row's config, at the row's run seed, still hashes to the row's config hash."""
+    for name, digest in PHASE1_HASHES.items():
+        assert config_hash(configs[name]) == digest, name
+    rows, problems = check_ledger(LEDGER_PATH)
+    assert problems == [] and rows
+    for row in rows:
+        config = with_overrides(
+            row["config"], configs[row["config"]], {"run_seed": int(row["run seed"])}
+        )
+        assert config_hash(config) == row["config hash"] == PHASE1_HASHES[row["config"]]
+
+
+def test_input_size_is_left_out_of_the_hash_at_224_only(configs: dict[str, Config]) -> None:
+    """`HASH_NEUTRAL`: at 224 the hash is the one of the fields without `input_size`, as before
+    the field existed; any other value changes it."""
+    assert dict(HASH_NEUTRAL) == {"input_size": INPUT_SIZE, "paste_p": None}
+    assert INPUT_SIZE == 224
+    a = configs[P2_BASE]
+    old = {k: v for k, v in asdict(a).items() if k not in (*HASH_EXCLUDED, *HASH_NEUTRAL)}
+    text = json.dumps(old, sort_keys=True, separators=(",", ":"))
+    assert config_hash(a) == hashlib.sha256(text.encode("utf-8")).hexdigest()
+    assert config_hash(replace(a, input_size=320)) == config_hash(configs["p2_res320"])
+    assert config_hash(replace(a, input_size=320)) != config_hash(a)
 
 
 def _no_paste(
@@ -138,7 +221,7 @@ def test_arm_c_is_arm_a_with_arm_c_and_its_paste_probability(configs: dict[str, 
     a, c = asdict(configs["resnet18_arm_a"]), asdict(configs["p2_arm_c"])
     assert [key for key in FIELDS if a[key] != c[key]] == ["arm", "paste_p"]
     assert (c["arm"], c["paste_p"]) == ("C", 0.5)
-    assert all(name.startswith("p2_") for name in PHASE2)
+    assert is_phase2("p2_arm_c") and "p2_arm_c" in P2_CHANGES
     for name, config in configs.items():
         assert (config.paste_p is not None) == (config.arm == "C"), name
 
@@ -164,7 +247,7 @@ def test_arm_a_and_arm_b_share_the_config_hash(configs: dict[str, Config]) -> No
 @pytest.mark.parametrize("field", [f for f in FIELDS if f not in ("arm", "run_seed")])
 def test_every_other_field_changes_the_config_hash(configs: dict[str, Config], field: str) -> None:
     """A phase-2 field is checked on the config that sets it."""
-    c = configs["p2_arm_c" if field in PHASE2_FIELDS else "resnet18_arm_b"]
+    c = configs["p2_arm_c" if field in OPTIONAL_FIELDS else "resnet18_arm_b"]
     value = getattr(c, field)
     if isinstance(value, bool):
         other: object = not value
@@ -177,30 +260,16 @@ def test_every_other_field_changes_the_config_hash(configs: dict[str, Config], f
     assert config_hash(replace(c, **{field: other})) != config_hash(c)
 
 
-def test_the_phase_1_config_hashes_are_the_ledgers(configs: dict[str, Config]) -> None:
-    """docs/phase2-plan.md section 4: a phase-2 setting must leave the phase-1 hashes as they
-    are, or `score_test.py` refuses the phase-1 checkpoints. Every row of `docs/ledger.md` names a
-    phase-1 config whose hash today is the row's, and every phase-1 config but the dry run has
-    rows (seven at 7.03: one small CNN, three seeds of each ResNet-18 arm)."""
-    rows, problems = check_ledger(LEDGER)
-    assert problems == []
-    assert len(rows) >= 7
-    assert {row["config"] for row in rows} == set(FULL)
-    for row in rows:
-        assert config_hash(configs[row["config"]]) == row["config hash"], row.line
-    for name in FULL:
-        assert all(getattr(configs[name], key) is None for key in PHASE2_FIELDS), name
-
-
-def test_a_phase_2_field_is_hashed_only_when_set(configs: dict[str, Config]) -> None:
-    """Left out (None), a phase-2 field leaves the hash as it was before the field existed: the
-    hash of the other fields, `arm` and `run_seed` aside. Set, it changes the hash, so arm C does
-    not share arm A's hash (its rows go to the phase-2 ledger, item 13.02)."""
+def test_paste_p_is_hashed_only_when_set(configs: dict[str, Config]) -> None:
+    """`HASH_NEUTRAL` holds `paste_p` at None, its value when a config leaves it out: a phase-1
+    config hashes as before the field existed. Set, it changes the hash, so arm C does not share
+    arm A's hash (the user's decision on 13.04; its rows go to the phase-2 ledger)."""
     a = configs["resnet18_arm_a"]
-    before = {k: v for k, v in asdict(a).items() if k not in (*HASH_EXCLUDED, *PHASE2_FIELDS)}
+    assert a.paste_p is None and HASH_NEUTRAL["paste_p"] is None
+    before = {k: v for k, v in asdict(a).items() if k not in (*HASH_EXCLUDED, *HASH_NEUTRAL)}
     text = json.dumps(before, sort_keys=True, separators=(",", ":"))
     assert config_hash(a) == hashlib.sha256(text.encode("utf-8")).hexdigest()
-    assert PHASE2_FIELDS == ("paste_p",) and HASH_EXCLUDED == ("arm", "run_seed")
+    assert OPTIONAL_FIELDS == ("paste_p",) and HASH_EXCLUDED == ("arm", "run_seed")
     c = configs["p2_arm_c"]
     assert config_hash(c) != config_hash(a)
     assert config_hash(replace(c, arm="A", paste_p=None)) == config_hash(a)
@@ -244,7 +313,7 @@ def test_the_dumped_copy_parses_the_same() -> None:
 @pytest.mark.parametrize(
     ("block", "key", "value", "message"),
     [
-        ("resnet18_arm_b", "model", "resnet50", "resnet18_arm_b.model"),
+        ("resnet18_arm_b", "model", "resnet101", "resnet18_arm_b.model"),
         ("resnet18_arm_b", "arm", "C", "resnet18_arm_b.arm"),
         ("resnet18_arm_b", "arm", "b", "resnet18_arm_b.arm"),
         ("common", "scheduler", "step", "scheduler"),
@@ -254,6 +323,9 @@ def test_the_dumped_copy_parses_the_same() -> None:
         ("common", "batch_size", True, "batch_size: expected int"),
         ("common", "batch_size", 64.0, "batch_size: expected int"),
         ("common", "batch_size", 0, "at least 1"),
+        ("common", "input_size", 16, "at least 32"),
+        ("common", "input_size", 224.0, "input_size: expected int"),
+        ("small_cnn", "input_size", 320, "must be 224 for small_cnn"),
         ("common", "split_seed", -1, "0 or more"),
         ("common", "split_seed", "42", "split_seed: expected int"),
         ("common", "pin_memory", "true", "pin_memory: expected bool"),
@@ -292,7 +364,7 @@ def test_an_unknown_field_is_refused() -> None:
         _parse(raw)
 
 
-@pytest.mark.parametrize("key", [f.name for f in fields(Config) if f.name not in PHASE2_FIELDS])
+@pytest.mark.parametrize("key", [f.name for f in fields(Config) if f.name not in OPTIONAL_FIELDS])
 def test_a_missing_field_is_refused(key: str) -> None:
     raw = _raw()
     for block in (raw["common"], *raw["configs"].values()):
@@ -305,8 +377,8 @@ def test_a_missing_field_is_refused(key: str) -> None:
 def test_a_phase_2_field_may_be_left_out_but_arm_c_needs_paste_p() -> None:
     """The phase-1 configs name no phase-2 field and load with it None; arm C without its paste
     probability is refused, as is the field written out as null."""
-    for name in FULL:
-        assert "paste_p" not in _raw()["configs"][name]
+    for name in (*PHASE1, *P2_CHANGES):
+        assert ("paste_p" in _raw()["configs"][name]) == (name == "p2_arm_c"), name
     raw = _raw()
     del raw["configs"]["p2_arm_c"]["paste_p"]  # type: ignore[attr-defined]
     with pytest.raises(ConfigError, match=r"p2_arm_c\.arm: arm C needs paste_p"):

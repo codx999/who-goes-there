@@ -620,11 +620,12 @@ def test_the_training_script_builds_arm_c_from_its_config(fx: Fixture) -> None:
 
 
 def test_the_arms_differ_only_in_the_sampler(arm_c: TrainTransform) -> None:
-    """R25 for arm C: arm A's crop sampler and after-crop steps, plus the paste step before the
-    crop; arms A and B have none."""
+    """R25 for arm C: arm A's crop sampler, output size and after-crop steps, plus the paste step
+    before the crop; arms A and B have none."""
     arm_a, arm_b = TrainTransform("A"), TrainTransform("B")
     assert set(vars(arm_a)) == set(vars(arm_b)) == set(vars(arm_c))
-    assert set(vars(arm_c)) == {"arm", "sampler", "paste", "after_crop"}
+    assert set(vars(arm_c)) == {"arm", "sampler", "paste", "after_crop", "size"}
+    assert arm_c.size == arm_a.size == load_config("p2_arm_c").input_size == 224
     assert arm_c.arm == "C" and type(arm_c.sampler) is ControlCropSampler
     assert repr(arm_c.after_crop) == repr(arm_a.after_crop)
     assert arm_a.paste is None and arm_b.paste is None
@@ -652,6 +653,28 @@ def test_arm_c_with_the_paste_off_is_arm_a(fx: Fixture, arm_c: TrainTransform) -
         changed += not same
     boxed = sum(1 for r in records if r.boxes)
     assert 0 < boxed < len(records) and changed > boxed // 4
+
+
+def test_arm_c_crops_the_composite_at_the_configs_input_size(fx: Fixture) -> None:
+    """Item 13.02's input size reaches arm C as it reaches arm A: the paste step works on the
+    full image, then arm A's crop is resized to `size`. At 320 px every item is 3 x 320 x 320,
+    and with the paste off arm C gives arm A's 320 px tensor draw for draw; `train_transform`
+    passes the config's size to arm C's transform."""
+    pool = background_pool(fx.planted, fx.split)
+    records = fx.split.records["train"]
+    off = TrainTransform("C", paste=CopyPaste(pool, fx.root, 0.0), size=320)
+    on = TrainTransform("C", paste=CopyPaste(pool, fx.root, 1.0), size=320)
+    arm_a = CCT20Dataset(records, fx.root, TrainTransform("A", size=320))
+    for index in range(0, len(records), 7):
+        torch.manual_seed(index)
+        expected = arm_a[index][0]
+        torch.manual_seed(index)
+        assert torch.equal(CCT20Dataset(records, fx.root, off)[index][0], expected)
+        tensor, _ = CCT20Dataset(records, fx.root, on)[index]
+        assert tuple(tensor.shape) == (3, 320, 320)
+    config = replace(load_config("p2_arm_c"), input_size=320)
+    built = train.train_transform(config, fx.planted, fx.split, fx.root, log=lambda _: None)
+    assert built.size == 320 and isinstance(built.paste, CopyPaste)
 
 
 def test_the_composite_goes_through_arm_as_transform(fx: Fixture, arm_c: TrainTransform) -> None:

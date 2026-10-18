@@ -301,7 +301,15 @@ methods. Mixed outcomes are reported as mixed. A negative result is a result.
   once: a test ledger that already holds a row is refused, so no run added after test scores
   were seen can be scored. Each checkpoint's row is printed as soon as it is scored, and the rows
   are appended together after every output is written, so a run that stops part way appends
-  nothing and is run again from the start (user's decisions, review 9.01 and its fix round).
+  nothing and is run again from the start (user's decisions, review 9.01 and its fix round). On
+  Kaggle it runs from `notebooks/kaggle_score_test.ipynb` (item 9.03), a notebook of its own, so
+  the test sets can never be touched by accident from the training or evaluation notebooks. Its
+  `APPROVED_BY` starts empty, and the notebook refuses the scoring until the user fills it in. A
+  fresh Kaggle clone holds its commit's empty test ledger, so the run-once refusal above cannot
+  see an earlier scoring there: the notebook also fetches `main` and refuses once `main`'s
+  `docs/test-ledger.md` holds any row, and the user commits and pushes the rows to `main` on
+  GitHub right after the run (user's decision, review 9.03). Between the run and that push, only
+  `APPROVED_BY`, set back to empty, guards against a second scoring.
 - **Val results (item 8.06, 2026-10-17)**: `notebooks/kaggle_evaluate.ipynb` at commit `dc19821`,
   every checkpoint of `docs/ledger.md` on val and trans_val, scored in float32. All 14 scores
   are within 0.01 of the ledger's (training scored in mixed precision). trans_val is reported,
@@ -428,11 +436,15 @@ score well on accuracy. The result that matters is the cis vs trans gap on both.
 unseen cameras and with a quantified attention score plus a behavioural check. Not a new method:
 a controlled measurement the dataset paper did not run.
 
-**Phase 2, after the presentation** (agreed with the user 2026-10-17, item 13.01). Improving the
-scores on new cameras waits until phase 1 is scored and presented, so nothing changes the reported
-runs. `docs/phase2-plan.md` holds its goal, its rules (one change per step, screened on one seed,
-confirmed on three, its own ledger `docs/ledger-phase2.md`), the ladder of changes and the budget.
-This document stays the source of truth for phase 1; section 1's scope limits hold for phase 1.
+**Phase 2, the week before the presentation** (agreed with the user 2026-10-17, item 13.01;
+moved before the presentation the same day, item 13.02). Improving the scores on new cameras runs
+from 2026-10-18 to a freeze on 2026-10-22, beside phase 1's last items; it touches no phase-1
+config, ledger row or checkpoint, so nothing changes the reported runs or what 9.02 scores.
+`docs/phase2-plan.md` holds its goal, its rules (one change per variant, screened on one seed,
+confirmed on three, its own ledger `docs/ledger-phase2.md`), the ladder of changes, the budget and
+its one pre-declared test scoring of the frozen phase-2 recipe (its section 4), which leaves phase
+1's single scoring of section 7 as it is. This document stays the source of truth for phase 1;
+section 1's scope limits hold for phase 1.
 
 ## 10. Schedule
 

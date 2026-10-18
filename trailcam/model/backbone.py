@@ -7,10 +7,14 @@
   timm's EfficientNet-B0 with its ImageNet-1k weights (`efficientnet_b0.ra_in1k`, 1280 pooled
   features) and a fresh head (`classifier`). timm is imported here only, so the ResNet-18 path
   never needs it.
+- `build_resnet50`: phase 2's larger backbone (`docs/phase2-plan.md` step 5, config `p2_r50`),
+  torchvision's ResNet-50 with its first ImageNet-1k weights (`IMAGENET1K_V1`, the original
+  recipe, as ResNet-18's only weights are; V2's newer recipe would add a second change), `fc`
+  (2048 pooled features) replaced the same way; Grad-CAM's target layer is `layer4` as well.
 
-Both load their ImageNet-1k weights by default, which downloads them once into the torch or
+All three load their ImageNet-1k weights by default, which downloads them once into the torch or
 Hugging Face cache; `pretrained=False` builds the same architecture with random weights (the
-tests, which have no network). Both pretrained weight sets expect the ImageNet mean and standard
+tests, which have no network). Every pretrained weight set expects the ImageNet mean and standard
 deviation that `trailcam/data/dataset.py` normalises with (R21); `tests/test_models.py` checks it.
 
 ImageNet contains no CCT images, so the pretraining is not leakage.
@@ -19,15 +23,23 @@ ImageNet contains no CCT images, so the pretraining is not leakage.
 from __future__ import annotations
 
 from torch import nn
-from torchvision.models import ResNet, ResNet18_Weights, resnet18
+from torchvision.models import ResNet, ResNet18_Weights, ResNet50_Weights, resnet18, resnet50
 
 RESNET18_WEIGHTS = ResNet18_Weights.IMAGENET1K_V1
+RESNET50_WEIGHTS = ResNet50_Weights.IMAGENET1K_V1
 EFFICIENTNET_B0_TIMM_NAME = "efficientnet_b0.ra_in1k"
 
 
 def build_resnet18(num_classes: int, *, pretrained: bool = True) -> ResNet:
     """ResNet-18 (ImageNet-1k weights unless `pretrained=False`) with a `num_classes`-way `fc`."""
     model: ResNet = resnet18(weights=RESNET18_WEIGHTS if pretrained else None)
+    model.fc = nn.Linear(model.fc.in_features, num_classes)
+    return model
+
+
+def build_resnet50(num_classes: int, *, pretrained: bool = True) -> ResNet:
+    """ResNet-50 (ImageNet-1k V1 weights unless `pretrained=False`), a `num_classes`-way `fc`."""
+    model: ResNet = resnet50(weights=RESNET50_WEIGHTS if pretrained else None)
     model.fc = nn.Linear(model.fc.in_features, num_classes)
     return model
 

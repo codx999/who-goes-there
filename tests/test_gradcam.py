@@ -35,6 +35,8 @@ class _Tiny(nn.Module):
 def test_target_layers_are_the_last_feature_maps() -> None:
     resnet = build_model("resnet18", pretrained=False)
     assert target_layer(resnet) is resnet.layer4
+    resnet50 = build_model("resnet50", pretrained=False)  # phase 2's p2_r50 (item 13.02)
+    assert target_layer(resnet50) is resnet50.layer4
     small = build_model("small_cnn")
     assert target_layer(small) is small.conv_block_3
     efficientnet = build_model("efficientnet_b0", pretrained=False)

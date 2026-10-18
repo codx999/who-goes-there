@@ -15,12 +15,18 @@ loaded config is checked. `config_hash` is the ledger's config hash: a SHA-256 o
 config without `arm` and `run_seed` (`HASH_EXCLUDED`), so the arm A and arm B rows of one seed,
 and the seeds of one arm, share it, and a run whose values differ from the committed file does not.
 
-Phase 2 (docs/phase2-plan.md section 4) adds settings as `PHASE2_FIELDS`: the one exception to
-"nothing is defaulted", each is None when a config leaves it out, and the hash leaves it out while
-it is None. The phase-1 configs name none of them, so their hashes, which `score_test.py` checks
-against `docs/ledger.md`, stay what they were (`tests/test_config.py` pins them against the
-ledger); a phase-2 config that sets one hashes it. `paste_p`, arm C's paste probability (item
-13.04), is set for arm C and only for arm C.
+Phase 2 (`docs/phase2-plan.md`, item 13.02). A config whose name starts with `PHASE2_PREFIX`
+(`p2_`) is a phase-2 config: its runs go to `docs/ledger-phase2.md`, never `docs/ledger.md`
+(`trailcam/train/train.py` and `trailcam/train/ledger.py` refuse both mix-ups). A field added for
+phase 2 is listed in `HASH_NEUTRAL` with the value phase 1 used: at that value it is left out of
+the hash, so every phase-1 config hash stays the one in `docs/ledger.md` (which `score_test.py`
+checks), and any other value changes the hash. `input_size` is the first: the side of the
+training crop and of the eval centre crop, 224 in phase 1 (`trailcam/data/dataset.py`). The small
+CNN's flatten head is sized for 224, so its configs keep 224. `paste_p`, arm C's paste
+probability (item 13.04), is the second, and the one field a config may leave out
+(`OPTIONAL_FIELDS`, the one exception to "nothing is defaulted"): left out it is None, its
+phase-1 value. Arm C sets it and no other arm may, so `p2_arm_c` hashes it and has a config hash
+of its own (the user's decision on 13.04).
 
 The file sits at the repository root, outside the package. `CONFIG_PATH` finds it from a checkout
 or an editable install; a run from an installed wheel passes its path.
@@ -38,11 +44,12 @@ from typing import Any, Final
 
 import yaml
 
-from trailcam.data.dataset import ARMS
+from trailcam.data.dataset import ARMS, INPUT_SIZE
 from trailcam.model.factory import MODEL_NAMES
 
 CONFIG_PATH: Final = Path(__file__).resolve().parents[2] / "config.yaml"
 DRY_RUN: Final = "dryrun"
+PHASE2_PREFIX: Final = "p2_"  # phase-2 config names (docs/phase2-plan.md section 4)
 SCHEDULERS: Final = ("cosine",)  # cosine annealing after a linear warmup (plan.md section 5)
 
 
@@ -62,6 +69,7 @@ class Config:
     max_epochs: int
     head_only_epochs: int  # the first epochs train the head alone (plan.md section 5)
     batch_size: int
+    input_size: int  # train crop and eval centre crop side, px; 224 in phase 1 (HASH_NEUTRAL)
     lr_body: float
     lr_head: float
     weight_decay: float
@@ -72,13 +80,16 @@ class Config:
     num_workers: int
     pin_memory: bool
     fixture: bool  # the dry run: train on the synthetic fixture in a temporary directory
-    # Phase 2: None when the config leaves it out, and then out of the hash (PHASE2_FIELDS).
+    # Phase 2: None when the config leaves it out (OPTIONAL_FIELDS), then out of the hash.
     paste_p: float | None = None  # arm C: share of boxed train images pasted (copypaste.py)
 
 
 FIELDS: Final = tuple(f.name for f in fields(Config))
 HASH_EXCLUDED: Final = ("arm", "run_seed")  # the fields arm A and B, or two seeds, may differ in
-PHASE2_FIELDS: Final = ("paste_p",)  # optional; out of the hash while None
+# Phase-2 fields, left out of the hash at their phase-1 value so the phase-1 hashes stay the same.
+# `paste_p` did not exist in phase 1: None, which is also its value when a config leaves it out.
+HASH_NEUTRAL: Final = MappingProxyType({"input_size": INPUT_SIZE, "paste_p": None})
+OPTIONAL_FIELDS: Final = ("paste_p",)  # may be left out (None); arm C sets it, no other arm does
 _TYPES: Final = {f.name: str(f.type).removesuffix(" | None") for f in fields(Config)}
 
 
@@ -138,6 +149,10 @@ def _check(name: str, config: Config) -> None:
     for key in ("max_epochs", "batch_size", "patience"):
         if getattr(config, key) < 1:
             refuse(key, "must be at least 1")
+    if config.input_size < 32:
+        refuse("input_size", "must be at least 32 (a ResNet halves it five times)")
+    if config.model == "small_cnn" and config.input_size != INPUT_SIZE:
+        refuse("input_size", f"must be {INPUT_SIZE} for small_cnn, whose head is sized for it")
     for key in ("lr_body", "lr_head"):
         if not getattr(config, key) > 0:
             refuse(key, "must be above 0")
@@ -160,7 +175,7 @@ def _config(name: str, common: Mapping[str, object], own: Mapping[str, object]) 
     unknown = sorted(set(raw) - set(FIELDS), key=str)
     if unknown:
         raise ConfigError(f"{name}: unknown fields {unknown}")
-    missing = [key for key in FIELDS if key not in raw and key not in PHASE2_FIELDS]
+    missing = [key for key in FIELDS if key not in raw and key not in OPTIONAL_FIELDS]
     if missing:
         raise ConfigError(f"{name}: missing fields {missing}")
     values = {key: _value(name, key, raw[key]) for key in FIELDS if key in raw}
@@ -212,13 +227,19 @@ def with_overrides(name: str, config: Config, changes: Mapping[str, object]) -> 
     return result
 
 
+def is_phase2(name: str) -> bool:
+    """Whether config `name` is a phase-2 config (`PHASE2_PREFIX`), whose runs go to
+    `docs/ledger-phase2.md` only."""
+    return name.startswith(PHASE2_PREFIX)
+
+
 def config_hash(config: Config) -> str:
-    """SHA-256 (hex) of the config's fields but `HASH_EXCLUDED` and the `PHASE2_FIELDS` that are
-    None, as sorted-key JSON."""
+    """SHA-256 (hex) of the config's fields but `HASH_EXCLUDED`, as sorted-key JSON; a field of
+    `HASH_NEUTRAL` is left out while it holds its phase-1 value."""
     values = {
         key: value
         for key, value in asdict(config).items()
-        if key not in HASH_EXCLUDED and not (key in PHASE2_FIELDS and value is None)
+        if key not in HASH_EXCLUDED and not (key in HASH_NEUTRAL and value == HASH_NEUTRAL[key])
     }
     text = json.dumps(values, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(text.encode("utf-8")).hexdigest()

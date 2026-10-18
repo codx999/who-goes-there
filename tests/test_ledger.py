@@ -1,6 +1,7 @@
 """trailcam/train/ledger.py: the ledger checker and its val summary (plan.md sections 5 and 6;
 R14 one split hash per split seed, R17 trans_val never ranked, R25 arm A and arm B rows of one seed
-share split hash and config hash, R37 no dry-run row, R40 one well-formed row per run id).
+share split hash and config hash, R37 no dry-run row, R40 one well-formed row per run id; item
+13.02: the phase-2 ledger, docs/ledger-phase2.md, takes `p2_` rows only and docs/ledger.md none).
 
 Every ledger here is written into `tmp_path` from rows built with `train.ledger_row`, so the rows
 have exactly the shape `train.py` appends; the hashes are SHA-256 digests of short labels.
@@ -16,7 +17,14 @@ import pytest
 
 from trailcam.train import ledger, train
 from trailcam.train.ledger import check_ledger, main, summary
-from trailcam.train.train import LEDGER_COLUMNS, LEDGER_PATH, ledger_header, ledger_row
+from trailcam.train.train import (
+    LEDGER_COLUMNS,
+    LEDGER_PATH,
+    PHASE2_LEDGER_NAME,
+    PHASE2_LEDGER_PATH,
+    ledger_header,
+    ledger_row,
+)
 
 REPO = Path(__file__).resolve().parents[1]
 KEYS = {column.replace(" ", "_").replace("-", "_").lower(): column for column in LEDGER_COLUMNS}
@@ -101,6 +109,7 @@ def test_the_command_line_exits_0_on_the_real_ledger_and_1_on_a_bad_row(tmp_path
         return subprocess.run(command, cwd=REPO, capture_output=True, text=True, check=False)
 
     assert run(REPO / "docs" / "ledger.md").returncode == 0
+    assert run(REPO / "docs" / "ledger-phase2.md").returncode == 0
     bad = write(tmp_path, arm_a(), arm_b(config_hash=sha("other")))
     result = run(bad)
     assert result.returncode == 1
@@ -254,7 +263,7 @@ def test_a_run_id_not_of_its_own_config_and_seed_fails(tmp_path: Path, run_id: s
 @pytest.mark.parametrize(
     ("changes", "column"),
     [
-        ({"model": "resnet50"}, "model"),
+        ({"model": "resnet101"}, "model"),
         ({"arm": "D"}, "arm"),  # arm C is phase 2's (item 13.04)
         ({"split_seed": "-1"}, "split seed"),
         ({"run_seed": "01", "run_id": "resnet18_arm_a-seed01-20261015T101500Z"}, "run seed"),
@@ -379,3 +388,158 @@ def test_a_failing_check_prints_no_summary(
     out, err = capsys.readouterr()
     assert out == ""
     assert err.splitlines()[-1] == f"ledger check: 2 problems in {path}"
+
+
+# Phase 2 (item 13.02): a ledger named ledger-phase2.md is checked as the phase-2 ledger.
+
+
+def p2(config: str, seed: int = 0, **changes: str) -> dict[str, str]:
+    """A well-formed phase-2 row of `config` (resnet18 arm A) and run seed `seed`, its config
+    hash a digest of the config's name."""
+    base = {
+        "run_id": f"{config}-seed{seed}-20261019T090000Z",
+        "config": config,
+        "config_hash": sha(config),
+        "run_seed": str(seed),
+        "checkpoint_sha256": sha(f"checkpoint {config} {seed}"),
+    }
+    return values(**{**base, **changes})
+
+
+def write_p2(tmp_path: Path, *rows: Mapping[str, str]) -> Path:
+    return write(tmp_path, *rows).rename(tmp_path / PHASE2_LEDGER_NAME)
+
+
+def test_the_real_phase2_ledger_passes(capsys: pytest.CaptureFixture[str]) -> None:
+    assert PHASE2_LEDGER_PATH.name == PHASE2_LEDGER_NAME == "ledger-phase2.md"
+    assert main(["--check", str(PHASE2_LEDGER_PATH)]) == 0
+    assert capsys.readouterr().out.startswith("phase-2 ledger: ")
+
+
+def test_a_p2_row_pasted_into_the_phase1_ledger_fails(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The user pastes rows by hand: a `p2_` row added to a copy of docs/ledger.md fails its
+    check, and with it check.sh's test of the real file and the final scoring's read."""
+    path = tmp_path / "ledger.md"
+    path.write_text(LEDGER_PATH.read_text() + ledger_row(p2("p2_head3")) + "\n")
+    rows, problems = check_ledger(path)
+    line = len(LEDGER_PATH.read_text().splitlines()) + 1
+    assert problems == [
+        f"line {line}: config 'p2_head3' is a phase-2 config: its rows go to "
+        "docs/ledger-phase2.md, never to this ledger"
+    ]
+    assert main(["--check", str(path)]) == 1
+    assert "phase-2 config" in capsys.readouterr().err
+
+
+def test_a_phase1_row_in_the_phase2_ledger_fails(tmp_path: Path) -> None:
+    assert problems_of(write_p2(tmp_path, p2("p2_baseline"), arm_a())) == [
+        "line 8: config 'resnet18_arm_a' is not a phase-2 config (p2_...): its rows go to "
+        "docs/ledger.md"
+    ]
+
+
+def test_the_steps_of_one_model_may_carry_several_config_hashes(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Every phase-2 step is a new recipe of resnet18, so one model and run seed has several
+    config hashes, which the phase-1 checks refuse. An arm pair may share its config's hash
+    (here arm B against arm A) or carry its own: item 13.04's arm C hashes its `paste_p`."""
+    rows = [
+        p2("p2_baseline", config_hash=sha("arm A recipe")),
+        p2("p2_baseline", 1, config_hash=sha("arm A recipe")),
+        p2("p2_head3"),
+        p2("p2_res320"),
+        p2("p2_arm_b", arm="B", config_hash=sha("arm A recipe")),
+        p2("p2_arm_c", arm="C"),
+    ]
+    path = write_p2(tmp_path, *rows)
+    assert problems_of(path) == []
+    assert main(["--check", str(path)]) == 0
+    out = capsys.readouterr().out
+    assert out.startswith("phase-2 ledger: 6 rows, every check passed")
+    unprefixed = [{**row, "config": row["config"][3:], "run id": row["run id"][3:]} for row in rows]
+    phase1 = write(tmp_path, *unprefixed)
+    assert any("disagree on config hash" in problem for problem in problems_of(phase1))
+
+
+def test_the_rows_of_one_phase2_config_share_its_config_hash(tmp_path: Path) -> None:
+    """A config edited between its seeds is two recipes under one name."""
+    path = write_p2(tmp_path, p2("p2_head3"), p2("p2_head3", 1, config_hash=sha("edited")))
+    assert problems_of(path) == [
+        "the rows of config 'p2_head3' (every run seed) disagree on config hash (lines 7, 8)"
+    ]
+
+
+def test_the_phase2_rows_share_one_split_seed(tmp_path: Path) -> None:
+    """Every comparison is paired by run seed on phase 1's split, so a row on another split
+    seed fails, whatever its config."""
+    other = p2("p2_res320", split_seed="7", split_hash=sha("split 7"))
+    assert problems_of(write_p2(tmp_path, p2("p2_head3"), other)) == [
+        "the rows of the phase-2 ledger disagree on split seed (lines 7, 8)"
+    ]
+
+
+@pytest.mark.parametrize(
+    ("changes", "problem"),
+    [
+        ({"config": "dryrun", "run_id": "dryrun-seed0-20261019T090000Z"}, "dry run never"),
+        ({"run_id": "p2_head3-seed1-20261019T090000Z"}, "is not 'p2_head3-seed0-"),
+        ({"val_macro_f1": "0.74"}, "four decimals"),
+    ],
+)
+def test_the_phase2_ledger_keeps_the_cell_checks(
+    tmp_path: Path, changes: dict[str, str], problem: str
+) -> None:
+    row = {**p2("p2_head3"), **{KEYS[key]: value for key, value in changes.items()}}
+    found = problems_of(write_p2(tmp_path, row))
+    assert len(found) >= 1 and problem in found[0]
+
+
+def test_the_phase2_ledger_keeps_the_checks_of_one_config_and_one_hash(tmp_path: Path) -> None:
+    """The rows of one config share model and arm, those of one config hash model, split seed
+    and scheduler, and one split seed has one split hash."""
+    assert problems_of(write_p2(tmp_path, p2("p2_r50"), p2("p2_r50", 1, model="resnet50"))) == [
+        "the rows of config 'p2_r50' disagree on model (lines 7, 8)",
+        f"the rows of config hash {sha('p2_r50')} disagree on model (lines 7, 8)",
+    ]
+    (tmp_path / PHASE2_LEDGER_NAME).unlink()
+    other = p2("p2_head3", 1, scheduler="cosine warmup 2")
+    assert problems_of(write_p2(tmp_path, p2("p2_head3"), other)) == [
+        f"the rows of config hash {sha('p2_head3')} disagree on scheduler (lines 7, 8)"
+    ]
+    (tmp_path / PHASE2_LEDGER_NAME).unlink()
+    moved = p2("p2_res320", split_hash=sha("another split"))
+    assert problems_of(write_p2(tmp_path, p2("p2_head3"), moved)) == [
+        "split seed 42's rows disagree on split hash (lines 7, 8)"
+    ]
+
+
+def test_the_phase2_summary_groups_by_config_never_by_score(tmp_path: Path) -> None:
+    """Three configs of resnet18 arm A are three recipes: the summary never averages them
+    together, and orders them by config and seeds, never by a score."""
+    rows = [
+        p2("p2_res320", val_macro_f1="0.9000"),
+        p2("p2_baseline", 1, val_macro_f1="0.6000"),
+        p2("p2_head3", val_macro_f1="0.7000"),
+        p2("p2_baseline", val_macro_f1="0.5000"),
+    ]
+    found, problems = check_ledger(write_p2(tmp_path, *rows))
+    assert problems == []
+    lines = summary(found, phase2=True).splitlines()
+    assert lines[0] == "phase-2 ledger: 4 rows, every check passed"
+    columns = ["config", "model", "arm", "split seed", "run seed", "rows", *ledger.SCORE_COLUMNS]
+    assert "| " + " | ".join(columns) + " |" in lines
+    table = [line.split(" | ") for line in lines if line.startswith("| p2_")]
+    assert [cells[0][2:] for cells in table] == [
+        "p2_baseline",
+        "p2_baseline",
+        "p2_baseline",
+        "p2_head3",
+        "p2_res320",
+    ]
+    assert [cells[4] for cells in table] == ["0", "1", "all", "0", "0"]
+    assert table[2][7] == "0.5500"  # p2_baseline's mean val macro-F1, its own rows only
+    assert "kept or dropped on val and trans_val" in lines[-1]
+    assert "best" not in "\n".join(lines).lower()

@@ -447,3 +447,75 @@ def test_a_checkpoint_of_another_model_or_class_map_is_refused(tmp_path: Path) -
     torch.save({"model": "small_cnn", "classes": classes, "state_dict": state}, other)
     with pytest.raises(ValueError, match="class map"):
         attention.load_checkpoint(other, config)
+
+
+def test_a_config_of_another_input_size_is_refused_before_the_checkpoint_is_read(
+    tmp_path: Path,
+) -> None:
+    """Item 13.02: every evaluation tool, the demo and the Space load through `load_checkpoint`
+    with their 224 px eval transform (the default `eval_size`), so a phase-2 config of another
+    input size (`p2_res320`) is refused there, not scored at the wrong size; the file is not even
+    opened. A checkpoint of the wrong size is the next test's."""
+    config = load_config("p2_res320")
+    assert config.input_size == 320
+    with pytest.raises(ValueError, match="input size is 320 px; this tool's eval transform is 224"):
+        attention.load_checkpoint(tmp_path / "never-read.pt", config)
+
+
+def _resnet18_checkpoint(path: Path, **extra: object) -> dict[str, Tensor]:
+    """A ResNet-18 checkpoint in `train.py`'s format, its input size (if any) in `extra`."""
+    torch.manual_seed(0)
+    state = {
+        k: v.detach().clone()
+        for k, v in build_model("resnet18", pretrained=False).state_dict().items()
+    }
+    torch.save({"model": "resnet18", "classes": list(CLASSES), "state_dict": state, **extra}, path)
+    return state
+
+
+def test_a_checkpoint_carries_its_input_size_and_a_phase1_one_is_224(tmp_path: Path) -> None:
+    """Item 13.02, the review's low finding: `train.py` saves the input size, and the loader
+    refuses a checkpoint whose size is not the config's, so a 320 px checkpoint can no longer be
+    loaded under a 224 config (the Space's default, `resnet18_arm_a` on a command line) and
+    served at 224. A checkpoint without a size, phase 1's format, loads as 224 px."""
+    arm_a, res320 = load_config("resnet18_arm_a"), load_config("p2_res320")
+    phase1, at_224, at_320 = tmp_path / "phase1.pt", tmp_path / "at224.pt", tmp_path / "at320.pt"
+    state = _resnet18_checkpoint(phase1)  # model, classes and state_dict only
+    _resnet18_checkpoint(at_224, input_size=224)
+    _resnet18_checkpoint(at_320, input_size=320)
+    assert set(torch.load(phase1, weights_only=True)) == attention.PHASE1_CHECKPOINT_KEYS
+
+    for path in (phase1, at_224):
+        loaded = attention.load_checkpoint(path, arm_a)
+        for key, value in loaded.state_dict().items():
+            torch.testing.assert_close(value, state[key])
+        with pytest.raises(
+            ValueError, match="trained at 224 px, but the config's input size is 320"
+        ):
+            attention.load_checkpoint(path, res320, eval_size=320)
+
+    loaded = attention.load_checkpoint(at_320, res320, eval_size=320)
+    for key, value in loaded.state_dict().items():
+        torch.testing.assert_close(value, state[key])
+    with pytest.raises(ValueError, match="trained at 320 px, but the config's input size is 224"):
+        attention.load_checkpoint(at_320, arm_a)
+    with pytest.raises(ValueError, match="this tool's eval transform is 224"):
+        attention.load_checkpoint(at_320, res320)  # the tools run at 224: refused before reading
+
+
+@pytest.mark.parametrize(
+    ("extra", "message"),
+    [
+        ({"input_size": True}, "records an input size of True"),
+        ({"input_size": "320"}, "records an input size of '320'"),
+        ({"input_size": 224.0}, "records an input size of 224.0"),
+        ({"input_size": 224, "arm": "A"}, "not a checkpoint written by trailcam.train.train"),
+    ],
+)
+def test_a_malformed_input_size_or_an_extra_key_is_refused(
+    tmp_path: Path, extra: dict[str, object], message: str
+) -> None:
+    path = tmp_path / "odd.pt"
+    _resnet18_checkpoint(path, **extra)
+    with pytest.raises(ValueError, match=message):
+        attention.load_checkpoint(path, load_config("resnet18_arm_a"))

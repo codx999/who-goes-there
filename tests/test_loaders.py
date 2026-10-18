@@ -189,6 +189,35 @@ def test_train_transform_argument_reaches_the_train_loader_only(
         assert type(dataset_of(built[name]).transform) is EvalTransform
 
 
+def test_eval_transform_argument_reaches_the_eval_loaders_only(
+    fixture: tuple[Split, Path, Metadata],
+) -> None:
+    """Item 13.02: a phase-2 input size reaches the four eval splits through one eval transform,
+    and a training transform of another size is refused, so train and eval never differ in it."""
+    split, root, _ = fixture
+    train_transform, eval_transform = TrainTransform(size=320), EvalTransform(320)
+    built = make_loaders(
+        split,
+        root,
+        BATCH,
+        num_workers=0,
+        pin_memory=False,
+        train_transform=train_transform,
+        eval_transform=eval_transform,
+    )
+    assert dataset_of(built["train"]).transform is train_transform
+    for name in EVAL_SPLITS:
+        assert dataset_of(built[name]).transform is eval_transform
+    images, _ = next(iter(built["val"]))
+    assert tuple(images.shape[1:]) == (3, 320, 320)
+    default = make_loaders(split, root, BATCH, num_workers=0, pin_memory=False)
+    assert all(dataset_of(default[n]).transform.size == 224 for n in SPLIT_NAMES)
+    with pytest.raises(ValueError, match="outputs 320 px, the eval transform 224 px"):
+        make_loaders(
+            split, root, BATCH, num_workers=0, pin_memory=False, train_transform=train_transform
+        )
+
+
 @pytest.mark.parametrize("pin_memory", [False, True])
 def test_num_workers_and_pin_memory_are_passed_through(
     pin_memory: bool, fixture: tuple[Split, Path, Metadata]

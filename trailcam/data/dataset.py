@@ -18,6 +18,13 @@ image alone.
   centre crop 224 and ImageNet normalisation. It takes an image and nothing else, so no box can
   reach it.
 
+Both take a `size`, the side of the square they output, `INPUT_SIZE` (224) by default: every
+phase-1 config, the demo and the Space use 224. A phase-2 config may set another through its
+`input_size` (item 13.02, `docs/phase2-plan.md` section 4): the training crop is resized to that
+side, and the eval transform resizes the shorter side to `eval_resize(size)`, the same margin as
+256 to 224 (366 for 320), then centre-crops `size`. The 256 and 224 of the phase-1 rule hold
+whenever `size` is 224.
+
 All randomness comes from torch's generator, so `torch.manual_seed` (and the DataLoader's
 per-worker seeding) makes the training transform reproducible.
 """
@@ -82,6 +89,12 @@ class ControlCropSampler:
         return int(top), int(left), int(height), int(width)
 
 
+def eval_resize(size: int) -> int:
+    """The shorter side the eval transform resizes to before its centre crop of `size`: 256 for
+    224, and the same ratio for another size (366 for 320)."""
+    return round(size * EVAL_RESIZE / INPUT_SIZE)
+
+
 def make_sampler(arm: str) -> CropSampler:
     """The crop sampler of `arm`: "A" and "C" the control sampler, "B" the box-guided sampler."""
     if arm in ("A", "C"):
@@ -96,8 +109,9 @@ def make_sampler(arm: str) -> CropSampler:
 
 
 class TrainTransform:
-    """The training transform: arm C's paste step, then the sampler's crop, resized to 224 x 224,
-    then flip, colour jitter, random grayscale, tensor and normalisation. Train records only.
+    """The training transform: arm C's paste step, then the sampler's crop, resized to `size` x
+    `size` (224 by default), then flip, colour jitter, random grayscale, tensor and normalisation.
+    Train records only.
 
     `arm` ("A" by default, "B" or "C") picks the crop sampler and the paste step, the one
     difference between the arms: arm C takes arm A's sampler and needs `paste`, a `CopyPaste`
@@ -112,7 +126,11 @@ class TrainTransform:
         *,
         sampler: CropSampler | None = None,
         paste: PasteStep | None = None,
+        size: int = INPUT_SIZE,
     ) -> None:
+        if size < 1:
+            raise ValueError(f"size must be at least 1, got {size}")
+        self.size = size
         if sampler is None:
             self.arm: str | None = "A" if arm is None else arm
             self.sampler: CropSampler = make_sampler(self.arm)
@@ -149,20 +167,24 @@ class TrainTransform:
             image, boxes = self.paste(image, boxes, night, location)
         top, left, height, width = self.sampler(image, boxes)
         cropped: Image.Image = F.resized_crop(
-            image, top, left, height, width, [INPUT_SIZE, INPUT_SIZE], antialias=True
+            image, top, left, height, width, [self.size, self.size], antialias=True
         )
         return self.after_crop(cropped)
 
 
 class EvalTransform:
     """Val, test, demo and Space: shorter side to 256, centre crop 224, normalise. Deterministic;
-    it takes the image only."""
+    it takes the image only. Another `size` (phase 2) resizes to `eval_resize(size)` and crops
+    `size`."""
 
-    def __init__(self) -> None:
+    def __init__(self, size: int = INPUT_SIZE) -> None:
+        if size < 1:
+            raise ValueError(f"size must be at least 1, got {size}")
+        self.size = size
         self.pipeline: Callable[[Image.Image], Tensor] = T.Compose(
             [
-                T.Resize(EVAL_RESIZE, antialias=True),
-                T.CenterCrop(INPUT_SIZE),
+                T.Resize(eval_resize(size), antialias=True),
+                T.CenterCrop(size),
                 T.ToTensor(),
                 T.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
             ]
@@ -179,7 +201,8 @@ class ImageReadError(OSError):
 
 class CCT20Dataset(Dataset[tuple[Tensor, int]]):
     """The records of one split and the folder holding their images (`file_name` under
-    `image_root`). Items are `(float32 tensor of shape (3, 224, 224), class index 0 to 11)`.
+    `image_root`). Items are `(float32 tensor of shape (3, size, size), class index 0 to 11)`, the
+    transform's `size`, 224 unless a phase-2 config sets another.
 
     The training transform is refused for records outside the train split (augmentation runs on
     the training transform only, R20); any other transform type is refused too.

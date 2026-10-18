@@ -397,6 +397,12 @@ would already be a look. Rows go to [test-ledger.md](test-ledger.md); look at
 uv run pytest -q tests/test_score_test.py -k "approver or scored_again or run_seeds"
 ```
 
+**Added by 9.03, the scoring notebook.** The scoring runs from its own Kaggle notebook,
+[kaggle_score_test.ipynb](../notebooks/kaggle_score_test.ipynb), so no slip in the training or
+evaluation notebooks can reach a test split. A fresh clone cannot see an earlier run, so it refuses
+once `main`'s test ledger holds a row, and `APPROVED_BY` starts empty: Run All then checks all and
+stops. A run that stops part way has appended nothing: rerun from the start with a new `--out`.
+
 ## 10. Evaluation pieces built so far
 
 **What we did.** By 2026-10-15 these are built and tested (none run on real checkpoints yet):
@@ -727,12 +733,12 @@ uv run python scripts/deploy_space.py --dry-run --weights models/<run>.pt
 
 ## 15. What we'd improve next, and how
 
-**What we did.** Planned phase 2 (item 13.01), which starts after the presentation: a ladder of
-small changes meant to raise the scores on unseen cameras. A literature review re-ranked it the
-same day: first average the three seeds' weights or predictions (no training), then paste
-training animals onto empty frames from training cameras ("copy-paste", the strongest evidence),
-then weight averaging during training, a longer head-only phase, higher resolution, ResNet-50 and
-infrared-aware augmentation. Each change is tried alone, screened on one seed, confirmed on three
+**What we did.** Planned phase 2 (item 13.01), run in the week before the presentation (13.02): a
+ladder of small changes meant to raise the scores on unseen cameras. A literature review
+re-ranked it the same day: first average the three seeds' weights or predictions (no training),
+then paste training animals onto empty frames from training cameras ("copy-paste", the strongest
+evidence), then weight averaging during training, a longer head-only phase, higher resolution,
+ResNet-50 and infrared-aware augmentation. Each change is tried alone, screened on one seed, confirmed on three
 or five, and kept only if it beats the run-to-run noise without costing more than about 1 point on
 val.
 
@@ -756,6 +762,11 @@ val.
   run tests your understanding as well as the model. Copy-paste helped in a published study that
   pasted animals onto the test cameras' own backgrounds; our rules allow training cameras only, so
   the prediction is a smaller gain than theirs. A wrong guess is where the lesson is.
+- **A control re-run, then parallel screens, then the test scoring declared first** (13.02). The
+  code moved since phase 1's runs, so arm A runs again unchanged: within its seed noise, a
+  variant's gain is the variant's, not the code's. Each variant is one change from that same
+  baseline, so they can be screened side by side and only confirmed winners are stacked. Writing
+  "one recipe, scored once, on 10-22" before any result keeps the test set from picking anything.
 - **Leakage hides in augmentation too.** An empty frame from a test split, or from the same burst
   as a val photo, would smuggle that scene into training; so the background pool gets its own
   rules and tests, like the split.
@@ -885,6 +896,11 @@ Dated, oldest first. Each: what happened, how it was caught, the lesson.
 - **2026-10-16. The weekly Claude budget ran low.** 72% used with 5 days left, shared with other
   projects. *Caught by* the usage page. *Lesson:* budget it like the Kaggle GPU quota: must-have
   items first, the rest after the reset, and cut waste, not checks.
+- **2026-10-17. The 6.04 trap, a second time.** The final scoring's tests copied the real
+  `docs/test-ledger.md` as their empty test ledger, so pasting 9.02's rows would have turned
+  main red, as 6.04's first ledger row did. *Caught by* reviewing 9.03's fixtures, and proved by
+  running the suite with a row added to the file. *Lesson:* a fixture builds its empty file from
+  the header, never from a repo file that a later run fills.
 
 ---
 

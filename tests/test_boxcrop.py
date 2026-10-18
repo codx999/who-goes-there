@@ -28,6 +28,7 @@ from trailcam.data import synthetic
 from trailcam.data.boxcrop import BOX_P, FILL, BoxCropSampler, to_pixels
 from trailcam.data.dataset import (
     CROP_RATIO,
+    INPUT_SIZE,
     CCT20Dataset,
     ControlCropSampler,
     Crop,
@@ -344,8 +345,10 @@ def test_the_arms_differ_only_in_the_crop_sampler() -> None:
     take no paste step (arm C's, item 13.04, is `tests/test_copypaste.py`'s)."""
     arm_a, arm_b = TrainTransform("A"), TrainTransform("B")
     assert TrainTransform().arm == "A" and (arm_a.arm, arm_b.arm) == ("A", "B")
-    assert set(vars(arm_a)) == set(vars(arm_b)) == {"arm", "sampler", "paste", "after_crop"}
+    expected = {"arm", "sampler", "paste", "after_crop", "size"}
+    assert set(vars(arm_a)) == set(vars(arm_b)) == expected
     assert arm_a.paste is None and arm_b.paste is None
+    assert arm_a.size == arm_b.size == INPUT_SIZE  # the output side, 224 unless phase 2 sets it
     assert repr(arm_a.after_crop) == repr(arm_b.after_crop)
     assert type(arm_a.sampler) is ControlCropSampler
     assert type(arm_b.sampler) is BoxCropSampler
