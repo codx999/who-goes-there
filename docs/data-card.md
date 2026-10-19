@@ -236,7 +236,26 @@ every training run records the hash in `docs/ledger.md`.
 
 ## Trans-test locations used for assets/
 
-**Pending item 8.05.** The 6 to 12 demo photos in `assets/` (the Gradio examples and the only
-images Grad-CAM overlays are made from) are chosen by the user in item 8.05, from trans_test
-locations only, with at least two infrared night frames. Their locations are listed here then.
-None are chosen yet; `assets/` does not exist.
+Item 8.05, chosen by the user on 2026-10-18. The 10 demo photos in `assets/` are the Gradio
+examples and the only images Grad-CAM overlays are made from. They come from trans_test only
+(cameras never seen in training) and are the 512 px cache versions, 584 KB in all. They were
+picked by content from a random sample of 2 day and 2 night photos per class (seed 7). No model
+prediction was shown or used in the choice. File names give the labelled class, day or night,
+and an index; they never carry a dataset image id. One candidate with a person in the frame was
+left out.
+
+| file | class | day or night | trans_test location |
+| --- | --- | --- | --- |
+| `trans_bobcat_day_01.jpg` | bobcat | day | 46 |
+| `trans_cat_day_02.jpg` | cat | day | 78 |
+| `trans_cat_night_03.jpg` | cat | night | 100 |
+| `trans_coyote_day_04.jpg` | coyote | day | 46 |
+| `trans_coyote_night_05.jpg` | coyote | night | 7 |
+| `trans_dog_day_06.jpg` | dog | day | 0 |
+| `trans_raccoon_day_07.jpg` | raccoon | day | 100 |
+| `trans_raccoon_night_08.jpg` | raccoon | night | 100 |
+| `trans_car_night_09.jpg` | car | night | 0 |
+| `trans_opossum_day_10.jpg` | opossum | day | 46 |
+
+Four are infrared night frames; the locations are 0, 7, 46, 78 and 100, all trans_test.
+Data: Caltech Camera Traps (CCT20), Beery et al. 2018, CDLA-Permissive 1.0.

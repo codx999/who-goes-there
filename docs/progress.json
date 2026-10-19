@@ -143,7 +143,7 @@
     {"id": "8.05", "session": 8, "owner": "user", "due": "2026-10-18",
      "description": "Choose 6 to 12 trans-test example photos including infrared night frames, copy them into assets/, and list their locations in docs/data-card.md (they are the demo examples and the only images Grad-CAM overlays are made from)",
      "steps": "manual: files are under assets/, `uv run python scripts/guard_data.py --all` passes (24 files, 12 MB budget), the locations are trans-test locations only, at least two are night frames",
-     "passes": false},
+     "passes": true},
     {"id": "8.06", "session": 8, "owner": "user", "due": "2026-10-18",
      "description": "Run the evaluation on val and trans_val on Kaggle with every checkpoint so far; copy the val confusion matrix, per-class plot, attention histogram, slice tables and feature maps into docs/figures/; make four Grad-CAM overlays from the assets/ photos (no other dataset image goes into docs/figures/)",
      "steps": "manual: the PNGs are committed under docs/figures/ within the budget and every overlay's source photo is in assets/; the val metrics table is pasted into docs/plan.md section 7",
