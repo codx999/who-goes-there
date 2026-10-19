@@ -340,7 +340,19 @@ methods. Mixed outcomes are reported as mixed. A negative result is a result.
   - Figures in `docs/figures/`: `val_confusion_matrix_*`, `val_per_class_*` and
     `attention_val_*` (small CNN, arm A and arm B seed 0), `features_by_species_val_seed0.png`
     and `features_by_camera_val_seed0.png` (val and trans_val features cluster by camera), and
-    `slices_val_seed0.md`. No Grad-CAM overlays yet: `assets/` has no photos until item 8.05.
+    `slices_val_seed0.md`.
+  - Grad-CAM overlays (2026-10-19): `notebooks/kaggle_evaluate.ipynb` at commit `a903ebc` with
+    `ASSETS_OVERLAY_RUN` set to arm B seed 2 (the Space's model) on the 10 `assets/` photos
+    (item 8.05). It got 5 of 10 right, in line with trans_test. Four are in `docs/figures/`,
+    numbered by the photo's place in `assets/` in name order:
+    - `gradcam_overlay_01.png`: a bobcat predicted as cat (0.79), with the heat on the animal. The
+      look-alike confusion behind the trans bobcat recall.
+    - `gradcam_overlay_08.png`: an opossum predicted as coyote (0.22), with the heat on the
+      background, not the animal. The shortcut the animal-removed test measures.
+    - `gradcam_overlay_06.png`: a night (infrared) coyote, correct (1.00), with the heat on the
+      animal.
+    - `gradcam_overlay_05.png`: a day coyote, correct (1.00), with the heat partly on the sand
+      below it. A right answer is not always for the right reason.
 - **Test results (item 9.02, the one final scoring, 2026-10-18)**: `notebooks/kaggle_score_test.ipynb`
   at commit `364e851`, approved by codx999, scored at 20261018T193117Z. All 7 checkpoints of
   `docs/ledger.md` were scored once on cis_test (14,478 images, the cis cameras at other times)
