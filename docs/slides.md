@@ -3,9 +3,10 @@
 Item 12.01. The outline of the capstone talk (presentation 2026-11-04), one section per slide, each
 with what goes on the slide, the figure from `docs/figures/` and the speaker notes. Every result
 number is from [`ledger.md`](ledger.md) or [`plan.md`](plan.md) section 7, except the phase-2
-slide, whose numbers are from [`phase2-plan.md`](phase2-plan.md) section 12 (marked there, and
-flagged in `docs/progress-log.md`). Headline claims use the mean of 3 seeds. No phase-3 number
-exists yet; slide 15 is a placeholder.
+slide, whose numbers are from [`phase2-plan.md`](phase2-plan.md) section 12, and the phase-3 slide's
+rule thresholds, from [`phase3-plan.md`](phase3-plan.md) section 1 (both marked there, and flagged in
+`docs/progress-log.md`). Headline claims use the mean of 3 seeds. No phase-3 result exists yet;
+slide 15 is a placeholder.
 
 **Data citation**, on every slide that shows a dataset photo or a chart of the data (marked
 "cite" below): Caltech Camera Traps (CCT20), Beery, Van Horn, Perona, "Recognition in Terra
@@ -325,22 +326,36 @@ say out loud: trans_val is one camera, so these are one-camera results.
 
 ## Slide 15. Phase 3: a stronger backbone (results pending)
 
-> **PLACEHOLDER.** Fill from `docs/phase3-plan.md` (item 13.10) once it is on `main`; it was not
-> there when this outline was written (2026-10-19). Results are expected about 2026-10-28. Do not
-> put a number on this slide until it is in a ledger.
+> **PLACEHOLDER: results pending.** From [`phase3-plan.md`](phase3-plan.md) (item 13.10). The
+> freeze is about 2026-10-28 (its section 11). No phase-3 number goes on this slide until it is in
+> `docs/ledger-phase3.md` and section 13 of that plan.
 
-**On the slide (draft).**
+**On the slide.**
 
-- What it tests: a stronger backbone, ConvNeXt-Tiny, with and without copy-paste.
-- The keep rule: judged on new cameras, as written in `docs/phase3-plan.md` before the runs.
+- **What it tests**: does a stronger ImageNet-1k backbone help on the unseen camera? Two
+  candidates against the same baseline as phase 2 (phase 1's arm A, 3 seeds):
+  (a) **ConvNeXt-Tiny**, everything else the phase-1 recipe; (b) **ConvNeXt-Tiny plus phase 2's
+  copy-paste** (paste probability 0.5), betting the stronger backbone absorbs part of
+  copy-paste's val cost.
+- **The keep rule, fixed before any run**: kept only if trans_val macro-F1 rises by more than
+  0.03 on the mean of 3 seeds **and** on every seed, and val macro-F1 falls by no more than 0.03.
+- **The screen** (seed 0 first): trans_val macro-F1 at least 0.03 up and val at most 0.03 down;
+  only then seeds 1 and 2.
+- **One finalist at most**, and only it is ever scored on test, once, with the user's go-ahead.
 - Results: pending.
 
-**If a phase-3 recipe is kept and scored on test:** slide 5 must show the phase-1 and the phase-3
-numbers side by side, and the slide must say that this is a **second look at the test sets**,
-pre-declared in the phase-3 plan, after the phase-1 scoring. If nothing is kept, this slide says
-so in one line, like slide 14.
+**If a phase-3 recipe is kept and scored on test:** slide 5 shows phase 1's and phase 3's test
+numbers side by side, never one in place of the other, and says the test sets were used a
+**second time**, for one recipe chosen on val and trans_val only, after phase 1's test scores had
+been seen (`phase3-plan.md` section 7). If nothing is kept, there is no test scoring: this slide
+says so in one line, like slide 14, and the Space keeps arm B seed 2.
 
-**Speaker notes.** To be written with the results.
+**Speaker notes.** Why the rule is written first: once a result is seen, a bar can always be
+drawn just under it. Why the val tolerance is 3 points here (phase 2 allowed 1): phase 3 aims at
+new cameras, and the user accepts up to 3 points on familiar cameras for a clear gain on the new
+one, no more. The honest limit to say out loud: trans_val is still one camera, now judged
+against seven recipes, so a kept gain is optimistic about the next new camera. Fill in the
+verdicts from `phase3-plan.md` section 13 when they exist.
 
 ---
 

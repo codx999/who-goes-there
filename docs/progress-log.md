@@ -5087,13 +5087,18 @@ section 7. Every phase-1 result number is there. Every `docs/figures/` path in t
 So 12.01 is left at `passes: false`: step 2 holds for phase 1 but not for slide 14. It can be
 flipped if the user accepts phase2-plan section 12 as a source for that one slide.
 
-**Phase 3.** `docs/phase3-plan.md` was not on `main` or `origin/main` at `b8fe941`, so slide 15
-is a placeholder from the brief (ConvNeXt-Tiny with and without copy-paste, keep rule on new
-cameras, results about 2026-10-28), with the rule that a kept and scored phase-3 recipe puts
-phase-1 and phase-3 numbers side by side on slide 5 and discloses the second test look.
+**Phase 3.** At first `docs/phase3-plan.md` was not on `main`, so slide 15 was drafted from the
+brief. After the sync with `main` at `6e83efb` (13.10 merged; the conflicts in this log and the
+journal kept both sides), slide 15 was rewritten from the plan: the two candidates (ConvNeXt-Tiny,
+and ConvNeXt-Tiny with copy-paste at p 0.5), the keep rule, the screen, one finalist at most, and
+section 7's disclosure if a finalist is scored on test. Still no phase-3 result. Its rule
+thresholds (0.03) and "seven recipes" are from `docs/phase3-plan.md` sections 1 and 6, not plan
+section 7: flagged like slide 14. No 10-26 date was in the slides; the header already says
+2026-11-04. 12.01 stays at `passes: false` by the coordinator's request, until the user decides
+on slide 14's source.
 
 **Not known yet.** Which of the 10 `assets/` photos the Space gets right, beyond the four
 overlays (bobcat and opossum wrong, both coyotes right); slide 4's note says to write them
 down at the rehearsal.
 
-**Next.** 12.04 and 12.05 (the user's); slide 15 once 13.10's plan lands.
+**Next.** 12.04 and 12.05 (the user's); slide 15's verdicts once phase 3 freezes.
