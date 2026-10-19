@@ -835,6 +835,17 @@ one) is the finding worth a longer run. See [phase2-plan.md](phase2-plan.md) sec
 uv run python -m trailcam.train.ledger --check docs/ledger-phase2.md
 ```
 
+**Added by 13.10, phase 3's rule written first.** Phase 3's keep rule (trans_val macro-F1 up more
+than 0.03 on average and on every seed, val down at most 0.03) is fixed before any ConvNeXt run:
+pre-registration. Once a result is seen, a bar can always be drawn just under it, so a rule set
+afterwards only restates the result. On one noisy camera, a rule the numbers could bend would make
+any "kept" worthless, and a fixed one also says in advance what we report if nothing passes. See
+[phase3-plan.md](phase3-plan.md) section 1. Try:
+
+```bash
+uv run python -m trailcam.train.ledger --check docs/ledger.md
+```
+
 ---
 
 ## Surprises and lessons

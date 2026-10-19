@@ -3,7 +3,7 @@
 A PyTorch species classifier for Caltech Camera Traps (CCT20) photos. Input: one camera-trap JPEG.
 Output: one of 12 classes (11 animals plus `car`; `empty`, badger, fox and deer are dropped).
 The headline result is accuracy and macro-F1 on cameras seen in training (cis test) against
-cameras never seen (trans test). Bootcamp capstone, presentation 2026-10-26; the deliverables are
+cameras never seen (trans test). Bootcamp capstone, presentation 2026-11-04; the deliverables are
 the trained model, a Gradio demo on Hugging Face Spaces, slides and this public repo. Out of
 scope: detection, sequence-level classification, the `empty` class, anything beyond a Kaggle GPU.
 

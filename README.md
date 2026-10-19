@@ -1,7 +1,7 @@
 # Who Goes There
 
 A PyTorch species classifier for camera-trap photos, tested on camera locations it never saw
-during training. Bootcamp capstone; presentation 2026-10-26.
+during training. Bootcamp capstone; presentation 2026-11-04.
 
 Given one camera-trap image, the model names the animal in it. The headline result compares
 accuracy on **cis** test images (cameras also seen in training) with **trans** test images

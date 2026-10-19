@@ -511,12 +511,24 @@ config, ledger row or checkpoint, so nothing changes the reported runs or what 9
 confirmed on three, its own ledger `docs/ledger-phase2.md`), the ladder of changes, the budget and
 its one pre-declared test scoring of the frozen phase-2 recipe (its section 4), which leaves phase
 1's single scoring of section 7 as it is. This document stays the source of truth for phase 1;
-section 1's scope limits hold for phase 1.
+section 1's scope limits hold for phase 1. Phase 2 was frozen at the baseline on 2026-10-19, with
+no step kept and no test scoring (`docs/phase2-plan.md` section 12).
+
+**Phase 3, a stronger backbone for new cameras** (approved by the user 2026-10-19, item 13.10).
+A bounded round of two candidates, ConvNeXt-Tiny alone and with arm C's copy-paste, judged on
+trans_val macro-F1 against the same baseline as phase 2 by a keep rule fixed before any run.
+`docs/phase3-plan.md` holds its goal, the keep rule, the candidates, its own ledger
+`docs/ledger-phase3.md`, the budget and the timeline, and its rule for the test sets: at most one
+finalist recipe scored once more, with the user's go-ahead, reported beside phase 1's results and
+disclosed as a second use of the test sets. The Space keeps arm B seed 2 unless phase 3 keeps a
+finalist that passes the CPU check.
 
 ## 10. Schedule
 
-The presentation is Monday 2026-10-26. One session per item group; items live in
-`docs/progress.json`. Tier 3 work (the split, the final scoring) is placed so one fix round still
+The presentation is Wednesday 2026-11-04, moved from Monday 2026-10-26 (the user's decision of
+2026-10-19, for everything: 10-26 is no longer a deadline). The rows to session 11 are the plan
+as written and run; sessions 12 and 13 are re-dated to the new deadline. One session per item
+group; items live in `docs/progress.json`. Tier 3 work (the split, the final scoring) is placed so one fix round still
 fits before the deadline. The research-question work is guarded: seeds 1 and 2 run only if arm B
 seed 0 is done by 10-16.
 
@@ -534,9 +546,11 @@ seed 0 is done by 10-16.
 | 9 | 10-19 | The single final scoring on cis and trans test, every reported arm and seed (user go-ahead) | tier 3 |
 | 10 | 10-20 | Gradio demo, local sort script with timer | tier 2 |
 | 11 | 10-21 | Space: `space/`, requirements export, deploy script; account, Space and deployment (user) | tier 2 |
-| 12 | 10-22 to 10-23 | Slides, README results and Space link, backup video, live-sort rehearsal; calibration if early | tier 0 |
-| buffer | 10-24 to 10-25 | Fix rounds from the tier 3 review, rehearsal | |
-| | 10-26 | Presentation | |
+| 13 | 10-17 to 10-19 | Phase 2 (`docs/phase2-plan.md`), frozen at the baseline on 10-19 | per item |
+| 13 | 10-19 to about 10-28 | Phase 3 (`docs/phase3-plan.md`): plan (10-21), code (10-22), screens and confirms on Kaggle (user, 10-22 to 10-27), freeze about 10-28, then optionally the finalist's one test scoring and the Space redeploy | per item; tier 3 for a test scoring |
+| 12 | 10-19; 10-29 to 11-03 | README results and Space link (done 10-19); slides, backup video, live-sort rehearsal from 10-29; calibration if early | tier 0 |
+| buffer | 10-29 to 11-03 | Fix rounds, rehearsal | |
+| | 11-04 | Presentation | |
 
 Slides: problem, the classifier and live demo, the honest test (cis vs trans), the experiment
 (arm A vs arm B, attention-in-box, animal-removed), two errors from the confusion matrix, day vs
