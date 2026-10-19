@@ -82,8 +82,8 @@ seeds; nothing else is kept.
 **One finalist.** Only one recipe can be phase 3's result (and the only one ever scored on test,
 section 7). If both candidates are kept, the finalist is the one with the higher mean trans_val
 macro-F1; if the two means are within 0.03 of each other (trans_val's noise band), the one with
-the higher mean val macro-F1. Declared now, before any run; open question 1 asks the user to
-confirm it.
+the higher mean val macro-F1. Declared now, before any run, and confirmed by the user on
+2026-10-19 (open question 1).
 
 ## 2. The baseline
 
@@ -271,9 +271,11 @@ Phase 3's rule, written before any phase-3 run:
 - **It needs code that does not exist.** `score_test.py` scores only `docs/ledger.md`'s
   pre-registered phase-1 set (a small CNN row and both arms per seed), and the notebook's `LEDGER`
   is fixed to that file. A phase-3 mode (the finalist's rows of `docs/ledger-phase3.md`, the new
-  test ledger, the phase-1 mode refusing both by name) is a tier-3 item of its own. It is **not**
-  in `docs/progress.json` and needs the user's OK; it should be ready by about 2026-10-27
-  (section 11). Phase 2 named the same idea 13.06 and never added it.
+  test ledger, the phase-1 mode refusing both by name, and a refusal unless the recipe was kept)
+  is a tier-3 item of its own, **item 13.12** (approved by the user on 2026-10-19, due
+  2026-10-27). It is built only after a screen passes; if none passes, it is recorded as
+  skipped. Phase 2 named the same idea 13.06 and never added it; 13.12 takes a new id so that
+  phase 2's references to 13.06 keep their meaning.
 - **The scores choose nothing.** Not the finalist (chosen before), not the Space's seed (chosen on
   val, as in plan.md's open question 7).
 - **Disclosure.** The README and the slides report phase 1's test results (`docs/test-ledger.md`)
@@ -360,7 +362,7 @@ The presentation is on **2026-11-04** (Wednesday), moved from 2026-10-26 by the 
 | 2026-10-19 to 10-21 | this plan (item 13.10, due 10-21) |
 | 2026-10-22 | item 13.11, the code (section 9); its review |
 | 2026-10-22 to 10-25 | the screening batch on Kaggle, run by the user (section 4) |
-| 2026-10-25 to 10-27 | the confirms; the test-scoring code item (section 7), if the user adds it |
+| 2026-10-25 to 10-27 | the confirms; item 13.12, the test-scoring code (section 7), once a screen passes |
 | about 2026-10-28 | the freeze: the verdicts and the finalist; then, only if a finalist exists and the user approves, its one test scoring and the Space redeploy |
 | 2026-10-29 to 11-03 | slides, backup video, rehearsal |
 | 2026-11-04 | presentation |
@@ -375,14 +377,18 @@ deployed model's numbers with the trans_val honesty note, and its test numbers o
 
 ## 12. Open questions
 
+All four were answered before any phase-3 run (through the coordinator).
+
 1. **The finalist rule** (section 1): higher mean trans_val macro-F1, unless within 0.03, then
-   higher mean val macro-F1. The user's to confirm before the first run.
-2. **The screen** (section 1) is this plan's suggestion: +0.03 trans_val and at most -0.03 val on
-   seed 0. The user's to confirm before the first run; the keep rule itself is already fixed.
-3. **(b) after a broken (a)** (section 3): the plan holds (b) back only if (a)'s training is
-   broken. The user may prefer (b) to wait on (a)'s screen in any case.
-4. **The test-scoring item** (section 7): needs the user's OK to be added to
-   `docs/progress.json`, with its own id and a tier-3 review.
+   higher mean val macro-F1. **Decided 2026-10-19, the user: as written.**
+2. **The screen** (section 1): +0.03 trans_val and at most -0.03 val on seed 0. **Decided
+   2026-10-19, the user: as written.** The keep rule was already fixed.
+3. **(b) after a broken (a)** (section 3): both screens run regardless of (a)'s verdict, and (b) is
+   held back only if (a)'s training is broken. **Decided 2026-10-19, the user: as the plan has
+   it**; (b) does not wait on (a)'s screen.
+4. **The test-scoring item** (section 7). **Decided 2026-10-19, the user: approved**, added as
+   item 13.12 (tier 3, due 2026-10-27). It is built only after a screen passes; if none passes,
+   it is recorded as skipped.
 
 ## 13. Results
 

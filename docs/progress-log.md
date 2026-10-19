@@ -5036,3 +5036,20 @@ its first paragraph; as in session 1, you decide whether that line gets `/code-r
 --max-findings all <base>..HEAD`. Spec changed: plan.md sections 9 and 10, phase2-plan.md's
 header; no rule changed. Rows citing PL §9: R31 (the training recipe, unchanged). 13.11 adds
 the phase-3 lines of R17, R25, R30 and R40 (`docs/phase3-plan.md` section 9).
+
+## 2026-10-19: item 13.10, the user's answers to the open questions (Opus 5.5, high)
+
+**Done.** The user's answers to `docs/phase3-plan.md` section 12, given 2026-10-19 in the
+coordinator session and relayed here, recorded there as "decided 2026-10-19, the user": the
+finalist rule and the screen as written; both screens run regardless, and (b) is held only if
+(a)'s training is broken; the test-scoring item approved. Sections 1, 7 and 11 now name it.
+Added to `docs/progress.json` as **13.12** (owner claude, tier 3, due 2026-10-27, passes false):
+`score_test.py`'s phase-3 mode for the finalist's 3 seeds into `docs/test-ledger-phase3.md`,
+gated by `APPROVED_BY`, refusing a recipe that was not kept; built only after a screen passes,
+recorded as skipped if none does. Id 13.12, not the unused 13.06, because `docs/phase2-plan.md`
+uses 13.06 for phase 2's never-built scoring. The user keeps 13.11's wider steps and skips the
+optional review of 13.10.
+
+**Checks.** `bash scripts/check.sh` green. No file outside `docs/` changed.
+
+Review: none (tier 0, the user's decision).
