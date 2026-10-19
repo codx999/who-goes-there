@@ -11,7 +11,9 @@ of plan.md section 1's scope limits, for phase 2 only: backbones larger than Res
 than one training-time change. Phase 2 ended early, on 2026-10-19, with the user's decisions of
 2026-10-18 and 19 (item 13.09): no step was kept, so the frozen recipe is the baseline and the
 pre-declared phase-2 test scoring does not run. The verdicts, the freeze and the summary for the
-slides are in section 12.
+slides are in section 12. The dates below are as planned and run: on 2026-10-19 the user moved
+the presentation to 2026-11-04 and approved a phase 3, which has its own plan,
+[phase3-plan.md](phase3-plan.md), and leaves this file's rules and results as they are.
 
 Data: Caltech Camera Traps (CCT20), Beery et al. 2018, CDLA-Permissive 1.0. Phase-1 numbers below
 are counts and scores from `docs/ledger.md`, `docs/plan.md` and `docs/data-card.md`, or derived

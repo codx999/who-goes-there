@@ -4989,6 +4989,71 @@ headline table, the experiment, the Space link, the local run and the data card 
 **Next.** Phase 3 (approved 2026-10-19: presentation moved to 2026-11-04, keep rule on new
 cameras) is planned as one item after the 2026-10-21 usage reset.
 
+## 2026-10-19: item 13.10, phase 3's plan (Opus 5.5, high)
+
+**Done.** `docs/phase3-plan.md`, "Phase 3: a stronger backbone for new cameras", from the user's
+decisions of 2026-10-19 (through the coordinator): the goal (trans_val macro-F1); the keep rule,
+fixed before any run (mean trans_val macro-F1 up more than 0.03 over the baseline, up on every
+one of 3 seeds, mean val macro-F1 down no more than 0.03); the suggested screen (seed 0: trans_val
+at least +0.03 and val at most -0.03, so the screen asks of one seed what the keep rule asks of
+the mean) and the confirm (seeds 1 and 2); a finalist rule if both candidates are kept. Baseline:
+phase 1's `resnet18_arm_a` seeds 0 to 2, as in phase 2, plus one control re-run `p3_baseline`
+seed 0 (justified: 13.11 changes training-path files, phase 2's own re-run rule, and it tests the
+new ledger cheaply); every candidate also shown against arm B. Candidates: `p3_convnext`
+(ConvNeXt-Tiny, pinned to `convnext_tiny.fb_in1k`: the locked timm 1.0.30 resolves the bare name
+to an ImageNet-12k tag) and `p3_convnext_cp` (plus arm C at 0.5), with hypothesis lines; BioCLIP
+and MegaDetector out, as future work. The honest limits, the test-set rule (one finalist, once,
+`APPROVED_BY`, its own `docs/test-ledger-phase3.md`, both phases reported and the second use
+disclosed; none if nothing is kept), the ledger (a new `docs/ledger-phase3.md`), the budget (about
+2 to 3 GPU hours, cap 3) and the timeline to 2026-11-04. The `p3_` configs are left to 13.11:
+`load_configs` refuses a model not in `MODEL_NAMES`, and a `p3_` name routes to `docs/ledger.md`
+today. The Space needs more than a config for a ConvNeXt (timm is not in
+`space/requirements.txt`, `tests/test_space.py` asserts so, and `DEFAULT_CONFIG` is fixed in
+`trailcam/demo/predict.py`), so that is in 13.11 too.
+
+The presentation moved to 2026-11-04: CLAUDE.md (the user confirmed in this session), README.md,
+plan.md section 10 (rows for phases 2 and 3, session 12 re-dated) and a dated note at the top of
+`docs/phase2-plan.md` (its 10-26 lines kept as the record of what was planned then). Not edited,
+as history: `docs/HANDOFF.md`, `docs/research-prompt.md`, `docs/research-report.md`. plan.md
+section 9 points at the new plan. Items 13.10 and 13.11 added to `docs/progress.json` (the user's
+OK via the coordinator); 13.11's steps also name the phase-3 ledger routing and the notebooks'
+`LEDGER` value, which the plan's section 8 needs. Five journal lines on pre-registration (topic 15).
+
+**For the user.** Your brief said trans_val is "125 images from one camera"; it is 1,603 images
+from one camera, location 125 (`docs/phase2-plan.md` section 2). The plan says the latter.
+Open questions for you (plan section 12): the finalist rule, the screen, (b) after a broken (a),
+and the test-scoring code item, which is not in `docs/progress.json` and needs your OK.
+
+**Checks.** Every score in the plan recomputed from `docs/ledger.md` and `docs/ledger-phase2.md`
+(the means, the keep and screen bars 0.3401, 0.8257, 0.3215 and 0.8242, and the hindsight
+screen of phase 2's five seed-0 runs). Both ledger checks exit 0. The relative links resolve. No
+10-26 deadline left in CLAUDE.md, README.md or plan.md's schedule. `bash scripts/check.sh` green.
+
+**Next.** Item 13.11 (code, due 2026-10-22).
+
+Review: tier 0 (docs only). `scripts/risk_files.sh` prints `CLAUDE.md`, for a one-date change in
+its first paragraph; as in session 1, you decide whether that line gets `/code-review xhigh
+--max-findings all <base>..HEAD`. Spec changed: plan.md sections 9 and 10, phase2-plan.md's
+header; no rule changed. Rows citing PL §9: R31 (the training recipe, unchanged). 13.11 adds
+the phase-3 lines of R17, R25, R30 and R40 (`docs/phase3-plan.md` section 9).
+
+## 2026-10-19: item 13.10, the user's answers to the open questions (Opus 5.5, high)
+
+**Done.** The user's answers to `docs/phase3-plan.md` section 12, given 2026-10-19 in the
+coordinator session and relayed here, recorded there as "decided 2026-10-19, the user": the
+finalist rule and the screen as written; both screens run regardless, and (b) is held only if
+(a)'s training is broken; the test-scoring item approved. Sections 1, 7 and 11 now name it.
+Added to `docs/progress.json` as **13.12** (owner claude, tier 3, due 2026-10-27, passes false):
+`score_test.py`'s phase-3 mode for the finalist's 3 seeds into `docs/test-ledger-phase3.md`,
+gated by `APPROVED_BY`, refusing a recipe that was not kept; built only after a screen passes,
+recorded as skipped if none does. Id 13.12, not the unused 13.06, because `docs/phase2-plan.md`
+uses 13.06 for phase 2's never-built scoring. The user keeps 13.11's wider steps and skips the
+optional review of 13.10.
+
+**Checks.** `bash scripts/check.sh` green. No file outside `docs/` changed.
+
+Review: none (tier 0, the user's decision).
+
 ## 2026-10-19: item 12.01, the slide outline and speaker notes (Opus 5.5, high)
 
 **Done.** `docs/slides.md`: 17 slides plus backups, each with what goes on it, its figure and
