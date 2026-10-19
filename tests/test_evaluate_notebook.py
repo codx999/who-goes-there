@@ -90,6 +90,18 @@ P2_RUNS = (
 P2_RUN_IDS = tuple(
     f"{name}-seed{seed}-20261019T0{n}0000Z" for n, (name, seed) in enumerate(P2_RUNS)
 )
+# Item 13.11: the runs of a made-up phase-3 ledger: the control at seed 0 only, as planned.
+P3_LEDGER = "docs/ledger-phase3.md"
+P3_CONFIGS = ("p3_baseline", "p3_convnext", "p3_convnext_cp")
+P3_RUNS = (
+    ("p3_baseline", 0),
+    ("p3_convnext", 0),
+    ("p3_convnext_cp", 0),
+    ("p3_convnext", 1),
+)
+P3_RUN_IDS = tuple(
+    f"{name}-seed{seed}-20261023T0{n}0000Z" for n, (name, seed) in enumerate(P3_RUNS)
+)
 
 _spec = importlib.util.spec_from_file_location("guard_data", ROOT / "scripts" / "guard_data.py")
 assert _spec is not None and _spec.loader is not None
@@ -190,7 +202,7 @@ def _write_config(path: Path) -> None:
     """config.yaml with phase 1's three training configs and the phase-2 ones the tests use small
     enough for the CPU: batch 8, no workers, no pinned memory, no download."""
     settings = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
-    for name in ("small_cnn", "resnet18_arm_a", "resnet18_arm_b", *P2_CONFIGS):
+    for name in ("small_cnn", "resnet18_arm_a", "resnet18_arm_b", *P2_CONFIGS, *P3_CONFIGS):
         settings["configs"][name].update(
             batch_size=8, num_workers=0, pin_memory=False, pretrained=False
         )
@@ -1033,15 +1045,17 @@ def test_the_summary_refuses_a_metrics_table_without_its_split_rows(
 
 
 def _phase2_names(
-    root: Path, runs: Mapping[str, tuple[str, int]] = dict(zip(P2_RUN_IDS, P2_RUNS, strict=True))
+    root: Path,
+    runs: Mapping[str, tuple[str, int]] = dict(zip(P2_RUN_IDS, P2_RUNS, strict=True)),
+    ledger: str = P2_LEDGER,
 ) -> dict[str, object]:
     """`_light_names` for phase 2: `LEDGER = "docs/ledger-phase2.md"`, as the parameter cell
     derives LEDGER_PATH from it, and a phase-2 ledger of `runs` (run id: config and run seed)
-    with made-up `.pt` files."""
+    with made-up `.pt` files; for phase 3 (item 13.11), `ledger` the phase-3 one."""
     names = _kaggle_names(root)
     clone = names["CLONE"]
     assert isinstance(clone, Path)
-    names.update(LEDGER=P2_LEDGER, LEDGER_PATH=clone / P2_LEDGER)
+    names.update(LEDGER=ledger, LEDGER_PATH=clone / ledger)
     config_file, checkpoints_root = names["CONFIG_FILE"], names["CHECKPOINTS_ROOT"]
     assert isinstance(config_file, Path) and isinstance(checkpoints_root, Path)
     _write_config(config_file)
@@ -1057,19 +1071,21 @@ def _phase2_names(
 def test_the_check_cell_refuses_a_bad_ledger_or_slice_pairs(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`LEDGER` is one of the two ledgers, as in the training notebook; `SLICE_PAIRS` is None or
-    a list of pairs of two different config names."""
+    """`LEDGER` is one of the three ledgers, as in the training notebook (phase 3's since item
+    13.11); `SLICE_PAIRS` is None or a list of pairs of two different config names."""
     monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "unset by the test")
     names = _run(["parameters"], {})
     for good in (
         {"LEDGER": P2_LEDGER},
+        {"LEDGER": P3_LEDGER},
         {"SLICE_PAIRS": []},
         {"SLICE_PAIRS": [("p2_baseline", "p2_res320"), ("p2_head3", "p2_res320")]},
     ):
         _run(["check"], {**names, **good})
-    assert f"LEDGER {P2_LEDGER}" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert f"LEDGER {P2_LEDGER}" in out and f"LEDGER {P3_LEDGER}" in out
     for bad in (
-        {"LEDGER": "docs/ledger-phase3.md"},
+        {"LEDGER": "docs/ledger-phase4.md"},
         {"LEDGER": "ledger.md"},
         {"LEDGER": Path("docs/ledger.md")},
         {"SLICE_PAIRS": ("p2_baseline", "p2_res320")},
@@ -1167,6 +1183,53 @@ def test_phase2_slices_pair_each_config_with_p2_baseline_at_the_same_seed(
         [["p2_baseline", str(files[base0])], ["p2_res320", str(files[res0])]],
         [["p2_baseline", str(files[base1])], ["p2_res320", str(files[res1])]],
     ]
+
+
+def test_phase3_slices_pair_each_config_with_p3_baseline_at_the_same_seed(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Item 13.11: with `LEDGER = "docs/ledger-phase3.md"` and `SLICE_PAIRS = None`, every other
+    config beside `p3_baseline` at the run seeds both have: the control is seed 0 only, so a
+    candidate's seed 1 is not paired. The calls ask for val and trans_val only."""
+    names = _phase2_names(tmp_path, dict(zip(P3_RUN_IDS, P3_RUNS, strict=True)), P3_LEDGER)
+    names = _run(["checkpoints"], names)
+    base0, convnext0, cp0, _ = P3_RUN_IDS
+    assert names["slice_runs"] == {
+        "slices-p3_baseline-p3_convnext-seed0": [base0, convnext0],
+        "slices-p3_baseline-p3_convnext_cp-seed0": [base0, cp0],
+    }
+    assert "slices of 2 pairs, same run seed" in capsys.readouterr().out
+    calls, recorders = _recorders()
+    names.update(recorders, DATA_ROOT=Path("/unpacked/cct20_512"))
+    _run(["evaluate", "slices"], names)
+    parsers = {"evaluate": evaluate, "attention": attention, "slices": slices}
+    for name, argvs in calls.items():
+        for argv in argvs:
+            assert parsers[name].build_parser().parse_args(argv).split == list(CLI_SPLITS)
+    evaluated = [evaluate.build_parser().parse_args(a).config_name for a in calls["evaluate"]]
+    assert evaluated == [name for name, _ in P3_RUNS]
+
+
+def test_a_phase3_ledger_needs_a_commit_with_item_13_11_s_code(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """With `LEDGER = "docs/ledger-phase3.md"` the clone cell refuses a COMMIT whose `slices.py`
+    predates item 13.11 (no `phase_of`, so no phase-3 labels, configs or ConvNeXt either),
+    before the install; phase 2 still takes it."""
+    commit = str(_parameters(TREES["parameters"])["COMMIT"])
+
+    def git(argv: list[str], **kwargs: object) -> SimpleNamespace:
+        return SimpleNamespace(stdout=f"{commit}\n" if "rev-parse" in argv else "")
+
+    monkeypatch.setattr(subprocess, "run", git)
+    current = (ROOT / "trailcam/evaluate/slices.py").read_text(encoding="utf-8")
+    assert "phase_of(" in current
+    older = current.replace("phase_of(", "is_phase2(")
+    _run(["clone"], _clone_cell_names(tmp_path / "a", older, P2_LEDGER))
+    with pytest.raises(RuntimeError, match="lacks trailcam/evaluate/slices.py"):
+        _run(["clone"], _clone_cell_names(tmp_path / "b", older, P3_LEDGER))
+    _run(["clone"], _clone_cell_names(tmp_path / "c", current, P3_LEDGER))
+    assert capsys.readouterr().out.count(f"commit {commit}") == 2
 
 
 def test_named_slice_pairs_replace_the_default_in_either_phase(

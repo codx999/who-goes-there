@@ -2,16 +2,20 @@
 
 The Space gets, in one commit, these files and nothing else (`ALLOWED`):
 
-- `app.py`, `requirements.txt` and `README.md` from `space/`;
-- `config.yaml`, which names the model `load_model` builds;
+- `app.py`, `requirements.txt`, `README.md` and `config_name.txt` from `space/`;
+- `config.yaml`, which gives the model `load_model` builds for the config `config_name.txt` names;
 - the example photos directly under `assets/` (`example_photos` of the demo, so the Space shows
   the same examples as the local app);
 - the `trailcam` package's modules, `trailcam/**/*.py` as git tracks them, at the same paths, so
   `import trailcam` works beside `app.py` and the package finds `config.yaml` and `assets/` at the
   Space's root as it finds them at the repo's root here;
 - the weights, `--weights <path>`, as `model.pt`. The arm is chosen after the final scoring (open
-  question 7), so no run is named here. The file must be a `train.py` checkpoint of the model
-  `config.yaml` gives `DEFAULT_CONFIG`; anything else is refused.
+  question 7), so no run is named here. The file must be a `train.py` checkpoint of the config
+  that the committed `space/config_name.txt` names (`read_config_name`; item 13.11): its model,
+  class map and input size, as `load_model` checks them. That file names `resnet18_arm_b` until
+  phase 3 freezes, so the command below deploys the arm B checkpoint as before; a phase-3
+  finalist is deployed by naming its `p3_` config there in a commit. A fixture config (the dry
+  run's) is refused; anything else is refused too.
 
 Refused before anything is read for upload or any token is looked at: a file under `data/` (this
 checkout's, the main checkout's, or `TRAILCAM_DATA_ROOT`), links followed; a file outside this
@@ -50,7 +54,8 @@ from pathlib import Path
 from typing import Final
 
 from trailcam.demo.app import example_photos
-from trailcam.demo.predict import DEFAULT_CONFIG, load_model
+from trailcam.demo.predict import SPACE_CONFIG_FILE, load_model, read_config_name
+from trailcam.train.config import load_config
 
 ROOT: Final = Path(__file__).resolve().parents[1]
 TOKEN_VARIABLE: Final = "HF_TOKEN"
@@ -61,11 +66,12 @@ FIXED_FILES: Final = {
     "app.py": "space/app.py",
     "requirements.txt": "space/requirements.txt",
     "README.md": "space/README.md",
+    SPACE_CONFIG_FILE: f"space/{SPACE_CONFIG_FILE}",
     "config.yaml": "config.yaml",
 }
 # Every path the Space may receive; anything else is refused.
 ALLOWED: Final = re.compile(
-    r"app\.py|requirements\.txt|README\.md|config\.yaml|model\.pt"
+    r"app\.py|requirements\.txt|README\.md|config_name\.txt|config\.yaml|model\.pt"
     r"|assets/[^/]+\.(?i:jpg|jpeg|png)"  # any case, as `example_photos` and the guard read it
     r"|trailcam/(?:[A-Za-z_][A-Za-z0-9_]*/)*[A-Za-z_][A-Za-z0-9_]*\.py"
 )
@@ -135,14 +141,23 @@ def check_committed(root: Path) -> None:
         )
 
 
-def check_weights(weights: Path, config_path: Path) -> None:
-    """Refuse weights that are not a `train.py` checkpoint of `DEFAULT_CONFIG`'s model."""
+def check_weights(weights: Path, config_path: Path, config_name_file: Path) -> None:
+    """Refuse weights that are not a `train.py` checkpoint of the config `config_name_file`
+    names (the Space's `config_name.txt`), and a config name that is unreadable, unknown to
+    `config_path` or a fixture config."""
     if weights.suffix != ".pt":
         raise DeployError("--weights must be a .pt checkpoint written by trailcam.train.train")
     try:
-        load_model(weights, DEFAULT_CONFIG, config_path)
+        name = read_config_name(config_name_file)
+        fixture = load_config(name, config_path).fixture
     except Exception as error:
-        raise DeployError(f"--weights is not a {DEFAULT_CONFIG} checkpoint: {error}") from error
+        raise DeployError(f"space/{SPACE_CONFIG_FILE}: {error}") from error
+    if fixture:
+        raise DeployError(f"space/{SPACE_CONFIG_FILE} names {name}, a fixture config")
+    try:
+        load_model(weights, name, config_path)
+    except Exception as error:
+        raise DeployError(f"--weights is not a {name} checkpoint: {error}") from error
 
 
 def plan(weights: Path, root: Path = ROOT) -> list[Upload]:
@@ -170,7 +185,7 @@ def plan(weights: Path, root: Path = ROOT) -> list[Upload]:
     uploads.append(Upload(WEIGHTS_NAME, weights))
     for upload in uploads:
         check_upload(upload, root, data)
-    check_weights(weights, root / "config.yaml")
+    check_weights(weights, root / "config.yaml", root / "space" / SPACE_CONFIG_FILE)
     if len({upload.path_in_space for upload in uploads}) != len(uploads):
         raise DeployError("two files would land on one path in the Space")
     return sorted(uploads, key=lambda upload: upload.path_in_space)
@@ -215,8 +230,8 @@ def describe(upload: Upload) -> str:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="scripts/deploy_space.py",
-        description="Upload the Space: app, requirements, README, config, examples, trailcam "
-        "and the weights. The token comes from the HF_TOKEN environment variable only.",
+        description="Upload the Space: app, requirements, README, config name, config, examples, "
+        "trailcam and the weights. The token comes from the HF_TOKEN environment variable only.",
         allow_abbrev=False,
     )
     parser.add_argument("--weights", type=Path, required=True, help="the chosen run's .pt")

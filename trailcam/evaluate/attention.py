@@ -575,7 +575,9 @@ def load_checkpoint(path: Path, config: Config, *, eval_size: int = INPUT_SIZE) 
     the wrong size (its test scoring is item 13.06's). Then it refuses a checkpoint of another
     model, class map or input size. Since item 13.02 `train.py` saves the input size
     (`CHECKPOINT_KEYS`); a checkpoint without one holds exactly `PHASE1_CHECKPOINT_KEYS`, as phase
-    1's do, and was trained at 224 px.
+    1's do, and was trained at 224 px. The model is built by `build_model` from the config's
+    model name (a ConvNeXt-Tiny for `p3_convnext`, item 13.11) with random weights, which the
+    checkpoint's state dict then replaces, so loading never downloads pretrained weights.
     """
     if config.input_size != eval_size:
         raise ValueError(

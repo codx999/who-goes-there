@@ -28,6 +28,12 @@ probability (item 13.04), is the second, and the one field a config may leave ou
 phase-1 value. Arm C sets it and no other arm may, so `p2_arm_c` hashes it and has a config hash
 of its own (the user's decision on 13.04).
 
+Phase 3 (`docs/phase3-plan.md`, item 13.11) adds a second prefix the same way: a config whose
+name starts with `PHASE3_PREFIX` (`p3_`) is a phase-3 config, whose runs go to
+`docs/ledger-phase3.md` only. `phase_of` gives a name's phase from `PHASE_PREFIXES` (1 for any
+name without a phase prefix), and `train.py` and `ledger.py` route by it. Phase 3 adds no field,
+so `HASH_NEUTRAL` is unchanged and `p3_baseline`, `resnet18_arm_a` exactly, shares its hash.
+
 The file sits at the repository root, outside the package. `CONFIG_PATH` finds it from a checkout
 or an editable install; a run from an installed wheel passes its path.
 """
@@ -50,6 +56,8 @@ from trailcam.model.factory import MODEL_NAMES
 CONFIG_PATH: Final = Path(__file__).resolve().parents[2] / "config.yaml"
 DRY_RUN: Final = "dryrun"
 PHASE2_PREFIX: Final = "p2_"  # phase-2 config names (docs/phase2-plan.md section 4)
+PHASE3_PREFIX: Final = "p3_"  # phase-3 config names (docs/phase3-plan.md section 4)
+PHASE_PREFIXES: Final = MappingProxyType({2: PHASE2_PREFIX, 3: PHASE3_PREFIX})  # 1: no prefix
 SCHEDULERS: Final = ("cosine",)  # cosine annealing after a linear warmup (plan.md section 5)
 
 
@@ -150,7 +158,7 @@ def _check(name: str, config: Config) -> None:
         if getattr(config, key) < 1:
             refuse(key, "must be at least 1")
     if config.input_size < 32:
-        refuse("input_size", "must be at least 32 (a ResNet halves it five times)")
+        refuse("input_size", "must be at least 32 (a ResNet or ConvNeXt halves it five times)")
     if config.model == "small_cnn" and config.input_size != INPUT_SIZE:
         refuse("input_size", f"must be {INPUT_SIZE} for small_cnn, whose head is sized for it")
     for key in ("lr_body", "lr_head"):
@@ -227,10 +235,24 @@ def with_overrides(name: str, config: Config, changes: Mapping[str, object]) -> 
     return result
 
 
+def phase_of(name: str) -> int:
+    """The phase of config `name`: that of its prefix in `PHASE_PREFIXES`, else 1."""
+    for phase, prefix in PHASE_PREFIXES.items():
+        if name.startswith(prefix):
+            return phase
+    return 1
+
+
 def is_phase2(name: str) -> bool:
     """Whether config `name` is a phase-2 config (`PHASE2_PREFIX`), whose runs go to
     `docs/ledger-phase2.md` only."""
-    return name.startswith(PHASE2_PREFIX)
+    return phase_of(name) == 2
+
+
+def is_phase3(name: str) -> bool:
+    """Whether config `name` is a phase-3 config (`PHASE3_PREFIX`), whose runs go to
+    `docs/ledger-phase3.md` only."""
+    return phase_of(name) == 3
 
 
 def config_hash(config: Config) -> str:

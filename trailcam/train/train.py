@@ -44,7 +44,10 @@ exists with the header of `LEDGER_COLUMNS` (review 5.03), so a bad path fails in
 of after the GPU hour. `check_ledger_phase` refuses, before training and again at the append, a
 phase-2 config (`p2_`, `trailcam/train/config.py`) with any ledger but `docs/ledger-phase2.md`
 (`PHASE2_LEDGER_NAME`) and a phase-1 config with that one (item 13.02), so a phase-2 row never
-lands in `docs/ledger.md`.
+lands in `docs/ledger.md`. Phase 3 (item 13.11) is one more entry of the same table
+(`PHASE_LEDGER_NAMES`): a `p3_` config goes to `docs/ledger-phase3.md` (`PHASE3_LEDGER_NAME`)
+and nowhere else, and that ledger takes nothing else. A ledger's phase is its file name
+(`ledger_phase`), a config's its prefix (`phase_of`); the two must agree.
 The config's `input_size` sets the side of the training crop and of the eval transform (224 for
 every phase-1 config; `trailcam/data/dataset.py`); the loop itself does not depend on it. The
 checkpoint holds the model name, the class list, the state dict and the input size, which
@@ -86,6 +89,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from types import MappingProxyType
 from typing import Final
 
 import numpy as np  # a dependency of torchvision
@@ -105,17 +109,22 @@ from trailcam.model.factory import build_model, parameter_groups
 from trailcam.train.config import (
     CONFIG_PATH,
     DRY_RUN,
+    PHASE_PREFIXES,
     Config,
     ConfigError,
     config_hash,
-    is_phase2,
     load_config,
+    phase_of,
     with_overrides,
 )
 
 LEDGER_PATH: Final = Path(__file__).resolve().parents[2] / "docs" / "ledger.md"
 PHASE2_LEDGER_NAME: Final = "ledger-phase2.md"  # the phase-2 runs' ledger (docs/phase2-plan.md)
 PHASE2_LEDGER_PATH: Final = LEDGER_PATH.with_name(PHASE2_LEDGER_NAME)
+PHASE3_LEDGER_NAME: Final = "ledger-phase3.md"  # the phase-3 runs' ledger (docs/phase3-plan.md)
+PHASE3_LEDGER_PATH: Final = LEDGER_PATH.with_name(PHASE3_LEDGER_NAME)
+# A ledger of one of these names takes the configs of that phase only; any other is phase 1's.
+PHASE_LEDGER_NAMES: Final = MappingProxyType({2: PHASE2_LEDGER_NAME, 3: PHASE3_LEDGER_NAME})
 LEDGER_COLUMNS: Final = (
     "run id",
     "model",
@@ -512,23 +521,39 @@ def ledger_row(values: Mapping[str, str]) -> str:
     return "| " + " | ".join(cells) + " |"
 
 
+def ledger_phase(ledger: Path) -> int:
+    """The phase whose rows `ledger` takes, by its file name (`PHASE_LEDGER_NAMES`), else 1."""
+    for phase, name in PHASE_LEDGER_NAMES.items():
+        if ledger.name == name:
+            return phase
+    return 1
+
+
 def is_phase2_ledger(ledger: Path) -> bool:
     """Whether `ledger` is a phase-2 ledger, by its file name (`PHASE2_LEDGER_NAME`)."""
-    return ledger.name == PHASE2_LEDGER_NAME
+    return ledger_phase(ledger) == 2
+
+
+def is_phase3_ledger(ledger: Path) -> bool:
+    """Whether `ledger` is a phase-3 ledger, by its file name (`PHASE3_LEDGER_NAME`)."""
+    return ledger_phase(ledger) == 3
 
 
 def check_ledger_phase(config_name: str, ledger: Path) -> None:
-    """Refuse a phase-2 config with a phase-1 ledger, and a phase-1 config with the phase-2 one."""
-    if is_phase2(config_name) and not is_phase2_ledger(ledger):
+    """Refuse a config whose phase (`phase_of`) is not the ledger's (`ledger_phase`): a phase-2
+    or phase-3 config with any ledger but its own, and a phase-1 config with either of those."""
+    config_phase, phase = phase_of(config_name), ledger_phase(ledger)
+    if config_phase == phase:
+        return
+    if config_phase != 1:
         raise ValueError(
-            f"config {config_name} is a phase-2 config: its rows go to docs/{PHASE2_LEDGER_NAME}, "
-            f"not {ledger.name}"
+            f"config {config_name} is a phase-{config_phase} config: its rows go to "
+            f"docs/{PHASE_LEDGER_NAMES[config_phase]}, not {ledger.name}"
         )
-    if is_phase2_ledger(ledger) and not is_phase2(config_name):
-        raise ValueError(
-            f"{ledger.name} takes phase-2 configs only (p2_...), not {config_name}; phase-1 rows "
-            "go to docs/ledger.md"
-        )
+    raise ValueError(
+        f"{ledger.name} takes phase-{phase} configs only ({PHASE_PREFIXES[phase]}...), not "
+        f"{config_name}; phase-1 rows go to docs/ledger.md"
+    )
 
 
 def check_ledger(ledger: Path) -> str:

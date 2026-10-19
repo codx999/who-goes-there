@@ -15,12 +15,21 @@ Decoding the upload, the transform, the move to the device and the softmax are a
 timed region: the seconds shown are the model's forward pass only.
 
 The import surface is this module and what it imports from `trailcam`: torch, torchvision,
-Pillow, NumPy, PyYAML and matplotlib (through the evaluate package), timm only for EfficientNet.
-gradio is the app's alone.
+Pillow, NumPy, PyYAML and matplotlib (through the evaluate package), and timm, imported only when
+a timm model (EfficientNet-B0, ConvNeXt-Tiny) is built. gradio is the app's alone.
+
+**The Space's config (item 13.11).** The Space's weights belong to the config named in
+`config_name.txt` beside its `app.py` (`SPACE_CONFIG_FILE`, `space/config_name.txt` in the repo),
+which `read_config_name` reads; `scripts/deploy_space.py` checks the weights against the same
+file before an upload. It names `DEFAULT_CONFIG`, ResNet-18 arm B, until phase 3 freezes; a kept
+phase-3 finalist is deployed by naming its `p3_` config there in a commit
+(`docs/phase3-plan.md` section 11). `DEFAULT_CONFIG` stays the local demo's and the sorter's
+default.
 """
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
@@ -37,6 +46,8 @@ from trailcam.train.config import CONFIG_PATH, load_config
 TOP_K: Final = 3  # the top class and two runners-up
 DEFAULT_CONFIG: Final = "resnet18_arm_b"  # both arms are a ResNet-18; open question 7 picks one
 PHOTO_SUFFIXES: Final = (".jpg", ".jpeg", ".png")  # the app's examples and the live sort
+SPACE_CONFIG_FILE: Final = "config_name.txt"  # beside the Space's app.py: its weights' config
+_CONFIG_NAME: Final = re.compile(r"[A-Za-z0-9_]+")
 
 
 @dataclass(frozen=True)
@@ -46,6 +57,17 @@ class Prediction:
 
     top: tuple[tuple[str, float], ...]
     seconds: float
+
+
+def read_config_name(path: Path) -> str:
+    """The config name in the file at `path` (the Space's `SPACE_CONFIG_FILE`): its one line that
+    is neither empty nor a `#` comment. Refuses a file with none, with more than one, or with
+    anything but a config name's characters on it."""
+    lines = [line.strip() for line in path.read_text(encoding="utf-8").splitlines()]
+    names = [line for line in lines if line and not line.startswith("#")]
+    if len(names) != 1 or not _CONFIG_NAME.fullmatch(names[0]):
+        raise ValueError(f"{path.name} must hold one config name on a line of its own")
+    return names[0]
 
 
 def load_model(checkpoint: Path, config_name: str, config_path: Path = CONFIG_PATH) -> nn.Module:

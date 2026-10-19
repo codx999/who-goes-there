@@ -30,8 +30,9 @@ macro-F1 over the classes present in that slice, which a rare slice or a trans s
 of. The two slices of a cut always add up to the split (day + night, common + rare).
 
 **Feature map.** The backbone features are the input of the model's head (`head_module`),
-flattened: 512 for ResNet-18, 1280 for EfficientNet-B0, `hidden_units * 28 * 28` for the small
-CNN (25,088 per image; a caller that wants only the slice tables passes `keep_features=False`).
+flattened: 512 for ResNet-18, 1280 for EfficientNet-B0, 768 for ConvNeXt-Tiny,
+`hidden_units * 28 * 28` for the small CNN (25,088 per image; a caller that wants only the slice
+tables passes `keep_features=False`).
 They are projected to two dimensions by PCA (centred, `torch.linalg.svd` in float64, each
 component's sign fixed so its largest loading is positive; no new dependency), one projection per
 checkpoint over the images of every split given, so cis and trans cameras share one map. Two PNGs,
@@ -44,7 +45,10 @@ models compared. A phase-1 checkpoint is labelled by its model and arm, as befor
 A` beside `resnet18 arm B`, one seed's pair); a phase-2 one by its config name, since several
 phase-2 configs share a model and an arm (`p2_baseline` beside `p2_head3` or `p2_res320`, the
 pairing of `docs/phase2-plan.md` section 3). Phase-1 and phase-2 checkpoints are never mixed in
-one run: phase 2 compares each variant with `p2_baseline`, never with a phase-1 run. Each
+one run: phase 2 compares each variant with `p2_baseline`, never with a phase-1 run. Phase 3
+(item 13.11) follows phase 2: a `p3_` checkpoint is labelled by its config name and compared
+with `p3_baseline` or another `p3_` run, never mixed with another phase's. A ConvNeXt-Tiny's
+features are the 768 pooled and layer-normed values its `head.fc` reads. Each
 checkpoint is scored at its own config's `input_size` (224 in phase 1, 320 for `p2_res320`), and
 `load_checkpoint` refuses one trained at another size than its config's. Which run seeds are
 paired is the caller's choice (the evaluation notebook pairs the same seed).
@@ -97,8 +101,8 @@ from trailcam.train.config import (
     DRY_RUN,
     Config,
     ConfigError,
-    is_phase2,
     load_config,
+    phase_of,
 )
 from trailcam.train.train import (
     CACHE_ANNOTATIONS,
@@ -659,8 +663,8 @@ def checkpoint_label(config: Config) -> str:
 
 def model_label(name: str, config: Config) -> str:
     """The command line's label of config `name`: `checkpoint_label` for a phase-1 config, the
-    config name for a phase-2 one, whose model and arm several phase-2 configs share."""
-    return name if is_phase2(name) else checkpoint_label(config)
+    config name for a phase-2 or phase-3 one, whose model and arm several configs share."""
+    return name if phase_of(name) != 1 else checkpoint_label(config)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -676,7 +680,7 @@ def build_parser() -> argparse.ArgumentParser:
         metavar=("CONFIG_NAME", "PATH"),
         help=(
             "a config name and a checkpoint written by train.py; repeat for each model compared "
-            "(arm A and arm B; in phase 2, p2_baseline and a variant)"
+            "(arm A and arm B; in phase 2 or 3, its baseline and a variant)"
         ),
     )
     parser.add_argument("--config", type=Path, default=CONFIG_PATH, help="the config.yaml path")
@@ -716,11 +720,12 @@ def resolve(
         if config.fixture:
             parser.error(f"config {name} has fixture: true")
         models.append((model_label(name, config), config, Path(path)))
-    phases = {is_phase2(name) for name, _ in args.checkpoint}
+    phases = sorted({phase_of(name) for name, _ in args.checkpoint})
     if len(phases) != 1:
+        named = " and ".join(f"phase-{phase}" for phase in phases)
         parser.error(
-            "phase-1 and phase-2 checkpoints in one run: phase 2 compares each variant with "
-            "p2_baseline (docs/phase2-plan.md section 3)"
+            f"{named} checkpoints in one run: phase 2 compares each variant with p2_baseline "
+            "(docs/phase2-plan.md section 3), phase 3 with p3_baseline (docs/phase3-plan.md)"
         )
     labels = [label for label, _, _ in models]
     if len(set(labels)) != len(labels):

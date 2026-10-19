@@ -6,7 +6,8 @@ magics) and defines nothing, so the logic stays in `trailcam`
 (R41 outputs cleared; R38 the one pip install, of the clone; R37 and R25 the real-run entry point
 with no dry-run or recipe flags; R17 no test split; R16 an alarm fails the cell; R27 seeds only
 through the config and `--run-seed`; R06 the licence and citation; item 13.02: the `LEDGER`
-parameter, and a config of the other phase than `LEDGER`'s refused in the first check cell).
+parameter, and a config of the other phase than `LEDGER`'s refused in the first check cell; item
+13.11: the phase-3 ledger and `p3_` configs on the same terms).
 """
 
 import ast
@@ -26,7 +27,7 @@ import pytest
 from trailcam.data.cache import CACHE_TOP, archive_files, sidecar_folders, unpack_cache
 from trailcam.data.metadata import DAY_NIGHT_SIDECAR
 from trailcam.train import device, train
-from trailcam.train.config import PHASE2_PREFIX, is_phase2, load_configs
+from trailcam.train.config import PHASE2_PREFIX, PHASE3_PREFIX, is_phase2, load_configs, phase_of
 
 ROOT = Path(__file__).resolve().parents[1]
 NOTEBOOK = ROOT / "notebooks" / "kaggle_train.ipynb"
@@ -39,7 +40,8 @@ OLDEST_COMMIT = "17ca508d420cccf10f4ed83d8df849a1dde153cd"
 # dataset, Kaggle extracted it); verified 2026-10-15, one file of 3,213,506,560 bytes.
 KAGGLE_ARCHIVE = "Path('/kaggle/input/notebooks/codx888/notebook2b5a4bf6ad/cct20_512.tar')"
 PARAMETERS = {"CONFIG_NAME", "RUN_SEED", "LEDGER", "COMMIT", "CACHE_ARCHIVE", "DATA_ROOT"}
-LEDGERS = ("docs/ledger.md", f"docs/{train.PHASE2_LEDGER_NAME}")  # phase 1, phase 2
+# phase 1, phase 2, phase 3
+LEDGERS = ("docs/ledger.md", f"docs/{train.PHASE2_LEDGER_NAME}", f"docs/{train.PHASE3_LEDGER_NAME}")
 
 _spec = importlib.util.spec_from_file_location("guard_data", ROOT / "scripts" / "guard_data.py")
 assert _spec is not None and _spec.loader is not None
@@ -121,16 +123,18 @@ def test_parameters() -> None:
     assert p["CACHE_ARCHIVE"] == KAGGLE_ARCHIVE
     assert p["LOCAL_CACHE"] == "Path('/tmp/trailcam-cache')"  # local disk, not /kaggle/working
     # The check cell's list of config names is the phase-1 training configs of config.yaml; the
-    # phase-2 ones are matched by their prefix, so a new p2_ config needs no notebook edit.
+    # phase-2 and phase-3 ones are matched by their prefix, so a new one needs no notebook edit.
     (listed,) = [
         ast.literal_eval(n.comparators[0])
         for tree in TREES
         for n in ast.walk(tree)
         if isinstance(n, ast.Compare) and ast.unparse(n.left) == "CONFIG_NAME"
     ]
-    assert set(listed) == {name for name in training if not is_phase2(name)}
+    assert set(listed) == {name for name in training if phase_of(name) == 1}
     phase2 = {name for name in training if is_phase2(name)}
     assert phase2 and all(re.fullmatch(r"p2_[a-z0-9_]+", name) for name in phase2)
+    phase3 = {name for name in training if phase_of(name) == 3}
+    assert phase3 and all(re.fullmatch(r"p[23]_[a-z0-9_]+", name) for name in phase3)
 
 
 def _check_cell() -> int:
@@ -156,7 +160,14 @@ def _run_check_cell(
 
 @pytest.mark.parametrize(
     ("config_name", "ledger"),
-    [("small_cnn", LEDGERS[0]), ("resnet18_arm_b", LEDGERS[0]), ("p2_head3", LEDGERS[1])],
+    [
+        ("small_cnn", LEDGERS[0]),
+        ("resnet18_arm_b", LEDGERS[0]),
+        ("p2_head3", LEDGERS[1]),
+        ("p3_baseline", LEDGERS[2]),
+        ("p3_convnext", LEDGERS[2]),
+        ("p3_convnext_cp", LEDGERS[2]),
+    ],
 )
 def test_the_check_cell_takes_a_config_with_the_ledger_of_its_phase(
     monkeypatch: pytest.MonkeyPatch,
@@ -176,6 +187,12 @@ def test_the_check_cell_takes_a_config_with_the_ledger_of_its_phase(
         ("p2_arm_c_p25", LEDGERS[0], "are of different phases"),
         ("resnet18_arm_a", LEDGERS[1], "are of different phases"),
         ("small_cnn", LEDGERS[1], "are of different phases"),
+        ("p3_convnext", LEDGERS[0], "are of different phases"),
+        ("p3_baseline", LEDGERS[1], "are of different phases"),
+        ("p2_head3", LEDGERS[2], "are of different phases"),
+        ("resnet18_arm_a", LEDGERS[2], "are of different phases"),
+        ("p3_convnext", "docs/ledger-phase4.md", "LEDGER must be"),
+        ("p4_convnext", LEDGERS[2], "CONFIG_NAME must be"),
         ("small_cnn", "docs/test-ledger.md", "LEDGER must be"),
         ("p2_head3", "/kaggle/working/ledger-phase2.md", "LEDGER must be"),
         ("resnet18", LEDGERS[0], "CONFIG_NAME must be"),
@@ -187,21 +204,25 @@ def test_the_check_cell_refuses_a_config_of_the_other_phase_than_the_ledger(
 ) -> None:
     """Item 13.02: a `p2_` config with docs/ledger.md, or a phase-1 config with the phase-2
     ledger, fails in the first check cell, before the clone, the install and training;
-    `train.py` refuses it again (tests/test_train.py)."""
+    `train.py` refuses it again (tests/test_train.py). Item 13.11: the same for `p3_` configs
+    and docs/ledger-phase3.md."""
     with pytest.raises(ValueError, match=message):
         _run_check_cell(monkeypatch, config_name, ledger)
 
 
 def test_the_phase_check_comes_first_and_names_the_packages_ledgers() -> None:
-    """The check cell runs before the clone and `train.main`, and its ledger names and prefix
-    are the package's: `train.py`'s phase-2 ledger name and `config.py`'s `p2_`."""
+    """The check cell runs before the clone and `train.main`, and its ledger names and prefixes
+    are the package's: `train.py`'s phase ledger names and `config.py`'s `p2_` and `p3_`."""
     (clone,) = [i for i, tree in enumerate(TREES) if "'git', 'clone'" in ast.unparse(tree)]
     (training,) = [i for i, tree in enumerate(TREES) if _calls_in(tree, "train.main")]
     assert _check_cell() < clone < training
     source = CODE[_check_cell()]
-    assert f'LEDGER not in ("{LEDGERS[0]}", "{LEDGERS[1]}")' in source
-    assert f'CONFIG_NAME.startswith("{PHASE2_PREFIX}") != (LEDGER == "{LEDGERS[1]}")' in source
-    assert 'r"p2_[a-z0-9_]+"' in source and PHASE2_PREFIX == "p2_"
+    phases = f'{{"{PHASE2_PREFIX}": "{LEDGERS[1]}", "{PHASE3_PREFIX}": "{LEDGERS[2]}"}}'
+    assert f"LEDGERS = {phases}" in source
+    assert f'LEDGER not in ("{LEDGERS[0]}", *LEDGERS.values())' in source
+    assert f'LEDGER != LEDGERS.get(CONFIG_NAME[:3], "{LEDGERS[0]}")' in source
+    assert 'r"p[23]_[a-z0-9_]+"' in source and (PHASE2_PREFIX, PHASE3_PREFIX) == ("p2_", "p3_")
+    assert len(PHASE2_PREFIX) == len(PHASE3_PREFIX) == 3  # the cell's CONFIG_NAME[:3]
 
 
 def test_the_default_commit_has_the_gpu_check() -> None:

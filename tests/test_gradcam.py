@@ -41,8 +41,35 @@ def test_target_layers_are_the_last_feature_maps() -> None:
     assert target_layer(small) is small.conv_block_3
     efficientnet = build_model("efficientnet_b0", pretrained=False)
     assert target_layer(efficientnet) is efficientnet.bn2
+    convnext = build_model("convnext_tiny", pretrained=False)  # phase 3's (item 13.11)
+    assert target_layer(convnext) is convnext.stages[-1]
     with pytest.raises(TypeError):
         target_layer(nn.Linear(2, 2))
+
+
+def test_the_convnext_map_is_its_last_stage_before_the_head() -> None:
+    """ConvNeXt-Tiny (item 13.11): the last stage's output is the 768 x 7 x 7 map the head pools
+    (`norm_pre` is an identity), so the map comes from there, at the input size, non-negative,
+    with the model's own logits. A ConvNeXt whose `norm_pre` is not an identity is refused: its
+    last stage would not be the map the head pools."""
+    torch.manual_seed(4)
+    model = build_model("convnext_tiny", pretrained=False).eval()
+    layer = target_layer(model)
+    shapes: list[tuple[int, ...]] = []
+    handle = layer.register_forward_hook(lambda m, i, o: shapes.append(tuple(o.shape)))
+    images = torch.randn(2, 3, 224, 224)
+    try:
+        maps, logits = gradcam(model, images)
+    finally:
+        handle.remove()
+    assert shapes == [(2, 768, 7, 7)]
+    assert maps.shape == (2, 224, 224) and bool((maps >= 0).all()) and float(maps.sum()) > 0
+    with torch.no_grad():
+        torch.testing.assert_close(logits, model(images))
+    assert not layer._forward_hooks and all(p.grad is None for p in model.parameters())
+    model.norm_pre = nn.LayerNorm(768)
+    with pytest.raises(TypeError, match="norm_pre"):
+        target_layer(model)
 
 
 def test_the_map_by_hand() -> None:

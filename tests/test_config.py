@@ -6,6 +6,11 @@ change `P2_CHANGES` names for it, so a phase-2 comparison changes one thing; arm
 (item 13.04) is the arm with its own setting, `paste_p`. `input_size` and `paste_p`, the fields
 phase 2 adds, leave every phase-1 config hash as `docs/ledger.md` records it.
 
+Phase 3 (item 13.11, docs/phase3-plan.md section 5): `p3_baseline` is `resnet18_arm_a` exactly,
+`p3_convnext` changes the model alone, and `p3_convnext_cp` is `p3_convnext` with arm C at
+`paste_p` 0.5 (`P3_CHANGES`, each against its own base). Phase 3 adds no field: every phase-1 and
+phase-2 hash is pinned unchanged, and the phase-3 hashes are pinned before any phase-3 run.
+
 The first tests read the committed config.yaml; the rest feed `parse_configs` small texts built
 from it, so each refusal is checked against a file that is otherwise valid.
 """
@@ -33,13 +38,17 @@ from trailcam.train.config import (
     MODEL_NAMES,
     OPTIONAL_FIELDS,
     PHASE2_PREFIX,
+    PHASE3_PREFIX,
+    PHASE_PREFIXES,
     Config,
     ConfigError,
     config_hash,
     is_phase2,
+    is_phase3,
     load_config,
     load_configs,
     parse_configs,
+    phase_of,
     with_overrides,
 )
 from trailcam.train.ledger import check_ledger
@@ -54,6 +63,12 @@ P2_CHANGES: dict[str, dict[str, object]] = {
     "p2_head3": {"head_only_epochs": 3},  # the body trains 7 of the 10 epochs
     "p2_res320": {"input_size": 320},  # eval resize round(320 * 256 / 224) = 366
     "p2_r50": {"model": "resnet50"},
+}
+# Phase 3 (docs/phase3-plan.md sections 3 and 5): each config's base and its one change from it.
+P3_CHANGES: dict[str, tuple[str, dict[str, object]]] = {
+    "p3_baseline": ("resnet18_arm_a", {}),  # the control re-run at the phase-3 commit
+    "p3_convnext": ("resnet18_arm_a", {"model": "convnext_tiny"}),  # candidate (a)
+    "p3_convnext_cp": ("p3_convnext", {"arm": "C", "paste_p": 0.5}),  # candidate (b)
 }
 # The config hashes of docs/ledger.md's rows (items 6.04, 6.05, 7.02, 7.03); score_test.py
 # refuses a config whose hash no longer matches its row.
@@ -70,7 +85,7 @@ def configs() -> dict[str, Config]:
 
 
 def test_all_configs_load(configs: dict[str, Config]) -> None:
-    assert list(configs) == [DRY_RUN, *PHASE1, *P2_CHANGES]
+    assert list(configs) == [DRY_RUN, *PHASE1, *P2_CHANGES, *P3_CHANGES]
     assert all(isinstance(c, Config) for c in configs.values())
     assert load_config("resnet18_arm_b") == configs["resnet18_arm_b"]
 
@@ -92,18 +107,23 @@ def test_every_config_has_both_seeds(configs: dict[str, Config]) -> None:
 
 
 def test_the_phase_of_a_config_is_its_name(configs: dict[str, Config]) -> None:
-    """Phase 2 is named by the prefix alone: the unprefixed training configs are phase 1's, the
-    `p2_` ones are `P2_CHANGES`, and the dry run is neither."""
-    assert PHASE2_PREFIX == "p2_"
+    """Phases 2 and 3 are named by the prefix alone: the unprefixed training configs are phase
+    1's, the `p2_` ones are `P2_CHANGES`, the `p3_` ones `P3_CHANGES`, and the dry run is none
+    of them (phase 1 by name, a fixture by its field)."""
+    assert (PHASE2_PREFIX, PHASE3_PREFIX) == ("p2_", "p3_")
+    assert dict(PHASE_PREFIXES) == {2: "p2_", 3: "p3_"}
     training = {name for name, c in configs.items() if not c.fixture}
-    assert {name for name in training if not is_phase2(name)} == set(PHASE1)
+    assert {name for name in training if phase_of(name) == 1} == set(PHASE1)
     assert {name for name in configs if is_phase2(name)} == set(P2_CHANGES)
-    assert configs[DRY_RUN].fixture and not is_phase2(DRY_RUN)
+    assert {name for name in configs if is_phase3(name)} == set(P3_CHANGES)
+    assert configs[DRY_RUN].fixture and phase_of(DRY_RUN) == 1
     assert is_phase2("p2_anything") and not is_phase2("resnet18_p2_")
+    assert is_phase3("p3_anything") and not is_phase3("p2_p3_") and not is_phase2("p3_p2_")
+    assert [phase_of(n) for n in ("small_cnn", "p2_x", "p3_x", "P3_x", "xp3_")] == [1, 2, 3, 1, 1]
 
 
 def test_every_config_has_loader_settings(configs: dict[str, Config]) -> None:
-    for name in (*PHASE1, *P2_CHANGES):
+    for name in (*PHASE1, *P2_CHANGES, *P3_CHANGES):
         assert (configs[name].num_workers, configs[name].pin_memory) == (4, True), name
         assert configs[name].fixture is False, name
 
@@ -163,6 +183,23 @@ def test_every_p2_config_is_arm_a_with_its_one_change(
     assert len(set(changed) - set(OPTIONAL_FIELDS)) <= 1
 
 
+@pytest.mark.parametrize("name", list(P3_CHANGES))
+def test_every_p3_config_is_its_base_with_its_one_change(
+    configs: dict[str, Config], name: str
+) -> None:
+    """Phase 3 (docs/phase3-plan.md section 5): `p3_baseline` differs from `resnet18_arm_a` in
+    nothing, `p3_convnext` in `model` alone, and `p3_convnext_cp` from `p3_convnext` in `arm` and
+    arm C's own `paste_p` alone; against the baseline, (b) is judged as one recipe."""
+    base_name, change = P3_CHANGES[name]
+    base, variant = asdict(configs[base_name]), asdict(configs[name])
+    changed = {key: variant[key] for key in FIELDS if variant[key] != base[key]}
+    assert changed == change
+    assert len(set(changed) - set(OPTIONAL_FIELDS)) <= 1
+    arm_a, cp = asdict(configs[P2_BASE]), asdict(configs["p3_convnext_cp"])
+    assert [key for key in FIELDS if arm_a[key] != cp[key]] == ["model", "arm", "paste_p"]
+    assert asdict(configs["p2_arm_c"])["paste_p"] == cp["paste_p"] == 0.5  # phase 2's setting
+
+
 def test_the_p2_config_hashes(configs: dict[str, Config]) -> None:
     """The control re-run shares arm A's config hash (it is arm A); every variant has its own,
     so its rows can never pass as another recipe's."""
@@ -220,6 +257,39 @@ def test_the_phase2_config_hashes_are_the_ledgers(configs: dict[str, Config]) ->
     by_config = {row["config"]: row["config hash"] for row in rows}
     assert by_config["p2_baseline"] == PHASE1_HASHES["resnet18_arm_a"]
     assert by_config["p2_arm_c"] != PHASE1_HASHES["resnet18_arm_a"]
+
+
+# The config hashes of the phase-3 configs, pinned before any phase-3 run (item 13.11): a config
+# edited before its run, or after it, fails here. `p3_baseline` is arm A's phase-1 hash.
+PHASE3_HASHES = {
+    "p3_baseline": PHASE1_HASHES["resnet18_arm_a"],
+    "p3_convnext": "7240842c4d79b3d9401065374eb0aa35c4cdfc253f95917be54646fccc919e59",
+    "p3_convnext_cp": "a8ed0edc19dfb978a3bc34b78f94c6ed5a4dd063ca0e3dad116989701c8a0a27",
+}
+
+
+def test_the_phase3_config_hashes_are_pinned_and_the_others_unchanged(
+    configs: dict[str, Config],
+) -> None:
+    """Phase 3 adds no field, so `HASH_NEUTRAL` is phase 2's and every phase-1 and phase-2 hash
+    is the pinned one (the two tests above); `p3_baseline` carries arm A's hash, so its control
+    row is comparable with `resnet18_arm_a`'s, and the two candidates have hashes of their own.
+    Every row of docs/ledger-phase3.md (none yet) must hash to its config's."""
+    assert set(PHASE3_HASHES) == set(P3_CHANGES)
+    for name, digest in PHASE3_HASHES.items():
+        assert config_hash(configs[name]) == digest, name
+    assert dict(HASH_NEUTRAL) == {"input_size": INPUT_SIZE, "paste_p": None}
+    others = {*PHASE1_HASHES.values(), *PHASE2_HASHES.values()}
+    assert PHASE3_HASHES["p3_baseline"] in others
+    assert {PHASE3_HASHES["p3_convnext"], PHASE3_HASHES["p3_convnext_cp"]}.isdisjoint(others)
+    assert PHASE3_HASHES["p3_convnext"] != PHASE3_HASHES["p3_convnext_cp"]
+    rows, problems = check_ledger(train_module.PHASE3_LEDGER_PATH)
+    assert problems == []
+    for row in rows:
+        config = with_overrides(
+            row["config"], configs[row["config"]], {"run_seed": int(row["run seed"])}
+        )
+        assert config_hash(config) == row["config hash"] == PHASE3_HASHES[row["config"]]
 
 
 def test_input_size_is_left_out_of_the_hash_at_224_only(configs: dict[str, Config]) -> None:

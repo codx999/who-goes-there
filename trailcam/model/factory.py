@@ -15,10 +15,16 @@ from torch import nn
 from torchvision.models import ResNet
 
 from trailcam.data import classes
-from trailcam.model.backbone import build_efficientnet_b0, build_resnet18, build_resnet50
+from trailcam.model.backbone import (
+    build_convnext_tiny,
+    build_efficientnet_b0,
+    build_resnet18,
+    build_resnet50,
+)
 from trailcam.model.small_cnn import SmallCNN
 
-MODEL_NAMES: Final = ("small_cnn", "resnet18", "efficientnet_b0", "resnet50")  # resnet50: phase 2
+# resnet50: phase 2; convnext_tiny: phase 3 (docs/phase3-plan.md section 3)
+MODEL_NAMES: Final = ("small_cnn", "resnet18", "efficientnet_b0", "resnet50", "convnext_tiny")
 
 
 def build_model(name: str, *, pretrained: bool = True) -> nn.Module:
@@ -37,6 +43,8 @@ def build_model(name: str, *, pretrained: bool = True) -> nn.Module:
         model = build_efficientnet_b0(num_classes, pretrained=pretrained)
     elif name == "resnet50":
         model = build_resnet50(num_classes, pretrained=pretrained)
+    elif name == "convnext_tiny":
+        model = build_convnext_tiny(num_classes, pretrained=pretrained)
     else:
         raise ValueError(f"unknown model {name!r}; expected one of {', '.join(MODEL_NAMES)}")
     return model
@@ -48,7 +56,9 @@ class ParameterGroups(NamedTuple):
 
 
 def head_module(model: nn.Module) -> nn.Module:
-    """The final classification layer that `build_model` sized from the class map."""
+    """The final classification layer that `build_model` sized from the class map: for a timm
+    model, `get_classifier()`, the final linear layer only (ConvNeXt's `head.fc`, not the
+    `head.norm` before it)."""
     if isinstance(model, SmallCNN):
         return model.classifier
     if isinstance(model, ResNet):

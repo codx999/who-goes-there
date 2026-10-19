@@ -1,4 +1,4 @@
-"""Grad-CAM maps for the three models (plan.md sections 6 and 7; R26).
+"""Grad-CAM maps for the models (plan.md sections 6 and 7; R26).
 
 `gradcam(model, images)` runs one forward pass, takes the gradient of each image's top-1 logit
 with respect to the target layer's output, and returns one map per image at the input size,
@@ -10,10 +10,17 @@ is not normalised here: it is non-negative, and whoever reads it decides the nor
 
 The target layer is the last block whose output the head pools (`target_layer`): `layer4` of
 ResNet-18 (plan.md section 4, the standard Grad-CAM subject), the third conv block of the small
-CNN, and `bn2` of timm's EfficientNet-B0 (the head convolution after its batch norm and
-activation). It is a small hook-based implementation rather than the `grad-cam` package, which
-would bring OpenCV and scikit-learn into the runtime dependencies; the overlay figures of item
-8.02 can draw the same maps, so the overlays show what attention-in-box scores.
+CNN, `bn2` of timm's EfficientNet-B0 (the head convolution after its batch norm and
+activation), and the last stage of timm's ConvNeXt-Tiny (`stages[-1]`, phase 3, item 13.11).
+ConvNeXt's head pools that stage's 768 x 7 x 7 output (at 224 px), then applies a layer norm to
+the pooled vector and the linear layer; `norm_pre` between the stages and the head is an identity
+for ConvNeXt-Tiny, so the last stage's output is the last spatial feature map, the analogue of
+ResNet's `layer4` (Selvaraju et al. take the last convolutional feature map: the most semantic
+one that still has a spatial layout). The layer norm acts on the pooled vector only, so it
+changes each channel's weight, not the map's spatial layout. It is a small hook-based
+implementation rather than the `grad-cam` package, which would bring OpenCV and scikit-learn
+into the runtime dependencies; the overlay figures of item 8.02 can draw the same maps, so the
+overlays show what attention-in-box scores.
 
 The model only ever receives the images: no box reaches it (R23). Gradients are taken with
 `torch.autograd.grad`, so no parameter's `.grad` is touched, and the hook is removed on return.
@@ -74,6 +81,15 @@ def target_layer(model: nn.Module) -> nn.Module:
     bn2 = getattr(model, "bn2", None)  # timm's EfficientNet: conv_head, then bn2 with its act
     if isinstance(bn2, nn.Module) and hasattr(model, "conv_head"):
         return bn2
+    # timm's ConvNeXt, by name so that this module never imports timm: stem, stages, norm_pre,
+    # then the head (pool, layer norm, fc). With a norm_pre that is not an identity the last
+    # stage's output would not be the map the head pools, so such a model is refused.
+    stages = getattr(model, "stages", None)
+    if type(model).__name__ == "ConvNeXt" and isinstance(stages, nn.Sequential):
+        if not isinstance(getattr(model, "norm_pre", None), nn.Identity):
+            raise TypeError("a ConvNeXt whose norm_pre is not an identity has no target layer")
+        last: nn.Module = stages[-1]
+        return last
     raise TypeError(f"no Grad-CAM target layer known for {type(model).__name__}")
 
 

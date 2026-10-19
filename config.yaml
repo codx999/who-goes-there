@@ -11,6 +11,11 @@
 # 13.04) while a config leaves it out, so the phase-1 hashes in docs/ledger.md are unchanged (a
 # test pins them).
 #
+# Phase 3 (docs/phase3-plan.md, item 13.11): a config named p3_... runs into docs/ledger-phase3.md
+# only. p3_baseline is resnet18_arm_a exactly (its config hash), p3_convnext changes the model
+# alone, and p3_convnext_cp is p3_convnext with arm C at paste_p 0.5; tests/test_config.py checks
+# each change. Phase 3 adds no field, so no phase-1 or phase-2 hash moves.
+#
 # Floats need a dot or YAML reads them as strings: 1.0e-4, not 1e-4 (the loader refuses a string).
 # `fixture: true` is the dry run: train.py writes the synthetic fixture into a temporary directory
 # and trains on it. Every other config reads the 512 px cache whose path train.py is given.
@@ -137,6 +142,41 @@ configs:
   p2_r50:
     model: resnet50
     arm: A
+    pretrained: true
+    max_epochs: 10
+    head_only_epochs: 1
+    lr_body: 1.0e-4
+    lr_head: 1.0e-3
+
+  # Phase 3 (docs/phase3-plan.md sections 2, 3 and 5): a stronger backbone for new cameras.
+
+  # resnet18_arm_a exactly, re-run once (seed 0) at the phase-3 commit: the control re-run.
+  p3_baseline:
+    model: resnet18
+    arm: A
+    pretrained: true
+    max_epochs: 10
+    head_only_epochs: 1
+    lr_body: 1.0e-4
+    lr_head: 1.0e-3
+
+  # Candidate (a): ConvNeXt-Tiny with ImageNet-1k weights (convnext_tiny.fb_in1k), the same
+  # recipe; the one change from resnet18_arm_a is the model.
+  p3_convnext:
+    model: convnext_tiny
+    arm: A
+    pretrained: true
+    max_epochs: 10
+    head_only_epochs: 1
+    lr_body: 1.0e-4
+    lr_head: 1.0e-3
+
+  # Candidate (b): p3_convnext with arm C's copy-paste at paste probability 0.5, as p2_arm_c;
+  # the one change from p3_convnext is the arm, with arm C's own setting paste_p.
+  p3_convnext_cp:
+    model: convnext_tiny
+    arm: C
+    paste_p: 0.5
     pretrained: true
     max_epochs: 10
     head_only_epochs: 1

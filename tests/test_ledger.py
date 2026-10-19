@@ -1,7 +1,9 @@
 """trailcam/train/ledger.py: the ledger checker and its val summary (plan.md sections 5 and 6;
 R14 one split hash per split seed, R17 trans_val never ranked, R25 arm A and arm B rows of one seed
 share split hash and config hash, R37 no dry-run row, R40 one well-formed row per run id; item
-13.02: the phase-2 ledger, docs/ledger-phase2.md, takes `p2_` rows only and docs/ledger.md none).
+13.02: the phase-2 ledger, docs/ledger-phase2.md, takes `p2_` rows only and docs/ledger.md none;
+item 13.11: the phase-3 ledger, docs/ledger-phase3.md, takes `p3_` rows only and neither other
+ledger takes one).
 
 Every ledger here is written into `tmp_path` from rows built with `train.ledger_row`, so the rows
 have exactly the shape `train.py` appends; the hashes are SHA-256 digests of short labels.
@@ -22,6 +24,8 @@ from trailcam.train.train import (
     LEDGER_PATH,
     PHASE2_LEDGER_NAME,
     PHASE2_LEDGER_PATH,
+    PHASE3_LEDGER_NAME,
+    PHASE3_LEDGER_PATH,
     ledger_header,
     ledger_row,
 )
@@ -110,6 +114,7 @@ def test_the_command_line_exits_0_on_the_real_ledger_and_1_on_a_bad_row(tmp_path
 
     assert run(REPO / "docs" / "ledger.md").returncode == 0
     assert run(REPO / "docs" / "ledger-phase2.md").returncode == 0
+    assert run(REPO / "docs" / "ledger-phase3.md").returncode == 0  # item 13.11
     bad = write(tmp_path, arm_a(), arm_b(config_hash=sha("other")))
     result = run(bad)
     assert result.returncode == 1
@@ -527,7 +532,7 @@ def test_the_phase2_summary_groups_by_config_never_by_score(tmp_path: Path) -> N
     ]
     found, problems = check_ledger(write_p2(tmp_path, *rows))
     assert problems == []
-    lines = summary(found, phase2=True).splitlines()
+    lines = summary(found, phase=2).splitlines()
     assert lines[0] == "phase-2 ledger: 4 rows, every check passed"
     columns = ["config", "model", "arm", "split seed", "run seed", "rows", *ledger.SCORE_COLUMNS]
     assert "| " + " | ".join(columns) + " |" in lines
@@ -542,4 +547,122 @@ def test_the_phase2_summary_groups_by_config_never_by_score(tmp_path: Path) -> N
     assert [cells[4] for cells in table] == ["0", "1", "all", "0", "0"]
     assert table[2][7] == "0.5500"  # p2_baseline's mean val macro-F1, its own rows only
     assert "kept or dropped on val and trans_val" in lines[-1]
+    assert "best" not in "\n".join(lines).lower()
+
+
+# Phase 3 (item 13.11): a ledger named ledger-phase3.md is checked as the phase-3 ledger.
+
+
+def p3(config: str, seed: int = 0, **changes: str) -> dict[str, str]:
+    """A well-formed phase-3 row of `config` and run seed `seed`, its config hash a digest of the
+    config's name; `p3_convnext*` rows are ConvNeXt-Tiny, arm C for `p3_convnext_cp`."""
+    model = "convnext_tiny" if config.startswith("p3_convnext") else "resnet18"
+    base = {
+        "run_id": f"{config}-seed{seed}-20261023T090000Z",
+        "model": model,
+        "arm": "C" if config.endswith("_cp") else "A",
+        "config": config,
+        "config_hash": sha(config),
+        "run_seed": str(seed),
+        "checkpoint_sha256": sha(f"checkpoint {config} {seed}"),
+    }
+    return values(**{**base, **changes})
+
+
+def write_p3(tmp_path: Path, *rows: Mapping[str, str]) -> Path:
+    return write(tmp_path, *rows).rename(tmp_path / PHASE3_LEDGER_NAME)
+
+
+def test_the_real_phase3_ledger_passes(capsys: pytest.CaptureFixture[str]) -> None:
+    assert PHASE3_LEDGER_PATH.name == PHASE3_LEDGER_NAME == "ledger-phase3.md"
+    assert main(["--check", str(PHASE3_LEDGER_PATH)]) == 0
+    assert capsys.readouterr().out.startswith("phase-3 ledger: 0 rows, every check passed")
+
+
+@pytest.mark.parametrize("other", [LEDGER_PATH, PHASE2_LEDGER_PATH])
+def test_a_p3_row_pasted_into_either_other_ledger_fails(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], other: Path
+) -> None:
+    """A `p3_` row added to a copy of docs/ledger.md or docs/ledger-phase2.md fails its check,
+    and with it check.sh's test of the real files."""
+    path = tmp_path / other.name
+    path.write_text(other.read_text() + ledger_row(p3("p3_convnext")) + "\n")
+    line = len(other.read_text().splitlines()) + 1
+    found = problems_of(path)
+    expected = (
+        f"line {line}: config 'p3_convnext' is a phase-3 config: its rows go to "
+        "docs/ledger-phase3.md, never to this ledger"
+        if other == LEDGER_PATH
+        else f"line {line}: config 'p3_convnext' is not a phase-2 config (p2_...): its rows go "
+        "to docs/ledger-phase3.md"
+    )
+    assert expected in found
+    assert main(["--check", str(path)]) == 1
+    assert "p3_convnext" in capsys.readouterr().err
+
+
+def test_a_phase1_or_phase2_row_in_the_phase3_ledger_fails(tmp_path: Path) -> None:
+    path = write_p3(tmp_path, p3("p3_baseline"), arm_a(), p2("p2_head3"))
+    found = problems_of(path)
+    assert found[:2] == [
+        "line 8: config 'resnet18_arm_a' is not a phase-3 config (p3_...): its rows go to "
+        "docs/ledger.md",
+        "line 9: config 'p2_head3' is not a phase-3 config (p3_...): its rows go to "
+        "docs/ledger-phase2.md",
+    ]
+
+
+def test_the_phase3_ledger_takes_two_convnext_recipes_and_the_control(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`p3_convnext` and `p3_convnext_cp` are two recipes of one model, so it carries two config
+    hashes, which the phase-1 checks refuse; `p3_baseline` carries arm A's phase-1 hash. The rows
+    of one config share its hash, and every row one split seed, as in phase 2."""
+    rows = [
+        p3("p3_baseline", config_hash=sha("arm A recipe")),
+        p3("p3_convnext"),
+        p3("p3_convnext_cp"),
+        p3("p3_convnext", 1),
+        p3("p3_convnext_cp", 1),
+    ]
+    path = write_p3(tmp_path, *rows)
+    assert problems_of(path) == []
+    assert main(["--check", str(path)]) == 0
+    out = capsys.readouterr().out
+    assert out.startswith("phase-3 ledger: 5 rows, every check passed")
+    assert "| config | model | arm |" in out and "| p3_convnext_cp | convnext_tiny | C |" in out
+    assert "a phase-3 candidate is kept or dropped on val and trans_val" in out
+    (tmp_path / PHASE3_LEDGER_NAME).unlink()
+    edited = write_p3(tmp_path, p3("p3_convnext"), p3("p3_convnext", 1, config_hash=sha("x")))
+    assert problems_of(edited) == [
+        "the rows of config 'p3_convnext' (every run seed) disagree on config hash (lines 7, 8)"
+    ]
+    (tmp_path / PHASE3_LEDGER_NAME).unlink()
+    other = p3("p3_convnext_cp", split_seed="7", split_hash=sha("split 7"))
+    assert problems_of(write_p3(tmp_path, p3("p3_convnext"), other)) == [
+        "the rows of the phase-3 ledger disagree on split seed (lines 7, 8)"
+    ]
+
+
+def test_the_phase3_summary_groups_by_config_never_by_score(tmp_path: Path) -> None:
+    rows = [
+        p3("p3_convnext_cp", val_macro_f1="0.9000"),
+        p3("p3_convnext", 1, val_macro_f1="0.6000"),
+        p3("p3_baseline", val_macro_f1="0.7000"),
+        p3("p3_convnext", val_macro_f1="0.5000"),
+    ]
+    found, problems = check_ledger(write_p3(tmp_path, *rows))
+    assert problems == []
+    lines = summary(found, phase=3).splitlines()
+    assert lines[0] == "phase-3 ledger: 4 rows, every check passed"
+    table = [line.split(" | ") for line in lines if line.startswith("| p3_")]
+    assert [cells[0][2:] for cells in table] == [
+        "p3_baseline",
+        "p3_convnext",
+        "p3_convnext",
+        "p3_convnext",
+        "p3_convnext_cp",
+    ]
+    assert table[3][7] == "0.5500"  # p3_convnext's mean val macro-F1, its own rows only
+    assert "docs/phase3-plan.md section 1" in lines[-1]
     assert "best" not in "\n".join(lines).lower()

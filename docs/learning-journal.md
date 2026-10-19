@@ -846,6 +846,16 @@ any "kept" worthless, and a fixed one also says in advance what we report if not
 uv run python -m trailcam.train.ledger --check docs/ledger.md
 ```
 
+**Added by 13.11, ConvNeXt-Tiny.** A CNN rebuilt with transformer-era choices: 7×7 depthwise
+filters, layer norm instead of batch norm, a stem that shrinks the image 4× at once; 27.8 M
+parameters against ResNet-18's 11.2 M. Pretraining data matters as much as architecture: timm's
+bare name loads ImageNet-12k weights, so a gain would mix two causes; pinning `fb_in1k` keeps it
+to one change. See [phase3-plan.md](phase3-plan.md) section 3. Try:
+
+```bash
+uv run pytest -q tests/test_models.py -k convnext
+```
+
 ---
 
 ## Surprises and lessons

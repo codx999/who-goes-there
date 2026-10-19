@@ -4,7 +4,9 @@ Each test builds a small git repository in a temporary folder with the real `spa
 `config.yaml` and `.gitignore`, two trailcam modules, one example photo and an ignored `data/`.
 The weights are random ResNet-18 and small-CNN checkpoints saved as `train.py` saves them.
 huggingface_hub's `HfApi` is replaced by a fake and sockets refuse to connect: no test touches the
-network, and no real token is used.
+network, and no real token is used. Item 13.11: the weights are checked against the config the
+committed `space/config_name.txt` names (ResNet-18 arm B, so the arm B deploy is unchanged), and a
+random ConvNeXt-Tiny checkpoint deploys once that file names `p3_convnext`.
 """
 
 import importlib.util
@@ -37,6 +39,7 @@ EXPECTED = {
     "app.py",
     "requirements.txt",
     "README.md",
+    "config_name.txt",
     "config.yaml",
     "model.pt",
     "assets/a.jpg",
@@ -75,7 +78,13 @@ def weights(tmp_path_factory: pytest.TempPathFactory) -> Path:
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
     root = tmp_path / "repo"
-    for name in ("space/app.py", "space/requirements.txt", "space/README.md", "config.yaml"):
+    for name in (
+        "space/app.py",
+        "space/requirements.txt",
+        "space/README.md",
+        "space/config_name.txt",
+        "config.yaml",
+    ):
         (root / name).parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(ROOT / name, root / name)
     shutil.copyfile(ROOT / ".gitignore", root / ".gitignore")
@@ -148,6 +157,7 @@ def test_the_plan_is_exactly_the_space_files_examples_package_and_weights(
     sources = {upload.path_in_space: upload.source for upload in uploads}
     assert sources["app.py"] == repo / "space" / "app.py"
     assert sources["model.pt"] == weights
+    assert sources["config_name.txt"] == repo / "space" / "config_name.txt"
     in_repo = [upload for upload in uploads if upload.path_in_space != "model.pt"]
     assert all("data" not in upload.source.relative_to(repo).parts for upload in in_repo)
 
@@ -342,6 +352,36 @@ def test_weights_of_another_input_size_are_refused(repo: Path, tmp_path: Path) -
     )
     with pytest.raises(deploy.DeployError, match="trained at 320 px"):
         deploy.plan(path, repo)
+
+
+def test_the_weights_are_checked_against_the_config_the_committed_file_names(
+    repo: Path, weights: Path, tmp_path: Path
+) -> None:
+    """Item 13.11: the real `space/config_name.txt` names `resnet18_arm_b`, so the arm B
+    ResNet-18 deploys as before (the tests above). Committed naming `p3_convnext`, a ConvNeXt
+    checkpoint deploys and the ResNet-18 is refused; uncommitted, the change is refused before
+    anything is checked; a fixture config, an unknown one or a malformed file is refused."""
+    assert deploy.read_config_name(ROOT / "space" / "config_name.txt") == "resnet18_arm_b"
+    convnext = _checkpoint(tmp_path / "convnext.pt", "convnext_tiny")
+    with pytest.raises(deploy.DeployError, match="not a resnet18_arm_b checkpoint"):
+        deploy.plan(convnext, repo)
+    name_file = repo / "space" / "config_name.txt"
+    name_file.write_text("p3_convnext\n")
+    with pytest.raises(deploy.DeployError, match="uncommitted"):
+        deploy.plan(convnext, repo)
+    _commit(repo)
+    assert _paths(deploy.plan(convnext, repo)) == EXPECTED
+    with pytest.raises(deploy.DeployError, match="not a p3_convnext checkpoint"):
+        deploy.plan(weights, repo)
+    for text, message in [
+        ("dryrun\n", "names dryrun, a fixture config"),
+        ("p3_resnet9\n", "no config 'p3_resnet9'"),
+        ("p3_convnext\nresnet18_arm_b\n", "one config name"),
+    ]:
+        name_file.write_text(text)
+        _commit(repo)
+        with pytest.raises(deploy.DeployError, match=message):
+            deploy.plan(convnext, repo)
 
 
 def test_weights_must_be_a_pt_file(repo: Path, weights: Path, tmp_path: Path) -> None:

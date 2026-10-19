@@ -51,6 +51,15 @@ user's decision on 13.04), so arm C's rows carry a config hash of their own, and
 matched by config and run seed, not by hash. The phase-2 summary groups by config first, then
 model, arm and seeds; phase 2 keeps or drops a step on val and trans_val (the plan's section 3),
 while training still selects on val alone.
+
+Phase 3 (`docs/phase3-plan.md` section 8, item 13.11). A ledger named `ledger-phase3.md`
+(`PHASE3_LEDGER_NAME`) is the phase-3 ledger and gets the phase-2 checks with the `p3_` prefix:
+every row's config must start with `p3_`, and a `p3_` row in any other ledger fails, as a `p2_`
+row in any ledger but the phase-2 one does. The phase is the ledger's file name (`ledger_phase`
+of `train.py`) and the config's prefix (`phase_of` of `config.py`). The rows of one model may
+carry several config hashes (`p3_convnext` and `p3_convnext_cp` are both ConvNeXt-Tiny), the
+rows of one config share one, and every row shares one split seed. Its summary groups by config
+first, as phase 2's does.
 """
 
 from __future__ import annotations
@@ -68,8 +77,14 @@ from typing import Final
 
 from trailcam.data.dataset import ARMS
 from trailcam.model.factory import MODEL_NAMES
-from trailcam.train.config import DRY_RUN, PHASE2_PREFIX, SCHEDULERS, is_phase2
-from trailcam.train.train import LEDGER_COLUMNS, LEDGER_PATH, is_phase2_ledger, ledger_header
+from trailcam.train.config import DRY_RUN, PHASE_PREFIXES, SCHEDULERS, phase_of
+from trailcam.train.train import (
+    LEDGER_COLUMNS,
+    LEDGER_PATH,
+    PHASE_LEDGER_NAMES,
+    ledger_header,
+    ledger_phase,
+)
 
 HASH_COLUMNS: Final = ("config hash", "split hash", "checkpoint sha256")
 SCORE_COLUMNS: Final = (
@@ -139,9 +154,14 @@ def read_table(text: str) -> tuple[list[Row], list[str]]:
     return rows, problems
 
 
-def _cell_problems(row: Row, phase2: bool) -> list[str]:
-    """What is wrong with the cells of one row, column by column; `phase2` for the phase-2
-    ledger."""
+def _home(phase: int) -> str:
+    """The ledger of `phase`'s rows, as the messages name it."""
+    return f"docs/{PHASE_LEDGER_NAMES[phase]}" if phase in PHASE_LEDGER_NAMES else "docs/ledger.md"
+
+
+def _cell_problems(row: Row, phase: int) -> list[str]:
+    """What is wrong with the cells of one row, column by column, in a ledger of `phase` (1, or
+    a key of `PHASE_LEDGER_NAMES`)."""
     empty = [column for column in LEDGER_COLUMNS if not row[column]]
     if empty:
         return [f"empty column {column!r}" for column in empty]
@@ -163,15 +183,16 @@ def _cell_problems(row: Row, phase2: bool) -> list[str]:
     expect(bool(_CONFIG_NAME.fullmatch(row["config"])), "config", "a config name")
     if row["config"] == DRY_RUN:
         found.append(f"config {DRY_RUN!r}: the dry run never appends a row")
-    if phase2 and not is_phase2(row["config"]):
+    config_phase = phase_of(row["config"])
+    if phase != 1 and config_phase != phase:
         found.append(
-            f"config {row['config']!r} is not a phase-2 config ({PHASE2_PREFIX}...): its rows go "
-            "to docs/ledger.md"
+            f"config {row['config']!r} is not a phase-{phase} config ({PHASE_PREFIXES[phase]}...): "
+            f"its rows go to {_home(config_phase)}"
         )
-    if not phase2 and is_phase2(row["config"]):
+    if phase == 1 and config_phase != 1:
         found.append(
-            f"config {row['config']!r} is a phase-2 config: its rows go to "
-            "docs/ledger-phase2.md, never to this ledger"
+            f"config {row['config']!r} is a phase-{config_phase} config: its rows go to "
+            f"{_home(config_phase)}, never to this ledger"
         )
     expect(bool(_SCHEDULER.fullmatch(row["scheduler"])), "scheduler", "'<name> warmup <epochs>'")
     if _WHOLE.fullmatch(row["epochs run"]) and _WHOLE.fullmatch(row["best epoch"]):
@@ -216,13 +237,14 @@ def _disagreements(
     return found
 
 
-def check_rows(rows: Sequence[Row], phase2: bool = False) -> tuple[list[Row], list[str]]:
+def check_rows(rows: Sequence[Row], phase: int = 1) -> tuple[list[Row], list[str]]:
     """The rows whose cells are well formed, and every problem of the rows: cell by cell, then
-    across the well-formed rows; `phase2` for the phase-2 ledger's checks."""
+    across the well-formed rows; `phase` 2 or 3 for the checks of the phase-2 or phase-3
+    ledger."""
     problems: list[str] = []
     good: list[Row] = []
     for row in rows:
-        found = _cell_problems(row, phase2)
+        found = _cell_problems(row, phase)
         problems += [f"line {row.line}: {problem}" for problem in found]
         if not found:
             good.append(row)
@@ -243,7 +265,7 @@ def check_rows(rows: Sequence[Row], phase2: bool = False) -> tuple[list[Row], li
     problems += _disagreements(
         good, lambda r: (r["split hash"],), ("split seed",), lambda k: "the rows of one split hash"
     )
-    if phase2:
+    if phase != 1:
         problems += _disagreements(
             good,
             lambda r: (r["config"],),
@@ -251,7 +273,7 @@ def check_rows(rows: Sequence[Row], phase2: bool = False) -> tuple[list[Row], li
             lambda k: f"the rows of config {k[0]!r} (every run seed)",
         )
         problems += _disagreements(
-            good, lambda r: (), ("split seed",), lambda k: "the rows of the phase-2 ledger"
+            good, lambda r: (), ("split seed",), lambda k: f"the rows of the phase-{phase} ledger"
         )
     else:
         problems += _disagreements(
@@ -277,24 +299,24 @@ def check_rows(rows: Sequence[Row], phase2: bool = False) -> tuple[list[Row], li
 
 def check_ledger(path: Path) -> tuple[list[Row], list[str]]:
     """The rows of the ledger at `path` and its problems; no problems means the ledger passes.
-    A ledger named `ledger-phase2.md` gets the phase-2 checks."""
+    A ledger named `ledger-phase2.md` or `ledger-phase3.md` gets that phase's checks."""
     if not path.is_file():
         return [], [f"no ledger at {path}"]
     try:
         rows, problems = read_table(path.read_text(encoding="utf-8"))
     except LedgerError as error:
         return [], [str(error)]
-    good, found = check_rows(rows, phase2=is_phase2_ledger(path))
+    good, found = check_rows(rows, phase=ledger_phase(path))
     return good, problems + found
 
 
-def summary(rows: Sequence[Row], phase2: bool = False) -> str:
+def summary(rows: Sequence[Row], phase: int = 1) -> str:
     """A markdown table of the scores per model, arm, split seed and run seed, sorted by those
     keys (R17: never by a score); under the seeds of a model and arm with more than one row, the
-    mean over all of them. With `phase2`, the config comes first: per config, model and arm."""
-    keys = ("config", "model", "arm") if phase2 else ("model", "arm")
+    mean over all of them. In phase 2 or 3 the config comes first: per config, model and arm."""
+    keys = ("config", "model", "arm") if phase != 1 else ("model", "arm")
     head = (*keys, "split seed", "run seed", "rows", *SCORE_COLUMNS)
-    name = "phase-2 ledger" if phase2 else "ledger"
+    name = f"phase-{phase} ledger" if phase != 1 else "ledger"
     lines = [f"{name}: {len(rows)} rows, every check passed"]
     if not rows:
         return "\n".join(lines)
@@ -315,10 +337,15 @@ def summary(rows: Sequence[Row], phase2: bool = False) -> str:
             lines.append(line((*group_keys, str(split_seed), str(run_seed)), group))
         if len(arm_rows) > 1:
             lines.append(line((*group_keys, "all", "all"), arm_rows))
-    if phase2:
+    if phase == 2:
         note = (
             "Training selects on val alone; a phase-2 step is kept or dropped on val and "
             "trans_val (docs/phase2-plan.md section 3)."
+        )
+    elif phase == 3:
+        note = (
+            "Training selects on val alone; a phase-3 candidate is kept or dropped on val and "
+            "trans_val (docs/phase3-plan.md section 1)."
         )
     else:
         note = "trans_val is reported, never selected on (R17)."
@@ -351,7 +378,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         count = f"{len(problems)} problem{'s' if len(problems) > 1 else ''}"
         print(f"ledger check: {count} in {args.check}", file=sys.stderr)
         return 1
-    print(summary(rows, phase2=is_phase2_ledger(args.check)))
+    print(summary(rows, phase=ledger_phase(args.check)))
     return 0
 
 

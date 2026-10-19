@@ -5,6 +5,11 @@ trained run, no `space/model.pt` and no network are needed, and with `ASSETS_DIR
 temporary folder, missing or holding synthetic photos, so no test depends on what the repo's
 `assets/` holds (item 8.05 fills it). The requirements file is checked against `uv export` of the
 lock and against the imports `app.py` loads at startup; the README's header against the lock.
+
+Item 13.11: the Space's weights belong to the config `space/config_name.txt` names (ResNet-18 arm B
+until phase 3 freezes). A copy of `app.py` beside a random-weight ConvNeXt-Tiny checkpoint and a
+`config_name.txt` naming `p3_convnext` loads it with the real `load_model` and classifies, Grad-CAM
+included; the requirements carry timm and its own requirements, which a ConvNeXt build imports.
 """
 
 import ast
@@ -17,7 +22,7 @@ import sys
 import tomllib
 import types
 from collections.abc import Callable
-from importlib.metadata import packages_distributions
+from importlib.metadata import packages_distributions, requires
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +41,7 @@ from tests.test_demo import (
     record_examples,
 )
 from trailcam.data import synthetic
+from trailcam.data.classes import CLASSES
 from trailcam.demo import predict
 from trailcam.demo.app import classify
 from trailcam.evaluate import gradcam
@@ -48,6 +54,7 @@ SPACE = ROOT / "space"
 APP = SPACE / "app.py"
 PINNED = {"torch", "torchvision", "gradio"}
 SPACE_PROVIDED = {"spaces"}  # on Hugging Face only; imported with a fallback
+CONFIG_NAME_FILE = SPACE / predict.SPACE_CONFIG_FILE  # the config of the Space's weights
 
 
 EXAMPLES = 3  # synthetic photos in the `assets` fixture
@@ -91,6 +98,14 @@ class Loaded:
         self.model = build_model("small_cnn").eval()
 
 
+def _exec_app(app: Path) -> Any:
+    spec = importlib.util.spec_from_file_location("space_app_under_test", app)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def load_space(
     monkeypatch: pytest.MonkeyPatch, *, spaces: types.ModuleType | None, assets: Path
 ) -> Any:
@@ -112,10 +127,7 @@ def load_space(
     monkeypatch.setattr(predict, "load_model", fake_load_model)
     monkeypatch.setattr(gradcam, "ASSETS_DIR", assets)  # app.py imports it when it is loaded
     monkeypatch.setitem(sys.modules, "spaces", spaces)  # None: the import raises ImportError
-    spec = importlib.util.spec_from_file_location("space_app_under_test", APP)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    module = _exec_app(APP)
     module.loaded = loaded
     return module
 
@@ -137,12 +149,16 @@ def fake_spaces(wrapped: list[Callable[..., Any]]) -> types.ModuleType:
     return module
 
 
-def test_the_space_loads_space_model_pt_with_the_default_config_on_the_cpu(
+def test_the_space_loads_space_model_pt_with_the_config_its_file_names_on_the_cpu(
     monkeypatch: pytest.MonkeyPatch, no_assets: Path
 ) -> None:
+    """Item 13.11: `space/config_name.txt` names the weights' config; it is ResNet-18 arm B,
+    the local demo's default, until phase 3 freezes (docs/phase3-plan.md section 11)."""
     monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
     space = load_space(monkeypatch, spaces=None, assets=no_assets)
-    assert space.loaded.calls == [(SPACE / "model.pt", predict.DEFAULT_CONFIG, CONFIG_PATH)]
+    name = predict.read_config_name(CONFIG_NAME_FILE)
+    assert name == space.CONFIG_NAME == predict.DEFAULT_CONFIG == "resnet18_arm_b"
+    assert space.loaded.calls == [(SPACE / "model.pt", name, CONFIG_PATH)]
     assert space.loaded.devices == [torch.device("cpu")]
     assert isinstance(space.demo, gr.Blocks)
     assert space.demo.analytics_enabled is False
@@ -234,6 +250,48 @@ def test_with_photos_in_assets_the_space_shows_them_and_the_button_still_runs_it
     assert len(scores) == predict.TOP_K and isinstance(overlay, Image.Image)
 
 
+def test_the_space_loads_and_runs_a_convnext_checkpoint_under_a_p3_config(
+    monkeypatch: pytest.MonkeyPatch, photo: Image.Image, no_assets: Path, tmp_path: Path
+) -> None:
+    """Item 13.11, end to end with the real `load_model`: `app.py` copied beside a random-weight
+    ConvNeXt-Tiny checkpoint saved as `train.py` saves it and a `config_name.txt` naming
+    `p3_convnext` loads the model and classifies a photo, Grad-CAM on and off. The same files
+    with `resnet18_arm_b` named are refused at startup: the checkpoint is not that config's."""
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    monkeypatch.setattr(gradcam, "ASSETS_DIR", no_assets)
+    monkeypatch.setitem(sys.modules, "spaces", None)
+    shutil.copyfile(APP, tmp_path / "app.py")
+    torch.manual_seed(0)
+    state = build_model("convnext_tiny", pretrained=False).state_dict()
+    saved = {"model": "convnext_tiny", "classes": list(CLASSES), "state_dict": state}
+    torch.save({**saved, "input_size": 224}, tmp_path / "model.pt")
+    (tmp_path / predict.SPACE_CONFIG_FILE).write_text("# phase 3's finalist\np3_convnext\n")
+    space = _exec_app(tmp_path / "app.py")
+    assert space.CONFIG_NAME == "p3_convnext"
+    assert type(space.MODEL).__name__ == "ConvNeXt" and not space.MODEL.training
+    scores, seconds, overlay = space.classify_on_device(photo, False)
+    assert len(scores) == predict.TOP_K and 0 < sum(scores.values()) <= 1 + 1e-6
+    assert seconds.endswith("s (forward pass only)") and overlay is None
+    _, _, overlay = space.classify_on_device(photo, True)
+    assert overlay is None or isinstance(overlay, Image.Image)  # None: a zero map, warned
+    (tmp_path / predict.SPACE_CONFIG_FILE).write_text("resnet18_arm_b\n")
+    with pytest.raises(ValueError, match="holds a convnext_tiny"):
+        _exec_app(tmp_path / "app.py")
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["", "# only a comment\n", "resnet18_arm_b\np3_convnext\n", "resnet18 arm b\n", "a/b\n"],
+)
+def test_a_config_name_file_without_one_config_name_is_refused(tmp_path: Path, text: str) -> None:
+    path = tmp_path / predict.SPACE_CONFIG_FILE
+    path.write_text(text)
+    with pytest.raises(ValueError, match="one config name"):
+        predict.read_config_name(path)
+    path.write_text("# comment\n\n  p3_convnext  \n")
+    assert predict.read_config_name(path) == "p3_convnext"
+
+
 def test_spaces_is_imported_before_torch() -> None:
     """Hugging Face asks for `spaces` first: on ZeroGPU it sets up torch's CUDA emulation."""
     line = {
@@ -313,9 +371,23 @@ def module_level_imports(path: Path) -> set[str]:
     return found
 
 
-def startup_imports() -> set[str]:
+def deferred_imports(path: Path) -> set[str]:
+    """The modules `path` imports inside functions (`build_convnext_tiny`'s timm, say)."""
+    found: set[str] = set()
+    for node in ast.walk(ast.parse(path.read_text())):
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            for inner in ast.walk(node):
+                if isinstance(inner, ast.Import):
+                    found.update(alias.name for alias in inner.names)
+                elif isinstance(inner, ast.ImportFrom) and inner.module and inner.level == 0:
+                    found.add(inner.module)
+    return found
+
+
+def startup_imports(deferred: bool = False) -> set[str]:
     """The top-level non-trailcam packages imported when `space/app.py` starts, following every
-    trailcam module (and its packages' `__init__`) it loads."""
+    trailcam module (and its packages' `__init__`) it loads; with `deferred`, also those the
+    modules it loads import inside functions, when a model needs them (item 13.11)."""
     third_party: set[str] = set()
     seen: set[Path] = set()
     queue = [APP]
@@ -324,7 +396,10 @@ def startup_imports() -> set[str]:
         if path in seen:
             continue
         seen.add(path)
-        for name in module_level_imports(path):
+        names = module_level_imports(path)
+        if deferred and path != APP:
+            names |= deferred_imports(path)
+        for name in names:
             top = name.split(".")[0]
             if top != "trailcam":
                 if top not in sys.stdlib_module_names and top != "__future__":
@@ -340,17 +415,29 @@ def startup_imports() -> set[str]:
 
 
 def test_requirements_are_trimmed_to_what_the_app_imports_at_startup() -> None:
-    """R36: one line per distribution the startup imports need, nothing else (no dev group,
-    no timm: EfficientNet is not the Space's model)."""
+    """R36: one line per distribution the startup imports need, nothing else (no dev group).
+    Item 13.11: the Space may serve a phase-3 ConvNeXt-Tiny, whose build imports timm inside a
+    function, so timm is pinned too, with its own requirements (`huggingface-hub`,
+    `safetensors`); timm is the only such import."""
     distributions = packages_distributions()
-    needed = {
-        distributions[top][0].lower()
-        for top in startup_imports() - SPACE_PROVIDED
-        if top in distributions
+
+    def dists(tops: set[str]) -> set[str]:
+        return {distributions[top][0].lower() for top in tops if top in distributions}
+
+    startup = startup_imports() - SPACE_PROVIDED
+    deferred = startup_imports(deferred=True) - SPACE_PROVIDED - startup
+    assert startup_imports(deferred=True) - SPACE_PROVIDED - set(distributions) == set()
+    assert deferred == {"timm"}
+    timm_requires = {
+        requirement.split(";")[0].strip().lower().replace("_", "-")
+        for requirement in requires("timm") or []
+        if "extra ==" not in requirement
     }
-    assert startup_imports() - SPACE_PROVIDED - set(distributions) == set()
+    assert timm_requires == {"torch", "torchvision", "pyyaml", "huggingface-hub", "safetensors"}
+    needed = dists(startup) | dists(deferred) | timm_requires
     assert set(requirements()) == needed
-    assert {"pytest", "mypy", "ruff", "timm", "huggingface-hub", "trailcam"}.isdisjoint(needed)
+    assert {"pytest", "mypy", "ruff", "trailcam"}.isdisjoint(needed)
+    assert "timm" not in dists(startup)  # loaded only when a timm model is built
 
 
 def test_requirements_pin_torch_torchvision_and_gradio_at_the_locked_cpu_versions() -> None:

@@ -1,7 +1,9 @@
 """trailcam/train/train.py: the training loop, its command line and the ledger row (plan.md
 section 5; R16 leakage alarms, R17 selection on val only, R25 the arm and the overrides, R27 the
 run seed, R31 the recipe, R37 the dry run, R40 the ledger; item 13.02, phase 2: a config's input
-size reaches both transforms, and a `p2_` row goes to docs/ledger-phase2.md and nowhere else).
+size reaches both transforms, and a `p2_` row goes to docs/ledger-phase2.md and nowhere else;
+item 13.11, phase 3: a `p3_` row goes to docs/ledger-phase3.md and nowhere else, and a head-only
+epoch of ConvNeXt-Tiny leaves its body, the head's layer norm included, as it was).
 
 The loop tests train a random-weight ResNet-18 on 32 px random tensors, so they are quick; the
 early-stopping tests replace the val scoring with a scripted sequence of macro-F1 values. The
@@ -50,6 +52,7 @@ from trailcam.train.train import (
     LEDGER_COLUMNS,
     LEDGER_PATH,
     PHASE2_LEDGER_PATH,
+    PHASE3_LEDGER_PATH,
     EarlyStopping,
     LeakageError,
     Scores,
@@ -510,6 +513,25 @@ def test_the_phase2_ledger_is_beside_the_phase1_one_with_the_same_header() -> No
     assert len(rows) == len(lines) - start - 2
 
 
+def test_the_phase3_ledger_is_beside_the_others_with_the_same_header_and_no_row() -> None:
+    """Item 13.11: docs/ledger-phase3.md holds its own text and the header of `LEDGER_COLUMNS`,
+    no row before the first phase-3 run, and passes the phase-3 checks; the phase of a ledger is
+    its file name, any other name being phase 1's."""
+    assert PHASE3_LEDGER_PATH == LEDGER_PATH.parent / "ledger-phase3.md"
+    assert dict(train.PHASE_LEDGER_NAMES) == {2: "ledger-phase2.md", 3: "ledger-phase3.md"}
+    phases = [train.ledger_phase(p) for p in (LEDGER_PATH, PHASE2_LEDGER_PATH, PHASE3_LEDGER_PATH)]
+    assert phases == [1, 2, 3]
+    assert train.ledger_phase(Path("other.md")) == train.ledger_phase(Path("ledger-phase4.md")) == 1
+    assert train.is_phase3_ledger(PHASE3_LEDGER_PATH) and not train.is_phase3_ledger(LEDGER_PATH)
+    assert not train.is_phase2_ledger(PHASE3_LEDGER_PATH)
+    lines = PHASE3_LEDGER_PATH.read_text().splitlines()
+    header = ledger_header().splitlines()
+    start = lines.index(header[0])
+    assert lines[start:] == header  # the header, then no row
+    assert not any(line.lstrip().startswith("|") for line in lines[:start])
+    assert check_ledger(PHASE3_LEDGER_PATH) == ([], [])
+
+
 def test_the_header_follows_the_plan_with_the_config_hash_after_the_config() -> None:
     """The plan's columns (section 5) with the config hash after the config (review 5.02) and
     trans_val macro-F1 after trans_val accuracy (review 5.03)."""
@@ -610,6 +632,91 @@ def test_append_row_refuses_a_row_of_the_other_phase(
     assert ledger.read_text() == LEDGER_PATH.read_text()
     with pytest.raises(ValueError, match="cells"):
         append_row(ledger, "| p2_head3 |")
+
+
+# Phase 3 (item 13.11): a `p3_` config with any ledger but docs/ledger-phase3.md, and a phase-1 or
+# phase-2 config with that one, is refused before training and at the append; the message names
+# the phase the row belongs to.
+PHASE3_MIXUPS = [
+    ("p3_convnext", "ledger.md", "phase-3 config: its rows go to docs/ledger-phase3.md"),
+    ("p3_baseline", "ledger-phase2.md", "phase-3 config: its rows go to docs/ledger-phase3.md"),
+    ("p3_convnext_cp", "other.md", "phase-3 config: its rows go to docs/ledger-phase3.md"),
+    ("resnet18_arm_a", "ledger-phase3.md", "takes phase-3 configs only (p3_...)"),
+    ("small_cnn", "ledger-phase3.md", "takes phase-3 configs only (p3_...)"),
+    ("p2_head3", "ledger-phase3.md", "rows go to docs/ledger-phase2.md, not ledger-phase3.md"),
+    ("p2_baseline", "ledger-phase3.md", "rows go to docs/ledger-phase2.md, not ledger-phase3.md"),
+]
+
+
+@pytest.mark.parametrize(("name", "ledger_name", "message"), PHASE3_MIXUPS)
+def test_a_config_of_another_phase_than_the_phase3_ledger_stops_before_training(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    name: str,
+    ledger_name: str,
+    message: str,
+) -> None:
+    monkeypatch.setattr(train, "load_metadata", _no_training)
+    monkeypatch.setattr(train, "train_run", _no_training)
+    ledger = tmp_path / ledger_name
+    ledger.write_text(LEDGER_PATH.read_text())
+    argv = [f"--config-name={name}", f"--data-root={tmp_path}", f"--out-dir={tmp_path / 'out'}"]
+    with pytest.raises(SystemExit) as exit_info:
+        train.main([*argv, f"--ledger={ledger}"])
+    assert exit_info.value.code == 2
+    err = " ".join(capsys.readouterr().err.split())  # argparse wraps the message
+    assert "before training" in err and message in err
+    assert ledger.read_text() == LEDGER_PATH.read_text()
+
+
+@pytest.mark.parametrize(("name", "ledger_name", "message"), PHASE3_MIXUPS)
+def test_append_row_refuses_a_row_of_another_phase_than_the_phase3_ledger(
+    tmp_path: Path, name: str, ledger_name: str, message: str
+) -> None:
+    ledger = tmp_path / ledger_name
+    ledger.write_text(LEDGER_PATH.read_text())
+    with pytest.raises(ValueError, match=re.escape(message)):
+        append_row(ledger, ledger_row(values(config=name)))
+    assert ledger.read_text() == LEDGER_PATH.read_text()
+
+
+def test_a_phase3_run_appends_to_the_phase3_ledger(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    row = values(config="p3_convnext")
+    monkeypatch.setattr(train, "load_metadata", lambda *a, **k: None)
+    monkeypatch.setattr(train, "train_run", lambda *a, **k: SimpleNamespace(alarms=()))
+    monkeypatch.setattr(train, "ledger_values", lambda r: row)
+    ledger = tmp_path / "ledger-phase3.md"
+    ledger.write_text(PHASE3_LEDGER_PATH.read_text())
+    argv = ["--config-name=p3_convnext", f"--data-root={tmp_path}"]
+    assert train.main([*argv, f"--out-dir={tmp_path / 'out'}", f"--ledger={ledger}"]) == 0
+    assert ledger.read_text().splitlines() == [
+        *PHASE3_LEDGER_PATH.read_text().splitlines(),
+        ledger_row(row),
+    ]
+
+
+def test_a_head_only_epoch_leaves_the_convnext_body_as_it_was(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ConvNeXt-Tiny has layer norms, not batch norms, so freezing its body's parameters is the
+    whole of a head-only epoch: after epoch 1 every body parameter, the head's layer norm
+    included, is as built and only `head.fc` moved; epoch 2 trains the body too. Random weights
+    on 32 px tensors, so it runs in seconds."""
+    scripted = ScriptedVal([0.1, 0.2])
+    monkeypatch.setattr(train, "evaluate", scripted)
+    torch.manual_seed(0)
+    model = build_model("convnext_tiny", pretrained=False)
+    before = state(model)
+    run_config = config(model="convnext_tiny", max_epochs=2, head_only_epochs=1, warmup_epochs=1)
+    fit(model, tensor_loaders(), run_config, CPU, log=lambda _: None)
+    after_head_only, after_both = scripted.states[1], scripted.states[2]
+    head = {"head.fc.weight", "head.fc.bias"}
+    assert {k for k in before if not torch.equal(before[k], after_head_only[k])} == head
+    moved = {k for k in before if not torch.equal(after_head_only[k], after_both[k])}
+    assert {"head.norm.weight", "stem.0.weight", "stages.3.blocks.2.mlp.fc2.weight"} <= moved
 
 
 def test_a_phase2_run_appends_to_the_phase2_ledger(

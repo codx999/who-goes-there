@@ -1,6 +1,7 @@
 """trailcam/model: the small CNN, the backbones and the factory (plan.md section 4; R05 the head
 sized from the class map, R21 one normalisation for every model, R30 the two models, and phase
-2's ResNet-50 of `p2_r50`, item 13.02, with its `/review-shapes` table checked here).
+2's ResNet-50 of `p2_r50`, item 13.02, and phase 3's ConvNeXt-Tiny of `p3_convnext`, item 13.11,
+each with its `/review-shapes` table checked here).
 
 No test downloads weights: every model is built with `pretrained=False`, the default's ImageNet
 weights are checked by spying on the builders, and a module-wide fixture refuses any network
@@ -50,7 +51,7 @@ def test_the_network_guard_refuses_the_connection_a_download_opens() -> None:
 
 
 def test_model_names() -> None:
-    assert MODEL_NAMES == ("small_cnn", "resnet18", "efficientnet_b0", "resnet50")
+    assert MODEL_NAMES == ("small_cnn", "resnet18", "efficientnet_b0", "resnet50", "convnext_tiny")
 
 
 @pytest.mark.parametrize("name", MODEL_NAMES)
@@ -63,7 +64,13 @@ def test_a_batch_of_two_maps_to_two_rows_of_logits(models: dict[str, nn.Module],
 
 @pytest.mark.parametrize(
     ("name", "in_features"),
-    [("small_cnn", 32 * 28 * 28), ("resnet18", 512), ("efficientnet_b0", 1280), ("resnet50", 2048)],
+    [
+        ("small_cnn", 32 * 28 * 28),
+        ("resnet18", 512),
+        ("efficientnet_b0", 1280),
+        ("resnet50", 2048),
+        ("convnext_tiny", 768),
+    ],
 )
 def test_the_head_is_one_linear_layer_sized_from_the_class_map(
     models: dict[str, nn.Module], name: str, in_features: int
@@ -110,8 +117,25 @@ def test_the_resnet_head_group_is_fc(name: str) -> None:
     assert names == {"fc.weight", "fc.bias"}
 
 
+def test_the_convnext_head_group_is_head_fc_and_its_norm_trains_with_the_body() -> None:
+    """`head_module` is timm's `get_classifier()`, the final linear layer: the pooled features'
+    layer norm (`head.norm`) keeps its pretrained weights and sits in the body group, at the
+    body's learning rate and frozen in the head-only epoch (docs/phase3-plan.md section 3)."""
+    model = build_model("convnext_tiny", pretrained=False)
+    assert head_module(model) is model.get_classifier() is model.head.fc
+    groups = parameter_groups(model)
+    head_ids, body_ids = {id(p) for p in groups.head}, {id(p) for p in groups.body}
+    names = {n for n, p in model.named_parameters() if id(p) in head_ids}
+    assert names == {"head.fc.weight", "head.fc.bias"}
+    norm = {n for n, p in model.named_parameters() if n.startswith("head.norm.")}
+    assert norm == {"head.norm.weight", "head.norm.bias"}
+    assert all(id(p) in body_ids for n, p in model.named_parameters() if n in norm)
+
+
 def test_unknown_names_are_refused() -> None:
-    with pytest.raises(ValueError, match="small_cnn, resnet18, efficientnet_b0, resnet50"):
+    with pytest.raises(
+        ValueError, match="small_cnn, resnet18, efficientnet_b0, resnet50, convnext_tiny"
+    ):
         build_model("resnet101")
     with pytest.raises(TypeError):
         parameter_groups(nn.Sequential(nn.Linear(2, 2)))
@@ -165,6 +189,28 @@ def test_efficientnet_b0_loads_the_imagenet_1k_weights_by_default(
     assert requested == [("efficientnet_b0.ra_in1k", True), ("efficientnet_b0.ra_in1k", False)]
 
 
+def test_convnext_tiny_loads_the_imagenet_1k_tag_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Pinned to `convnext_tiny.fb_in1k`: in the locked timm the bare name resolves to an
+    ImageNet-12k tag, which would change the pretraining data as well as the architecture
+    (docs/phase3-plan.md section 3)."""
+    requested: list[tuple[str, bool]] = []
+    real = timm.create_model
+
+    def spy(name: str, *, pretrained: bool, num_classes: int) -> Any:
+        requested.append((name, pretrained))
+        return real(name, pretrained=False, num_classes=num_classes)
+
+    monkeypatch.setattr(timm, "create_model", spy)
+    build_model("convnext_tiny")
+    build_model("convnext_tiny", pretrained=False)
+    assert requested == [("convnext_tiny.fb_in1k", True), ("convnext_tiny.fb_in1k", False)]
+    assert backbone.CONVNEXT_TINY_TIMM_NAME == "convnext_tiny.fb_in1k"
+    bare = real("convnext_tiny", pretrained=False).pretrained_cfg["tag"]
+    assert bare != "fb_in1k" and "in12k" in bare  # why the tag is pinned
+
+
 def test_the_pretrained_weights_expect_the_dataset_normalisation(
     models: dict[str, nn.Module],
 ) -> None:
@@ -178,6 +224,10 @@ def test_the_pretrained_weights_expect_the_dataset_normalisation(
     resnet50 = ResNet50_Weights.IMAGENET1K_V1.transforms()
     assert tuple(resnet50.mean) == IMAGENET_MEAN and tuple(resnet50.std) == IMAGENET_STD
     assert backbone.RESNET50_WEIGHTS.meta["num_params"] == 25_557_032
+    convnext = models["convnext_tiny"].pretrained_cfg
+    assert convnext["tag"] == "fb_in1k" and convnext["hf_hub_id"] == "timm/convnext_tiny.fb_in1k"
+    assert tuple(convnext["mean"]) == IMAGENET_MEAN and tuple(convnext["std"]) == IMAGENET_STD
+    assert convnext["input_size"] == (3, 224, 224) and convnext["num_classes"] == 1000
 
 
 # The `/review-shapes` table of the phase-2 models (item 13.02): layer, input shape, output shape
@@ -227,6 +277,52 @@ def test_the_resnet50_shape_table(models: dict[str, nn.Module]) -> None:
     assert _shape_table(model, 224) == RESNET50_224
     total = sum(p.numel() for p in model.parameters())
     assert total == 25_557_032 - (2048 * 1000 + 1000) + (2048 * 12 + 12) == 23_532_620
+
+
+# Phase 3's ConvNeXt-Tiny (item 13.11): the stem (a 4 x 4 stride-4 convolution and a layer norm),
+# four stages of 3, 3, 9 and 3 blocks (each after the first opens with a layer norm and a 2 x 2
+# stride-2 convolution), an identity `norm_pre`, then the head: average pooling, a layer norm on
+# the pooled features, and the 12-way linear layer.
+CONVNEXT_TINY_224 = [
+    ("stem", (2, 3, 224, 224), (2, 96, 56, 56), 3 * 96 * 4 * 4 + 96 + 2 * 96),
+    ("stages", (2, 96, 56, 56), (2, 768, 7, 7), 27_813_696),
+    ("norm_pre", (2, 768, 7, 7), (2, 768, 7, 7), 0),
+    ("head", (2, 768, 7, 7), (2, 12), 2 * 768 + 768 * 12 + 12),
+]
+CONVNEXT_TINY_STAGES = [
+    ((2, 96, 56, 56), (2, 96, 56, 56), 237_888),
+    ((2, 96, 56, 56), (2, 192, 28, 28), 992_256),
+    ((2, 192, 28, 28), (2, 384, 14, 14), 11_112_960),
+    ((2, 384, 14, 14), (2, 768, 7, 7), 15_470_592),
+]
+
+
+def test_the_convnext_tiny_shape_table(models: dict[str, nn.Module]) -> None:
+    """`p3_convnext`: the last stage's 768 x 7 x 7 map is pooled and layer-normed into the 12-way
+    head; 27,829,356 parameters in all, timm's published 28,589,128 less the 1000-way head plus
+    ours."""
+    model = models["convnext_tiny"]
+    assert _shape_table(model, 224) == CONVNEXT_TINY_224
+    rows: list[tuple[tuple[int, ...], tuple[int, ...], int]] = []
+    handles = [
+        stage.register_forward_hook(
+            lambda m, i, o: rows.append(
+                (tuple(i[0].shape), tuple(o.shape), sum(p.numel() for p in m.parameters()))
+            )
+        )
+        for stage in model.stages
+    ]
+    try:
+        with torch.no_grad():
+            model(torch.randn(2, 3, 224, 224))
+    finally:
+        for handle in handles:
+            handle.remove()
+    assert rows == CONVNEXT_TINY_STAGES
+    assert [len(stage.blocks) for stage in model.stages] == [3, 3, 9, 3]
+    assert isinstance(model.norm_pre, nn.Identity)
+    total = sum(p.numel() for p in model.parameters())
+    assert total == 28_589_128 - (768 * 1000 + 1000) + (768 * 12 + 12) == 27_829_356
 
 
 @pytest.mark.parametrize(("name", "features"), [("resnet18", 512), ("resnet50", 2048)])

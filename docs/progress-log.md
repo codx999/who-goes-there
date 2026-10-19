@@ -5053,3 +5053,95 @@ optional review of 13.10.
 **Checks.** `bash scripts/check.sh` green. No file outside `docs/` changed.
 
 Review: none (tier 0, the user's decision).
+
+## 2026-10-19: item 13.11, ConvNeXt-Tiny for phase 3 (Opus 5.5, high)
+
+**Done.** Phase 3's code, before any phase-3 run (`docs/phase3-plan.md` sections 5, 8 and 9).
+
+- **Model.** `build_model("convnext_tiny")`: timm's ConvNeXt-Tiny, pinned to
+  `convnext_tiny.fb_in1k` (ImageNet-1k; the bare name resolves to `in12k_ft_in1k` in the locked
+  timm 1.0.30, which a test shows), `num_classes` from the class map. `head_module` is timm's
+  `get_classifier()`, `head.fc` (768 to 12); the pooled features' layer norm `head.norm` keeps its
+  pretrained weights and sits in the body group. `/review-shapes`: stem (2, 3, 224, 224) to
+  (2, 96, 56, 56); stages 96, 192, 384, 768 channels at 56, 28, 14, 7 px (3, 3, 9, 3 blocks);
+  identity `norm_pre`; pool, layer norm, fc to (2, 12). **27,829,356 parameters** (timm's
+  28,589,128 less the 1000-way head plus ours); no mismatch, mean and std are ImageNet's.
+- **Grad-CAM target layer: `stages[-1]`**, the last stage's (N, 768, 7, 7) output, the last
+  spatial map the head pools (the analogue of ResNet's `layer4`). `norm_pre` is an identity for
+  ConvNeXt-Tiny; a ConvNeXt whose `norm_pre` is not is refused rather than mapped at the wrong
+  layer. Matched by class name, so `gradcam.py` still never imports timm.
+- **Configs.** `p3_baseline` (resnet18_arm_a exactly, hash `483aa055…`), `p3_convnext` (the
+  model; `7240842c…`), `p3_convnext_cp` (plus arm C at `paste_p` 0.5; `a8ed0edc…`), all pinned in
+  `tests/test_config.py`. Phase 3 adds no field; every phase-1 and phase-2 hash is unchanged.
+- **Ledger routing.** `PHASE_PREFIXES` / `phase_of` in `config.py` and `PHASE_LEDGER_NAMES` /
+  `ledger_phase` in `train.py` replace the single `p2_` pair; `docs/ledger-phase3.md` (header,
+  no row) takes `p3_` rows only, and `ledger.py` gives it phase 2's checks (`phase` replaces the
+  `phase2` flag). Phase 2's messages are unchanged word for word.
+- **Notebooks.** Both accept `LEDGER = "docs/ledger-phase3.md"`; the training notebook's check
+  cell pairs prefix and ledger for all three; the evaluation notebook pairs each `p3_` config
+  with `p3_baseline` by default and refuses a `COMMIT` without 13.11's code for phase 3. Outputs
+  cleared (the JSON written back byte-identically before the edits).
+- **Space.** The weights' config is now the committed `space/config_name.txt`
+  (`resnet18_arm_b`), read by `read_config_name` in `trailcam/demo/predict.py`, loaded by
+  `space/app.py`, uploaded and checked by `scripts/deploy_space.py`. So `deploy_space.py
+  --weights <arm B seed 2>` deploys exactly as before; a finalist is deployed by naming its `p3_`
+  config there in a commit. `DEFAULT_CONFIG` stays the local demo's and sorter's default. timm
+  1.0.30, huggingface-hub 2.2.0 and safetensors 0.8.0 added to `space/requirements.txt` at the
+  lock's versions; `tests/test_space.py` now derives them (timm is the only import done inside a
+  function, plus its own requirements). No deploy.
+- **Invariants.** Phase-3 lines of R17, R25, R30 and R40, and R36's for the Space's config file
+  (`docs/review/invariants.md`). `.claude/rules/training.md` names the phase-3 ledger;
+  `/review-shapes` names `resnet50` and `convnext_tiny`.
+- Tests: new `tests/test_phase3.py` (end to end on the fixture: `train.py` refuses
+  `p3_convnext` with `docs/ledger.md`, then appends one passing row to a phase-3 ledger and
+  writes a checkpoint with `input_size` 224; `evaluate.py` with an overlay, `attention.py` with
+  Grad-CAM at `stages[-1]`, `slices.py` beside `p3_baseline` with 768 features, and
+  `score_test.py`'s `_config_of`, `load_models` and `score_checkpoint` all run on it; the training
+  `fit` is replaced and the tools' splits are cut to 6 images each, since a ConvNeXt epoch over
+  the fixture takes about 10 minutes on this CPU). Phase-3 cases in `test_models`, `test_gradcam`
+  (target layer and map), `test_config`, `test_train` (the routing, and a head-only ConvNeXt
+  epoch leaves the body, `head.norm` included, unchanged), `test_ledger`, `test_notebook`,
+  `test_evaluate_notebook`, `test_space` (a copy of `app.py` beside a random ConvNeXt
+  `model.pt` and `config_name.txt` = `p3_convnext` loads and classifies, Grad-CAM on and off) and
+  `test_deploy_space`.
+
+**Decisions to review.**
+
+1. *The Space's config is a committed file*, not a `--config-name` flag on the deploy: the Space
+   then always matches a commit, as the deploy already insists, and the deploy command is
+   unchanged.
+2. *`score_test.py` is not edited.* Its loading already works on a ConvNeXt (tested); whether its
+   feature map should include ConvNeXt (`FEATURE_MODELS`) is left to 13.12's phase-3 mode.
+3. *The `p3_` dry run.* `/dryrun` runs only the `dryrun` config, so the dry run of a `p3_` config
+   was `train_run` on the synthetic fixture with `p3_convnext` and `/dryrun`'s overrides (one
+   epoch, batch 2, random weights, no workers), from a scratch script; the CLI was not changed.
+
+**Checks.**
+
+- `/dryrun` with `p3_convnext` (above): run `p3_convnext-seed0-…`, logits (2, 12), epoch 1/1
+  train loss 2.8564, val loss 2.7030, val accuracy 0.0694, macro-F1 0.0113; 573.6 s, 0.8 train
+  images/s on the M2 Pro's CPU; checkpoint written; trans_val 0.0833 / 0.0132; row printed and not
+  appended; the trans_val alarm is the dry run's (random weights), reported only. `/dryrun` itself
+  (resnet18 arm B): train loss 2.6539, val loss 2.4667, as in 13.02.
+- CPU forward, one 224 px photo, M2 Pro, torch 2.14.1: ConvNeXt-Tiny about 0.37 s (median of 20;
+  `predict`'s timed pass 0.35 to 0.38 s; with Grad-CAM about 0.38 s), ResNet-18 about 0.009 s.
+  Under a second, but not representative of the Space: the macOS wheel has no oneDNN, so the
+  7 x 7 depthwise convolutions take the slow generic path (79% of the time in the profile). The
+  plan's section 11 measures it on the Space before any switch.
+- `ledger --check`: `docs/ledger.md` 7 rows, `docs/ledger-phase2.md` 9 rows, `docs/ledger-phase3.md`
+  0 rows, each exit 0. `docs/ledger.md` and `docs/ledger-phase2.md` unchanged.
+- The session-start `check.sh` reported 37 failures, all in `test_train`, `test_slices` and
+  `test_sort`: it ran while this item's edits were half made (a missing import in `train.py` for
+  a minute). main's CI run on the start commit is green.
+- `bash scripts/check.sh` green: 1,252 passed in 7 min 5 s; mypy strict, ruff and the data guard
+  clean.
+
+**Next.** The review of 13.11; after the merge, the screening batch's pinned commit with both
+hypothesis lines (`docs/phase3-plan.md` section 4).
+
+Review: tier 2 (model, training, evaluation, notebooks and Space code; no split or test-scoring
+code, `score_test.py` unchanged). `scripts/risk_files.sh 6e83efb..HEAD` prints 28 files: both
+`.claude/` files, `config.yaml`, both notebooks, `scripts/deploy_space.py`, three `space/` files,
+ten test files and nine `trailcam/` modules. Command: `/review-session 6e83efb..HEAD 13.11`.
+Spec changed: none (the plan's text is unchanged; `docs/review/invariants.md` R17, R25, R30, R36
+and R40 gained their phase-3 lines).

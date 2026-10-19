@@ -1,7 +1,8 @@
 """The Hugging Face Space (plan.md section 8; item 11.01; R33 to R36).
 
 The Space runs this file as `app.py` at its root, beside the `trailcam` package, `config.yaml`, the
-`assets/` examples and the weights (`model.pt`), all uploaded by `scripts/deploy_space.py`. It
+`assets/` examples, the weights (`model.pt`) and the name of their config (`config_name.txt`, item
+13.11: ResNet-18 arm B until phase 3 freezes), all uploaded by `scripts/deploy_space.py`. It
 holds no prediction code of its own: the interface is `build_app` of `trailcam/demo/app.py`, and
 the button runs `classify`, which calls `predict` of `trailcam/demo/predict.py` (eval transform,
 `timed_forward`, softmax top 3) and, when the box is ticked, Grad-CAM. Grad-CAM is in the Space and
@@ -39,13 +40,14 @@ import torch
 from PIL import Image
 
 from trailcam.demo.app import Handler, Result, build_app, classify, example_photos
-from trailcam.demo.predict import DEFAULT_CONFIG, load_model
+from trailcam.demo.predict import SPACE_CONFIG_FILE, load_model, read_config_name
 from trailcam.evaluate.gradcam import ASSETS_DIR
 from trailcam.train.config import CONFIG_PATH
 
 # Beside this file: the Space's root, or `space/` in a checkout. CONFIG_PATH and ASSETS_DIR are
 # found from the package, so they are the Space's root files there and the repo's root ones here.
 WEIGHTS: Final = Path(__file__).resolve().parent / "model.pt"
+CONFIG_NAME: Final = read_config_name(Path(__file__).resolve().parent / SPACE_CONFIG_FILE)
 DEVICE: Final = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
@@ -58,7 +60,7 @@ def gpu(handler: Handler) -> Handler:
     return wrapped
 
 
-MODEL: Final = load_model(WEIGHTS, DEFAULT_CONFIG, CONFIG_PATH).to(DEVICE)
+MODEL: Final = load_model(WEIGHTS, CONFIG_NAME, CONFIG_PATH).to(DEVICE)
 
 
 @gpu

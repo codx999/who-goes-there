@@ -1,0 +1,5 @@
+# The config of the Space's weights (model.pt), read by app.py and checked by
+# scripts/deploy_space.py before an upload (trailcam/demo/predict.py, read_config_name).
+# ResNet-18 arm B until phase 3 freezes; a kept phase-3 finalist's p3_ config goes here, in a
+# commit, only then (docs/phase3-plan.md section 11).
+resnet18_arm_b
