@@ -7,11 +7,15 @@ carrying its input size; then `evaluate.py` (with a Grad-CAM overlay), `attentio
 ConvNeXt's last stage) and `slices.py` (its 768 features, beside `p3_baseline`'s ResNet-18) run
 their command lines on it, and `score_test.py` loads it from its ledger row and scores it.
 
-Speed, said plainly: a real ConvNeXt epoch over the fixture's 440 training images takes minutes
-on a CPU, so the training run's `fit` and trans_val scoring are replaced (random weights, as
-item 13.02's arm C test does; the loop on ConvNeXt is tested in tests/test_train.py), and the
-evaluation tools see each split trimmed to its first `TRIM` images (`make_split` wrapped, the
-split hash kept). Everything else is the real code path. No network: no weights are downloaded.
+Speed, said plainly: a real ConvNeXt epoch over the fixture's 440 training images takes about
+ten minutes on a CPU. So the command-line run replaces `fit` and the trans_val scoring (random
+weights, as item 13.02's arm C test does), and the evaluation tools see each split trimmed to its
+first `TRIM` images (`make_split` wrapped, the split hash kept). The real path, `train_run` with
+the real `fit` (review 13.11, finding 1), is run for `p3_convnext` and `p3_convnext_cp` with
+random weights, two epochs (the head-only one, then the body's) at batch 2, on loaders cut to
+`TRAIN_TRIM` train and `EVAL_TRIM` val and trans_val images: `make_loaders` runs on the full
+split, whose hash it and arm C's pool check, and its loaders are then rebuilt over their first
+records. Everything else is the real code path. No network: no weights are downloaded.
 """
 
 import shutil
@@ -26,9 +30,12 @@ import pytest
 import torch
 import yaml
 from torch import nn
+from torch.utils.data import DataLoader
 
 from trailcam.data import synthetic
 from trailcam.data.classes import CLASSES, NUM_CLASSES
+from trailcam.data.copypaste import background_pool
+from trailcam.data.dataset import CCT20Dataset
 from trailcam.data.metadata import DAY_NIGHT_SIDECAR, load_metadata
 from trailcam.data.split import Split, make_split
 from trailcam.evaluate import attention, evaluate, score_test, slices
@@ -36,7 +43,7 @@ from trailcam.evaluate.attention import CHECKPOINT_KEYS, load_checkpoint
 from trailcam.evaluate.score_test import Checkpoint, load_models, score_checkpoint
 from trailcam.model.factory import build_model
 from trailcam.train import train
-from trailcam.train.config import CONFIG_PATH, config_hash, load_config
+from trailcam.train.config import CONFIG_PATH, config_hash, load_config, with_overrides
 from trailcam.train.ledger import check_ledger
 from trailcam.train.train import (
     CACHE_ANNOTATIONS,
@@ -46,9 +53,12 @@ from trailcam.train.train import (
     Scores,
     file_sha256,
     ledger_header,
+    ledger_values,
+    seed_everything,
 )
 
 TRIM = 6  # images per split the evaluation tools read here
+TRAIN_TRIM, EVAL_TRIM = 6, 4  # images per loader of the real training run
 CONFIGS = ("p3_baseline", "p3_convnext", "p3_convnext_cp")
 
 
@@ -167,6 +177,65 @@ def test_p3_convnext_trains_into_the_phase3_ledger_only(run: dict[str, Any]) -> 
     for name in ("p3_baseline", "resnet18_arm_a"):  # a ResNet-18 config refuses it
         with pytest.raises(ValueError, match="holds a convnext_tiny"):
             load_checkpoint(run["checkpoint"], load_config(name))
+
+
+@pytest.mark.parametrize("name", ["p3_convnext", "p3_convnext_cp"])
+def test_a_real_two_epoch_convnext_run_trains_and_writes_a_checkpoint_that_loads(
+    cache: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str
+) -> None:
+    """Review 13.11, finding 1: `train_run` for real, `fit` included, on the cache-shaped fixture
+    for both ConvNeXt configs: random weights, two epochs (the first head-only, as the recipe's
+    first is), batch 2, no workers; arm C's paste step built from the real pool. The loss is
+    finite, the body moves only in epoch 2, the restored checkpoint loads under the config, and
+    the row's scores are fractions. `/dryrun` itself runs the `dryrun` config only."""
+    real = train.make_loaders
+
+    def trimmed_loaders(split: Split, image_root: Path, batch_size: int, **kwargs: Any) -> Any:
+        loaders = real(split, image_root, batch_size, **kwargs)
+        cut = {}
+        for split_name, loader in loaders.items():
+            data = loader.dataset
+            assert isinstance(data, CCT20Dataset)
+            shuffle = split_name == "train"
+            records = data.records[: TRAIN_TRIM if shuffle else EVAL_TRIM]
+            cut[split_name] = DataLoader(
+                CCT20Dataset(records, data.image_root, data.transform),
+                batch_size=batch_size,
+                shuffle=shuffle,
+                drop_last=shuffle,
+                generator=loader.generator if shuffle else None,
+            )
+        return cut
+
+    monkeypatch.setattr(train, "make_loaders", trimmed_loaders)
+    changes = {"pretrained": False, "max_epochs": 2, "batch_size": 2, "num_workers": 0}
+    config = with_overrides(name, load_config(name), {**changes, "pin_memory": False})
+    assert (config.head_only_epochs, config.model) == (1, "convnext_tiny")
+    meta = load_metadata(cache / CACHE_ANNOTATIONS, cache / DAY_NIGHT_SIDECAR)
+    seed_everything(config.run_seed)
+    initial = build_model("convnext_tiny", pretrained=False).state_dict()
+    lines: list[str] = []
+    run = train.train_run(name, config, meta, cache / CACHE_IMAGES, tmp_path, log=lines.append)
+
+    assert run.fit.logits_shape == (2, NUM_CLASSES)
+    assert [(e.number, e.head_only) for e in run.fit.epochs] == [(1, True), (2, False)]
+    assert all(torch.isfinite(torch.tensor(e.train_loss)) for e in run.fit.epochs)
+    pool = background_pool(meta, make_split(meta, config.split_seed)).summary()
+    assert (pool in lines) == (name == "p3_convnext_cp")
+    (checkpoint,) = tmp_path.glob("*.pt")
+    assert file_sha256(checkpoint) == run.checkpoint_sha256
+    model = load_checkpoint(checkpoint, load_config(name))
+    trained = model.state_dict()
+    assert not torch.equal(trained["head.fc.weight"], initial["head.fc.weight"])
+    if run.fit.best_epoch == 2:  # the body trains in epoch 2 only
+        assert not torch.equal(trained["stem.0.weight"], initial["stem.0.weight"])
+    else:
+        assert torch.equal(trained["stem.0.weight"], initial["stem.0.weight"])
+    row = ledger_values(run)
+    assert (row["model"], row["config"], row["epochs run"]) == ("convnext_tiny", name, "2")
+    assert all(
+        0.0 <= float(row[column]) <= 1.0 for column in ("val macro-F1", "trans_val macro-F1")
+    )
 
 
 def test_the_evaluation_tools_run_on_the_convnext_checkpoint(

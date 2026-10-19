@@ -33,8 +33,9 @@ only-include = ["trailcam", "README.md", "LICENSE"]
 
 # gradio is the demo's alone (item 10.01): a group, not a runtime dependency, so the wheel's
 # Requires-Dist and pip on Kaggle never see it, while `uv sync` installs it with dev.
-# huggingface_hub is scripts/deploy_space.py's alone (item 11.01): its own group, so neither the
-# wheel nor the Space's requirements export (`--group demo`) carries it.
+# huggingface_hub is a direct dependency of scripts/deploy_space.py alone (item 11.01): its own
+# group, so the wheel's Requires-Dist does not name it. The Space's requirements pin it since item
+# 13.11, at the lock's version, as a requirement of timm (a phase-3 ConvNeXt), not for the deploy.
 [tool.uv]
 default-groups = ["dev", "demo", "deploy"]
 

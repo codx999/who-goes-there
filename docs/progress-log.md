@@ -5201,3 +5201,30 @@ code, `score_test.py` unchanged). `scripts/risk_files.sh 6e83efb..HEAD` prints 2
 ten test files and nine `trailcam/` modules. Command: `/review-session 6e83efb..HEAD 13.11`.
 Spec changed: none (the plan's text is unchanged; `docs/review/invariants.md` R17, R25, R30, R36
 and R40 gained their phase-3 lines).
+
+## 2026-10-19: item 13.11, fix round of the review (Opus 5.5, high)
+
+The user's decision on the tier-2 review (relayed by the coordinator): fix both low findings.
+Branch synced with main at `4513890` first (merge `bd52be1`; the one conflict, this log, kept
+both entries, 12.01's then 13.11's).
+
+- **Finding 1** (both reviewers: R30 cited a ConvNeXt training test that did not exist, and
+  `/dryrun` cannot take a `p3_` config). Option (a): a real `train_run` of `p3_convnext` and
+  `p3_convnext_cp` in `tests/test_phase3.py`. The real `fit` runs, with random weights, two
+  epochs (head-only, then the body's), batch 2 and no workers. `make_loaders` runs on the full
+  split (its hash check and arm C's pool check stay real) and its loaders are rebuilt over 6
+  train and 4 val and trans_val images. The test asserts finite losses, the epoch order and arm
+  C's pool line, that the body moves only in epoch 2, and that the checkpoint loads. **Runtime
+  17.5 s and 16.6 s, about 34 s added to `check.sh`**, inside the one-minute budget. R30's test
+  column now names what exists and says `/dryrun` runs the `dryrun` config only. The record
+  above is unchanged: its `p3_` dry run was the scratch-script `train_run`, as it says.
+- **Finding 2** (code-reviewer: R38's test column and a `pyproject.toml` comment still said the
+  Space's requirements hold no timm or huggingface_hub). Both reworded: timm, `huggingface-hub`
+  and `safetensors` are pinned at the lock's for a phase-3 ConvNeXt; huggingface_hub is still
+  the deploy's direct dependency only, and the wheel's Requires-Dist does not name it.
+
+**Checks.** `bash scripts/check.sh` green: 1,254 passed in 7 min 42 s (37 s more than the
+item's run of 1,252); mypy strict, ruff and the data guard clean.
+
+Review: fix round (the fix touches `pyproject.toml` and edits a line of `tests/test_phase3.py`,
+so it is not purely additive): see the report for `scripts/risk_files.sh` on the fix range.
