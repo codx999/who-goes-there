@@ -929,6 +929,11 @@ Dated, oldest first. Each: what happened, how it was caught, the lesson.
   main red, as 6.04's first ledger row did. *Caught by* reviewing 9.03's fixtures, and proved by
   running the suite with a row added to the file. *Lesson:* a fixture builds its empty file from
   the header, never from a repo file that a later run fills.
+- **2026-10-18. The same trap, with photos (item 8.05).** The Space's tests expected the
+  button's handler to be the app's only one; with demo photos in `assets/`, Gradio adds its
+  examples' loader too, and 2 tests failed. *Caught by* check.sh in main before the photos were
+  committed. *Lesson:* find your own handler by what triggers it, and build the app against a
+  tmp folder, not the repo's `assets/`.
 
 ---
 
