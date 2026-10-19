@@ -822,6 +822,19 @@ rule itself does not change. Try:
 uv run pytest -q tests/test_phase2_eval.py -k "geometry or refused"
 ```
 
+**Added by 13.09, the verdicts.** Five variants ran and none was kept. The screen (one seed)
+stopped three after one run each; the confirm (more seeds) caught what one seed hid:
+ResNet-50 fell 0.022 on the unseen camera at seed 1 after rising 0.020 at seed 0. Keeping asks
+for more than "better": 320 px rose on every seed but by 0.016 on average, inside the noise of one
+camera. A rule written before the runs that rejects everything is still a result: it says these
+changes are not shown to help on new cameras, and it is believable because the numbers could not
+bend it. The trade-off copy-paste revealed (about 1 point on familiar cameras for 3 on the new
+one) is the finding worth a longer run. See [phase2-plan.md](phase2-plan.md) section 12. Try:
+
+```bash
+uv run python -m trailcam.train.ledger --check docs/ledger-phase2.md
+```
+
 ---
 
 ## Surprises and lessons

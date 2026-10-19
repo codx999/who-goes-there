@@ -8,7 +8,10 @@ the user's request. Updated the same day by item 13.02 with the user's decisions
 4 before any phase-2 result exists. `docs/plan.md` stays the source of truth for phase 1 (the
 split, the reported runs, phase 1's single test scoring); this file owns phase 2. Phase 2 lifts two
 of plan.md section 1's scope limits, for phase 2 only: backbones larger than ResNet-18, and more
-than one training-time change.
+than one training-time change. Phase 2 ended early, on 2026-10-19, with the user's decisions of
+2026-10-18 and 19 (item 13.09): no step was kept, so the frozen recipe is the baseline and the
+pre-declared phase-2 test scoring does not run. The verdicts, the freeze and the summary for the
+slides are in section 12.
 
 Data: Caltech Camera Traps (CCT20), Beery et al. 2018, CDLA-Permissive 1.0. Phase-1 numbers below
 are counts and scores from `docs/ledger.md`, `docs/plan.md` and `docs/data-card.md`, or derived
@@ -213,7 +216,9 @@ only a rough estimate.
   seven, counts as 224 and loads as before.
 
 **The pre-declared test scoring** (the user's decision of 2026-10-17, written here before any
-phase-2 result exists):
+phase-2 result exists). **Not run** (the user's decision of 2026-10-19, section 12): no step was
+kept, so there is no new recipe to score, and the test sets keep their single phase-1 scoring.
+Item 13.06 is not needed. The rule as declared:
 
 - Phase 1 is scored once: item 9.02, on 2026-10-19, as `docs/plan.md` section 7 says.
 - Phase 2 gets **exactly one** further test scoring, on **2026-10-22**, of **exactly one** recipe:
@@ -397,6 +402,12 @@ Against seed 0 that reads as val macro-F1 about -0.015 and trans_val macro-F1 mo
 +0.05. A val drop of 0.015 would still stop at the screen (0.003) and fail the keep rule's 1 point,
 so the variant passes only if its val cost comes out well under the hypothesis.
 
+*Screened, item 13.09* (run seed 0, row `p2_arm_c_p25-seed0-20261018T225723Z`). Val macro-F1
+0.8391 against 0.8542 (-0.0151); trans_val macro-F1 0.3408 against 0.2915 (+0.0493). **Screened
+out** by the screen's val condition (the user's decision). Against the hypothesis: the val cost
+halved as expected, and so did the trans_val gain, so "most of the gain" did not hold (*smaller*).
+Section 12 reads the two arm C runs together.
+
 **2. SWA over the late epochs** (`torch.optim.swa_utils`: a running average of the weights over
 the last epochs, batch-norm statistics recomputed on the training data). *Needs code* in
 `train.py`; the item decides how the average meets early stopping (for example, scored on val as
@@ -410,6 +421,11 @@ changes. The warmup (1 epoch) then no longer coincides with the head-only phase:
 up in epoch 1 and trains alone near the top of the schedule in epochs 2 and 3, and the body joins
 in epoch 4 with the cosine already at about 0.88 of its peak. Evidence mixed (LP-FT, to verify).
 *Hypothesis*: trans_val flat to +0.01, val flat. Three seeds this week.
+
+*Screened, item 13.09* (run seed 0). Val macro-F1 0.8464 against 0.8542 (-0.0078); trans_val
+macro-F1 0.3092 against 0.2915 (+0.0177). **Screened out** by the screen's val condition (the
+user's decision): read as undertrained, since 3 head-only epochs leave the body 7 full epochs of
+the fixed 10, and its best epoch was the last.
 
 **4. Resolution 320**, `p2_res320`. Train crop and eval centre crop at 320 px, the eval resize
 at 366 (round(320 x 256/224), the same margin as now; the 512 px cache's shorter side is 373 or
@@ -429,6 +445,11 @@ about 2x the run time and the CPU latency. Three seeds this week.
 trans_val accuracy fell 0.3618 against 0.3724. About 60 s per epoch against 42 s. **Passes the
 screen**, so it goes on to the confirm on seeds 1 and 2. The CPU latency check is still to come.
 
+*Confirmed, item 13.09* (run seeds 1 and 2, paired with phase 1's arm A seeds 1 and 2). Trans_val
+macro-F1 rose on every seed (+0.0271, +0.0088, +0.0116), a mean of +0.0158, under keep condition
+1's 0.03; val macro-F1 rose on every seed too (mean +0.0100). **Not kept** (the user's decision),
+so the CPU latency check was not needed.
+
 **5. ResNet-50 at 224 px**, `p2_r50` (torchvision, ImageNet-1k weights; 25.6M parameters and
 about 4.1 GFLOPs, against ResNet-18's 11.7M and 1.8). *Built in 13.02*: `resnet50` in
 `trailcam/model/factory.py` with torchvision's `IMAGENET1K_V1` weights, the original recipe as
@@ -439,6 +460,12 @@ tested (`tests/test_models.py`, 23.5M parameters with our 12-way head). The Spac
 section 4's argument (ImageNet holds no CCT images). *Hypothesis*: trans_val 0 to +0.03, val +0.5
 point, about 2.3x the run time and the CPU latency, measured before it can be kept. Three seeds
 this week.
+
+*Screened and confirmed in part, item 13.09.* Seed 0: val macro-F1 0.8670 against 0.8542
+(+0.0128), trans_val macro-F1 0.3112 against 0.2915 (+0.0197), so it passed the screen. Seed 1,
+against phase 1's arm A seed 1: val 0.8713 against 0.8559 (+0.0154), trans_val 0.2968 against
+0.3187 (-0.0219). **Not kept** (the user's decision): a fall on seed 1 breaks keep condition 2,
+"rises on every seed", whatever seed 2 gives, so seed 2 was not run.
 
 **6. Infrared-aware augmentation**: greyscale and photometric changes aimed at infrared frames
 (about two thirds of the images), for example a higher greyscale probability and contrast or gamma
@@ -533,6 +560,10 @@ ensemble) and 6 (infrared-aware augmentation) are not in this week's timeline an
 ladder for after the presentation. The slides can show phase 2 on trans_val with the honesty
 note, and its test scores only if the 10-22 scoring ran.
 
+As run: the screens and confirms of 10-19 and 10-20 ran early, from 2026-10-18; no step was
+kept, so there was no stack, and the freeze came on 2026-10-19 with no phase-2 test scoring
+(section 12).
+
 ## 9. Infrastructure first (item 13.02, built)
 
 Item 13.02 (tier 2: `trailcam/`, `config.yaml`, the notebook and tests) built, before the first
@@ -615,6 +646,17 @@ Known limitations of 13.05 (review 13.05, the user's decision of 2026-10-18 to d
   cameras' photos without labels; it changes what the trans scores mean, so it needs its own
   decision.
 
+Not done this week, from the ladder (the user's decision of 2026-10-19, section 12):
+
+- **Copy-paste with a longer training budget**, judged as a new pre-declared step (its own
+  config, hypothesis line and screen). The most interesting follow-up: arm C's final train loss
+  stayed at 0.47 against the baseline's 0.11, and its val score was still rising late in the run
+  (the user's reading of the Kaggle log; best epoch 9 of 10), so part of the val cost may be the
+  short budget rather than the trade-off itself.
+- **SWA over the late epochs** (step 2): its code was never built.
+- **The soup and ensemble of arm A's three seeds** (step 0).
+- **Infrared-aware augmentation** (step 6).
+
 ## 11. Open questions for phase 2
 
 1. **The screen's val condition.** As agreed, the screen stops a change whose val macro-F1 drops
@@ -622,11 +664,16 @@ Known limitations of 13.05 (review 13.05, the user's decision of 2026-10-18 to d
    could stop a change the keep rule would accept. Recommended: the screen's val condition uses the
    keep rule's 1 point. The user's decision. Still open after item 13.08: `p2_arm_c`'s screen
    fails under either version (val macro-F1 -0.0304, beyond both 0.003 and 0.01), so it does not
-   settle the question.
+   settle the question. **Answered this week (the user's verdicts of 2026-10-18 and 19, item
+   13.09): the screen kept its val condition as written, 0.003.** The verdicts apply it: `p2_head3`
+   (-0.0078) is screened out by it. Under the 1-point version `p2_head3` would have gone on to the
+   confirm; no other verdict would change.
 2. **The screen's trans_val condition.** "Not more than 0.03 worse" passes most changes that do
    nothing (section 7). "Not below the baseline's seed 0" would stop about half of them and keep
    the ladder nearer the runs budgeted, at the cost of sometimes stopping a real but small gain.
-   The user's decision.
+   The user's decision. **Answered this week (item 13.09): kept as written.** It decided nothing:
+   every screen's trans_val macro-F1 came out above `p2_baseline`'s seed 0 (+0.018 to +0.097), so
+   either version gives the same verdicts.
 3. **The keep threshold with five seeds.** Five seeds shrink the chance difference of two means to
    about 0.010 (arm A's spread), so a threshold near 0.02 would be two standard errors; as agreed,
    it stays 0.03 until the user decides.
@@ -652,6 +699,88 @@ Known limitations of 13.05 (review 13.05, the user's decision of 2026-10-18 to d
 9. **This week's GPU cap.** The worst case of section 7 is about 8 GPU hours against the 5-hour cap
    of the stopping rule; the quota (30 a week) allows it. Raise the cap for this week, or confirm
    the cheapest winners first and drop what does not fit? The user's decision.
+
+**What remains open after phase 2** (item 13.09). Answered this week: 1, 2 and 8 (above); 7 was
+answered on 2026-10-17. The rest:
+
+- **3** (the keep threshold with five seeds) stays open: no five-seed confirm ran, so it matters
+  only if a later step reaches one.
+- **4** (arm B on the final recipe) does not arise this week: the frozen recipe is phase 1's arm A
+  recipe, on which phase 1 already ran arm B. It reopens if a later step is kept.
+- **5** (arm C's review tier) was settled in practice by review 13.04: tier 2 ran, and tier 3 was
+  recommended and skipped by the user (`docs/progress-log.md`, 2026-10-17).
+- **6** (the Space after phase 2) does not arise: no phase-2 model was kept, so the Space keeps
+  serving arm B seed 2 (phase 1's open question 7, `docs/plan.md`).
+- **9** (the GPU cap) does not arise: nine runs (the control, five screens, `p2_res320`'s two
+  confirm seeds and `p2_r50`'s one) and no stack, well under the worst case of section 7.
+
+## 12. Results and the freeze (item 13.09)
+
+The user's decisions of 2026-10-18 and 19, through the coordinator, under section 3's screen,
+confirm and keep rule as written before the runs. Every run is a row of
+[ledger-phase2.md](ledger-phase2.md) (`uv run python -m trailcam.train.ledger --check
+docs/ledger-phase2.md`). Each delta is the variant's score minus its baseline's at the same run
+seed: seed 0 against `p2_baseline` seed 0, which reproduced phase 1's arm A seed 0 bit for bit
+(the control check passed); seeds 1 and 2 against phase 1's arm A seeds 1 and 2 in
+[ledger.md](ledger.md) (open question 8). Item 13.09 recomputed every delta from the two ledgers.
+
+| step | config | run seeds | val macro-F1 change | trans_val macro-F1 change | trans_val accuracy change | verdict |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | `p2_arm_c` | 0 | -0.0304 | +0.0971 | +0.0711 | screened out (val) |
+| 1, follow-up | `p2_arm_c_p25` | 0 | -0.0151 | +0.0493 | -0.0499 | screened out (val) |
+| 3 | `p2_head3` | 0 | -0.0078 | +0.0177 | -0.0755 | screened out (val) |
+| 4 | `p2_res320` | 0, 1, 2 | +0.0163, +0.0119, +0.0017 (mean +0.0100) | +0.0271, +0.0088, +0.0116 (mean +0.0158) | -0.0106, +0.0043, +0.0174 | confirmed; not kept (keep condition 1) |
+| 5 | `p2_r50` | 0, 1 | +0.0128, +0.0154 | +0.0197, -0.0219 | +0.0150, +0.0361 | passed the screen; not kept (keep condition 2) |
+
+Val accuracy moves in the same direction as val macro-F1 in every run. Steps 0, 2 and 6 did not
+run.
+
+**The verdicts.**
+
+- **`p2_arm_c`**: screened out. Val macro-F1 fell 0.030, ten times the screen's 0.003 and beyond
+  the keep rule's 1 point; trans_val macro-F1 rose 0.097.
+- **`p2_arm_c_p25`**: screened out (val -0.015). Its pre-declared hypothesis was "half the val
+  cost, most of the trans gain": the val cost halved, and so did the trans_val gain (+0.049
+  against +0.097). Read together, the two runs say copy-paste trades familiar-camera macro-F1 for
+  new-camera macro-F1 at about 1:3 (0.030 for 0.097, 0.015 for 0.049), near-linearly in the
+  paste probability (0, 0.25 and 0.5 give 0, half and all of each change). One seed per
+  setting: the val costs are firm (val's noise is 0.003), the trans_val gains less so (its noise
+  is about 0.03), and at 0.25 trans_val accuracy fell 0.050 while its macro-F1 rose, so the gain
+  sits in the macro average of one camera's classes.
+- **`p2_res320`**: passed the screen and confirmed over 3 seeds, but **not kept**: the mean
+  trans_val macro-F1 gain, +0.016, is under keep condition 1's 0.03, though it rose on all 3
+  seeds and val macro-F1 rose about 0.010. A consistent small gain that trans_val's noise cannot
+  confirm with three seeds (section 3, "Resolvability").
+- **`p2_head3`**: screened out (val -0.008). Undertrained in the fixed budget: 3 head-only epochs
+  leave the body 7 full epochs of the 10, and its best epoch was the last.
+- **`p2_r50`**: passed the screen (val +0.013, trans_val +0.020), **not kept**: trans_val
+  macro-F1 fell 0.022 on seed 1, which breaks keep condition 2, "rises on every seed". Seed 2 was
+  not run, by the user's decision, since no result could change the verdict. Val rose on both
+  seeds (+0.013, +0.015).
+
+**The freeze** (the user's decision of 2026-10-19). No phase-2 step was kept, so the frozen
+recipe is the baseline: `p2_baseline`, which is phase 1's `resnet18_arm_a` recipe. There is no
+stack. The pre-declared phase-2 test scoring (section 4) is **not run**: there is no new recipe to
+score, so cis test and trans test keep their single phase-1 scoring (item 9.02), and item 13.06
+(`score_test.py`'s phase-2 mode) is not needed. The Space keeps serving arm B seed 2, phase 1's
+open question 7 (`docs/plan.md`), so open question 6 does not arise.
+
+**Future work** (section 10): copy-paste with a longer training budget, judged as a new
+pre-declared step, the most interesting follow-up since arm C's train loss stayed at 0.47 and its
+val was still rising; SWA (step 2, never built); the seed soup or ensemble (step 0);
+infrared-aware augmentation (step 6). Seeds 3 and 4 of `p2_res320` (section 3) would also test
+whether its small, consistent gain is real.
+
+**For the slides.** Phase 2 tried five one-change variants against a fixed baseline, under a
+screen, confirm and keep rule written before any run, and kept none of them. The rules held: the
+control re-run reproduced phase 1 bit for bit, every verdict followed the pre-declared rule, and
+the test sets were not touched again. The clearest finding is a trade-off: pasting training
+animals onto other cameras' empty frames lifted macro-F1 on the unseen camera by up to 0.10 but
+cost up to 0.03 on familiar cameras, about 1 to 3, scaling with how often it pastes. Higher
+resolution and ResNet-50 gave small, consistent val gains (about +0.01), but their trans_val
+gains did not clear the 0.03 noise bar (320 px) or did not hold on every seed (ResNet-50). And
+trans_val is one camera, so every phase-2 number on it is a result for one unseen camera, chosen
+on that camera, and slightly optimistic (section 4's honesty note).
 
 ## Sources
 
