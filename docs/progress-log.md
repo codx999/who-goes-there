@@ -5097,6 +5097,13 @@ section 7: flagged like slide 14. No 10-26 date was in the slides; the header al
 2026-11-04. 12.01 stays at `passes: false` by the coordinator's request, until the user decides
 on slide 14's source.
 
+**Flipped (the user's decision, 2026-10-19, relayed by the coordinator).** The user accepts
+`docs/phase2-plan.md` section 12 as slide 14's source and `docs/phase3-plan.md` sections 1 and 6
+as slide 15's: both are committed plans whose numbers trace to their own ledgers
+(`docs/ledger-phase2.md`; `docs/ledger.md` for phase 3's baseline). Every other number traces to
+`docs/ledger.md` or plan section 7, and every figure path exists, so 12.01 is set to
+`passes: true`. The item's text is unchanged.
+
 **Not known yet.** Which of the 10 `assets/` photos the Space gets right, beyond the four
 overlays (bobcat and opossum wrong, both coyotes right); slide 4's note says to write them
 down at the rehearsal.
