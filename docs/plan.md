@@ -462,6 +462,11 @@ the header's "3.12" covers.
 **Grad-CAM in the Space** (open question 5, closed 2026-10-16, the user's decision): included,
 off by default (a checkbox), so the default request is the prediction alone.
 
+**Deployed** (2026-10-19, items 11.02 and 11.03): <https://huggingface.co/spaces/Codx999/who-goes-there>,
+CPU Basic, from commit `c3ea399` (Space commit `7d58559`), weights arm B seed 2
+(`resnet18_arm_b-seed2-20261017T162445Z`, sha256 checked against the ledger). The deploy token is
+fine-grained, write access to this Space only.
+
 The local app's `--share` link is the free, temporary backup. Account and Space creation are the
 user's steps. The Space serves arm B if it wins, else arm A.
 

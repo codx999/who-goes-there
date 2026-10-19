@@ -116,7 +116,7 @@ Phase 2 tries to close more of the unseen-camera gap: see
 
 ## Demo
 
-Live demo on Hugging Face Spaces: **link to come** (item 11.03 deploys it). It serves ResNet-18
+Live demo on Hugging Face Spaces: **<https://huggingface.co/spaces/Codx999/who-goes-there>**. It serves ResNet-18
 arm B seed 2: upload a camera-trap photo, get the top class with its confidence, the two
 runners-up, the inference time and an optional Grad-CAM overlay.
 

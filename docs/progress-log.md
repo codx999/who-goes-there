@@ -4965,3 +4965,26 @@ transient, most likely another suite running in parallel.
 Review: tier 0 (docs only; `scripts/risk_files.sh` prints nothing). Nothing to run. Spec changed:
 `docs/phase2-plan.md` sections 4, 6, 8, 10, 11 and the new 12, notes and results only, no rule
 changed. Rows citing P2 §4 or §6: R17, R20, R23, R25, R26, R28, R30, R31, R40.
+
+## 2026-10-19: items 11.02, 11.03 and 12.02, the Space is live (coordinator, Opus 5.5)
+
+**Done.** The user created the Space `Codx999/who-goes-there` (Gradio, CPU Basic, public; PRO,
+since a Gradio Space now needs it, plan section 8) and a fine-grained token with write access to
+this Space only, held in `HF_TOKEN` for the one command and unset after. The weights were
+downloaded again from the Kaggle dataset `trailcam-checkpoints`; sha256 `a0a54889…24e9` matches
+the ledger's arm B seed 2 row. `scripts/deploy_space.py --dry-run` listed 49 files;
+the deploy from `c3ea399` uploaded them as Space commit `7d58559`, 0 stale files deleted. The
+first attempt got a 401 at the commit step (the token's write permission was not saved yet);
+the retry, after a `whoami` check, passed.
+
+**Verified on the public Space** (built in about 4 minutes, RUNNING on cpu-basic): all 10
+`assets/` examples are listed. `trans_bobcat_day_01` with Grad-CAM on: cat 79%, bobcat 20%,
+coyote 0%, forward pass 0.033 s, overlay returned. `trans_coyote_night_05`: coyote 100%. Both
+match the 8.06 overlays of the same model. The URL is in `README.md` (Demo) and plan section 8.
+
+**For the user.** Flip 11.02 and 11.03 (yours). 11.02's "free CPU tier" wording predates
+the PRO rule; plan section 8 already says so and wins. 12.02 flipped: the README has the
+headline table, the experiment, the Space link, the local run and the data card link.
+
+**Next.** Phase 3 (approved 2026-10-19: presentation moved to 2026-11-04, keep rule on new
+cameras) is planned as one item after the 2026-10-21 usage reset.
