@@ -4900,3 +4900,68 @@ are removed again. check.sh green without them (the commit).
 
 **Review.** Fix round on the fix range only, as the playbook asks: the fix changes existing test
 lines in `tests/test_space.py` and `tests/test_demo.py`.
+
+## 2026-10-18: session 13, item 13.09, phase 2's verdicts and the freeze (Opus 5.5)
+
+The user approved item 13.09 on 2026-10-19 through the coordinator (that date is the
+coordinator's; it is 2026-10-18 here). It was added to `docs/progress.json` (session 13, owner
+claude, due 2026-10-20). Docs only: no code, config or notebook change.
+
+**Done.**
+
+- `docs/phase2-plan.md`:
+  - A new section 12, "Results and the freeze": a table of every variant's paired deltas (val
+    macro-F1, trans_val macro-F1 and accuracy, per seed) and verdict; the freeze; future work; a
+    summary paragraph for the slides.
+  - The opening paragraph points to section 12. Section 4: the pre-declared phase-2 test scoring
+    is marked not run, and 13.06 not needed. Section 6: the results of `p2_arm_c_p25`,
+    `p2_head3`, `p2_res320`'s confirm and `p2_r50`, each under its step, with the hypothesis
+    word for the follow-up (*smaller*). Section 8: as run. Section 10: the four future-work
+    items. Section 11: open questions 1, 2 and 8 marked answered, and a note on what remains
+    open (3 open; 4, 6 and 9 do not arise; 5 settled by review 13.04).
+- `docs/learning-journal.md`, topic 15: eight lines on screening, confirming and keeping, and
+  why a pre-declared rule that rejects everything is still a result, with a command.
+
+**The verdicts**, the user's decisions of 2026-10-18 and 19. Each delta was recomputed from
+`docs/ledger-phase2.md` and `docs/ledger.md` with a scratch script (not committed), pairing seed 0
+with `p2_baseline` seed 0 and seeds 1 and 2 with phase 1's arm A seeds 1 and 2 (open question 8).
+The script also checks that `p2_baseline` seed 0's scores equal arm A seed 0's. Every number the
+coordinator relayed matched.
+
+- `p2_arm_c`: screened out (val macro-F1 -0.0304; trans_val +0.0971).
+- `p2_arm_c_p25`: screened out (val -0.0151; trans_val +0.0493). The val cost halved and so did
+  the trans_val gain, about 1:3 at both paste rates.
+- `p2_res320`: confirmed over 3 seeds; not kept (mean trans_val +0.0158 < 0.03, though up on all 3
+  seeds; mean val +0.0100).
+- `p2_head3`: screened out (val -0.0078; best epoch 10 of 10, read as undertrained).
+- `p2_r50`: passed the screen (val +0.0128, trans_val +0.0197); not kept (trans_val -0.0219 on
+  seed 1). Seed 2 not run, by the user's decision.
+
+**Found while checking, recorded in section 12.** Trans_val accuracy and macro-F1 move in
+opposite directions on 4 of the 8 variant runs: `p2_arm_c_p25` (accuracy -0.0499), `p2_head3`
+(-0.0755), `p2_res320` seed 0 (-0.0106) and `p2_r50` seed 1 (accuracy +0.0361 while macro-F1
+fell). So copy-paste's 1:3 trade-off is a macro-F1 result: at paste probability 0.25, trans_val
+accuracy fell. No verdict changes, since the rule is on macro-F1.
+
+**For the user.**
+
+- The answers to open questions 1 and 2 are my reading of the verdicts: the screen's conditions
+  were applied as written (val 0.003; trans_val not more than 0.03 worse). Under question 1's
+  1-point alternative, `p2_head3` would have gone on to the confirm. Question 2's alternative
+  would change no verdict.
+- Arm C's "val still rising" is the user's reading of the Kaggle log; the ledger shows its best
+  epoch as 9 of 10. The plan says so.
+
+**Checks.** The ledger checker exits 0 on `docs/ledger-phase2.md` with every row. Every relative
+link in the new text resolves. The journal command runs green. No file outside `docs/` changed.
+Synced to main at `4157bf9` (the coordinator's commit of `p2_r50` seed 1, a fast-forward), and
+the deltas recomputed from the committed row. `bash scripts/check.sh` green (1,193 passed). The
+first run after the sync had 3 errors in `tests/test_dependencies.py`'s `uv build` fixture; the
+build and the file passed alone at once (6 passed), and the full re-run was green, so it was
+transient, most likely another suite running in parallel.
+
+**Next.** Item 12.01's slides can take section 12's summary paragraph.
+
+Review: tier 0 (docs only; `scripts/risk_files.sh` prints nothing). Nothing to run. Spec changed:
+`docs/phase2-plan.md` sections 4, 6, 8, 10, 11 and the new 12, notes and results only, no rule
+changed. Rows citing P2 §4 or §6: R17, R20, R23, R25, R26, R28, R30, R31, R40.
