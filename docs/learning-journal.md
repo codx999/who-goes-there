@@ -39,6 +39,7 @@ name or data row.
 13. [The demo](#13-the-demo)
 14. [Deployment](#14-deployment)
 15. [What we'd improve next, and how](#15-what-wed-improve-next-and-how)
+16. [Telling an honest results story](#16-telling-an-honest-results-story)
 
 ---
 
@@ -854,6 +855,20 @@ to one change. See [phase3-plan.md](phase3-plan.md) section 3. Try:
 
 ```bash
 uv run pytest -q tests/test_models.py -k convnext
+```
+
+---
+
+## 16. Telling an honest results story
+
+**Added by 12.01, the slides.** Lead with the gap between familiar and new cameras, not the best
+number. Call a small gain small: arm B beat arm A on every seed, yet the attention barely moved.
+Give the surprise you did not plan for (val 0.87 against cis_test 0.67, same cameras) its own
+slide, keep every number traceable to a ledger row, and show the rejected and pending ideas too.
+See [slides.md](slides.md). Try:
+
+```bash
+uv run python -m trailcam.train.ledger --check docs/ledger.md
 ```
 
 ---

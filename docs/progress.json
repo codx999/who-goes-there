@@ -195,7 +195,7 @@
     {"id": "12.01", "session": 12, "owner": "claude", "due": "2026-10-22",
      "description": "docs/slides.md: slide outline and speaker notes (problem; the classifier and live demo; the honest test, cis vs trans; the experiment, arm A vs arm B with attention-in-box and the animal-removed test; two errors from the confusion matrix; day vs night; limitations and next steps, including 'the idea is not new, the measurement is'), every number traceable to a ledger row, figures from docs/figures/",
      "steps": "file exists; each number in it appears in docs/ledger.md or docs/plan.md section 7; every figure path exists under docs/figures/",
-     "passes": false},
+     "passes": true},
     {"id": "12.02", "session": 12, "owner": "claude", "due": "2026-10-22",
      "description": "README.md results section: the headline table, the experiment result in two sentences, the Space link, how to run the demo locally, and the data card link",
      "steps": "README contains the headline table from plan.md section 7 and the Space URL; `bash scripts/check.sh` green",

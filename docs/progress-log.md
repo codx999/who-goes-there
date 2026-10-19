@@ -5054,6 +5054,62 @@ optional review of 13.10.
 
 Review: none (tier 0, the user's decision).
 
+## 2026-10-19: item 12.01, the slide outline and speaker notes (Opus 5.5, high)
+
+**Done.** `docs/slides.md`: 17 slides plus backups, each with what goes on it, its figure and
+speaker notes. The order follows the item: problem; the classifier; the live demo (the Space,
+backups the `--share` link and the 12.04 video, then the 12.05 sort, and a note to pick the
+demo photos in advance knowing which are right); the headline table, mean of 3 seeds; val 0.87
+against cis_test 0.67 on its own slide; the experiment; arm B vs arm A in plan section 7's
+words ("small but consistent", the macro-F1 gap barely moves); attention-in-box and the
+animal-removed test, read as mixed under plan section 6's rule; the four Grad-CAM overlays; two
+errors from the trans_test confusion matrix (bobcat as cat, raccoon as opossum); day vs night;
+the feature map (optional); phase 2 on one slide; a marked phase-3 placeholder; limitations and
+next steps (detect then classify, BioCLIP, SWA, sequence voting); "the idea is not new, the
+measurement is". The Beery et al. 2018 and CDLA-Permissive 1.0 citation is on every slide that
+shows a photo or a chart of the data. A journal topic 16 (an honest results story) was added.
+
+**Checks.** Every number in the slides was matched by script against `docs/ledger.md` plus plan
+section 7. Every phase-1 result number is there. Every `docs/figures/` path in the slides exists
+(21 files). `uv run python -m trailcam.train.ledger --check docs/ledger.md` exits 0.
+
+**Flagged, not edited (the item's step 2).**
+
+- The phase-2 slide (14) carries 12 numbers only in `docs/phase2-plan.md` section 12 and
+  `docs/ledger-phase2.md` (val and trans_val macro-F1 changes, and the 0.03 keep bar); plan
+  section 7 does not carry them. They are cited to section 12 on the slide.
+- Slide 7 has arm B's design range (box fills 20% to 100% of the crop), from plan section 6.
+- The demo model's own test scores (arm B seed 2) are only in `docs/test-ledger.md` and
+  `docs/figures/headline_test.md`, so they were left off; slide 4 uses "5 of 10" from section 7.
+- The confusion-matrix counts behind slide 11 are only in the figure; the slide circles the
+  cells and the notes say to read them off it.
+
+So 12.01 is left at `passes: false`: step 2 holds for phase 1 but not for slide 14. It can be
+flipped if the user accepts phase2-plan section 12 as a source for that one slide.
+
+**Phase 3.** At first `docs/phase3-plan.md` was not on `main`, so slide 15 was drafted from the
+brief. After the sync with `main` at `6e83efb` (13.10 merged; the conflicts in this log and the
+journal kept both sides), slide 15 was rewritten from the plan: the two candidates (ConvNeXt-Tiny,
+and ConvNeXt-Tiny with copy-paste at p 0.5), the keep rule, the screen, one finalist at most, and
+section 7's disclosure if a finalist is scored on test. Still no phase-3 result. Its rule
+thresholds (0.03) and "seven recipes" are from `docs/phase3-plan.md` sections 1 and 6, not plan
+section 7: flagged like slide 14. No 10-26 date was in the slides; the header already says
+2026-11-04. 12.01 stays at `passes: false` by the coordinator's request, until the user decides
+on slide 14's source.
+
+**Flipped (the user's decision, 2026-10-19, relayed by the coordinator).** The user accepts
+`docs/phase2-plan.md` section 12 as slide 14's source and `docs/phase3-plan.md` sections 1 and 6
+as slide 15's: both are committed plans whose numbers trace to their own ledgers
+(`docs/ledger-phase2.md`; `docs/ledger.md` for phase 3's baseline). Every other number traces to
+`docs/ledger.md` or plan section 7, and every figure path exists, so 12.01 is set to
+`passes: true`. The item's text is unchanged.
+
+**Not known yet.** Which of the 10 `assets/` photos the Space gets right, beyond the four
+overlays (bobcat and opossum wrong, both coyotes right); slide 4's note says to write them
+down at the rehearsal.
+
+**Next.** 12.04 and 12.05 (the user's); slide 15's verdicts once phase 3 freezes.
+
 ## 2026-10-19: item 13.11, ConvNeXt-Tiny for phase 3 (Opus 5.5, high)
 
 **Done.** Phase 3's code, before any phase-3 run (`docs/phase3-plan.md` sections 5, 8 and 9).
