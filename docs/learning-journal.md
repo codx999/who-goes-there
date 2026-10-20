@@ -857,6 +857,18 @@ to one change. See [phase3-plan.md](phase3-plan.md) section 3. Try:
 uv run pytest -q tests/test_models.py -k convnext
 ```
 
+**Added by 13.13, phase 3's verdicts.** Both ConvNeXt recipes were kept, and three seeds changed
+which one wins. On seed 0 alone the two were 0.024 apart on the unseen camera, inside its 0.03
+noise band, so the finalist rule would have fallen to the val tie-break and picked ConvNeXt alone.
+Seeds 1 and 2 widened the copy-paste lead to 0.069 and 0.078, a mean lead of 0.057, so the rule
+picked ConvNeXt with copy-paste. One run on one camera can rank two recipes the other way round
+from three; the rule reads the three-seed mean for exactly that reason. See [phase3-plan.md](phase3-plan.md)
+section 13. Try:
+
+```bash
+uv run python -m trailcam.train.ledger --check docs/ledger-phase3.md
+```
+
 ---
 
 ## 16. Telling an honest results story

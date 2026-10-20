@@ -4,9 +4,8 @@ Item 12.01. The outline of the capstone talk (presentation 2026-11-04), one sect
 with what goes on the slide, the figure from `docs/figures/` and the speaker notes. Every result
 number is from [`ledger.md`](ledger.md) or [`plan.md`](plan.md) section 7, except the phase-2
 slide, whose numbers are from [`phase2-plan.md`](phase2-plan.md) section 12, and the phase-3 slide's
-rule thresholds, from [`phase3-plan.md`](phase3-plan.md) section 1 (both marked there, and flagged in
-`docs/progress-log.md`). Headline claims use the mean of 3 seeds. No phase-3 result exists yet;
-slide 15 is a placeholder.
+results, from [`phase3-plan.md`](phase3-plan.md) section 13 (val and trans_val only; both marked
+there, and flagged in `docs/progress-log.md`). Headline claims use the mean of 3 seeds.
 
 **Data citation**, on every slide that shows a dataset photo or a chart of the data (marked
 "cite" below): Caltech Camera Traps (CCT20), Beery, Van Horn, Perona, "Recognition in Terra
@@ -324,38 +323,39 @@ say out loud: trans_val is one camera, so these are one-camera results.
 
 ---
 
-## Slide 15. Phase 3: a stronger backbone (results pending)
+## Slide 15. Phase 3: a stronger backbone, both kept
 
-> **PLACEHOLDER: results pending.** From [`phase3-plan.md`](phase3-plan.md) (item 13.10). The
-> freeze is about 2026-10-28 (its section 11). No phase-3 number goes on this slide until it is in
-> `docs/ledger-phase3.md` and section 13 of that plan.
+> Val and trans_val only, from [`phase3-plan.md`](phase3-plan.md) section 13 (item 13.13; every
+> number from `docs/ledger-phase3.md` and `docs/ledger.md`). **No test number** goes here until
+> item 13.12's one scoring has run with the user's go-ahead.
 
-**On the slide.**
+**On the slide.** Two candidates against the same baseline as phase 2 (phase 1's arm A, 3 seeds),
+judged by a keep rule **fixed before any run**: trans_val macro-F1 up more than 0.03 on the mean
+of 3 seeds **and** on every seed, val macro-F1 down no more than 0.03. Macro-F1 changes, mean of
+3 seeds (per seed for trans_val):
 
-- **What it tests**: does a stronger ImageNet-1k backbone help on the unseen camera? Two
-  candidates against the same baseline as phase 2 (phase 1's arm A, 3 seeds):
-  (a) **ConvNeXt-Tiny**, everything else the phase-1 recipe; (b) **ConvNeXt-Tiny plus phase 2's
-  copy-paste** (paste probability 0.5), betting the stronger backbone absorbs part of
-  copy-paste's val cost.
-- **The keep rule, fixed before any run**: kept only if trans_val macro-F1 rises by more than
-  0.03 on the mean of 3 seeds **and** on every seed, and val macro-F1 falls by no more than 0.03.
-- **The screen** (seed 0 first): trans_val macro-F1 at least 0.03 up and val at most 0.03 down;
-  only then seeds 1 and 2.
-- **One finalist at most**, and only it is ever scored on test, once, with the user's go-ahead.
-- Results: pending.
+| change | val | trans_val | verdict |
+| --- | --- | --- | --- |
+| ConvNeXt-Tiny (ImageNet-1k), everything else phase 1's | +0.0245 | +0.0457 (+0.0767, +0.0327, +0.0277) | kept |
+| ConvNeXt-Tiny plus copy-paste, p 0.5 | +0.0063 | +0.1028 (+0.1007, +0.1021, +0.1057) | kept, **the finalist** |
 
-**If a phase-3 recipe is kept and scored on test:** slide 5 shows phase 1's and phase 3's test
-numbers side by side, never one in place of the other, and says the test sets were used a
-**second time**, for one recipe chosen on val and trans_val only, after phase 1's test scores had
-been seen (`phase3-plan.md` section 7). If nothing is kept, there is no test scoring: this slide
-says so in one line, like slide 14, and the Space keeps arm B seed 2.
+**Frozen at ConvNeXt-Tiny plus copy-paste.** Only it will be scored on test, once. The Space keeps
+arm B seed 2 until that scoring and the user's go-ahead; the seed it would serve (seed 2) was
+chosen on val.
 
-**Speaker notes.** Why the rule is written first: once a result is seen, a bar can always be
-drawn just under it. Why the val tolerance is 3 points here (phase 2 allowed 1): phase 3 aims at
-new cameras, and the user accepts up to 3 points on familiar cameras for a clear gain on the new
-one, no more. The honest limit to say out loud: trans_val is still one camera, now judged
-against seven recipes, so a kept gain is optimistic about the next new camera. Fill in the
-verdicts from `phase3-plan.md` section 13 when they exist.
+**If the finalist is scored on test:** slide 5 shows phase 1's and phase 3's test numbers side by
+side, never one in place of the other, and says the test sets were used a **second time**, for
+one recipe chosen on val and trans_val only, after phase 1's test scores had been seen
+(`phase3-plan.md` section 7).
+
+**Speaker notes.** The phase-2 trade-off comes back on a stronger backbone: against ConvNeXt
+alone, copy-paste again costs about 1 point of val macro-F1 for 3 on the new camera (-0.018 for
++0.057), but ConvNeXt's own val gain pays the cost, so the recipe phase 2 had to stop now passes
+the same kind of rule. The finalist rule (higher mean trans_val, unless within 0.03, then higher
+val) chose it by 0.057 on 3 seeds; on seed 0 alone the two were within 0.03 and val would have
+picked ConvNeXt alone. That is why the rule reads the mean of 3 seeds. Say out loud: trans_val is
+one camera (46% bobcats), now judged against nine recipes and chosen on, so the gain is optimistic
+until the test sets say otherwise; the per-class view of where it came from is still to be read.
 
 ---
 
