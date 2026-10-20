@@ -274,7 +274,7 @@ def test_the_phase3_config_hashes_are_pinned_and_the_others_unchanged(
     """Phase 3 adds no field, so `HASH_NEUTRAL` is phase 2's and every phase-1 and phase-2 hash
     is the pinned one (the two tests above); `p3_baseline` carries arm A's hash, so its control
     row is comparable with `resnet18_arm_a`'s, and the two candidates have hashes of their own.
-    Every row of docs/ledger-phase3.md (none yet) must hash to its config's."""
+    Every row of docs/ledger-phase3.md, however many it holds, must hash to its config's."""
     assert set(PHASE3_HASHES) == set(P3_CHANGES)
     for name, digest in PHASE3_HASHES.items():
         assert config_hash(configs[name]) == digest, name

@@ -5228,3 +5228,26 @@ item's run of 1,252); mypy strict, ruff and the data guard clean.
 
 Review: fix round (the fix touches `pyproject.toml` and edits a line of `tests/test_phase3.py`,
 so it is not purely additive): see the report for `scripts/risk_files.sh` on the fix range.
+
+## 2026-10-19: item 13.11, fix round: phase-3 tests independent of the ledger's rows (Opus 5.5, high)
+
+The coordinator's first two real rows in `docs/ledger-phase3.md` (`p3_baseline` and
+`p3_convnext` seed 0, Kaggle at `9d773b1`; `--check` passes) failed 4 tests that assumed the file
+empty, the trap of 6.04 and 9.03. Reproduced here with the two rows appended (4 failed, 267
+passed in the four files); the rows were then removed and are not in this commit.
+
+- `tests/test_ledger.py`: the real phase-3 ledger passes with any row count
+  (`phase-3 ledger: N rows, every check passed`), as phase 2's test.
+- `tests/test_train.py`: `test_the_phase3_ledger_is_beside_the_others_with_the_same_header`
+  (was `..._and_no_row`) is phase 2's rule: text, header, zero or more rows that pass the checks.
+- `tests/test_phase3.py`: the `run` fixture starts from the real file's text and header without
+  its rows (`_without_rows`); its synthetic split hash can never agree with real rows. Both tests
+  on it keep what they prove (one row, routing, checkpoint, `score_test` loading from the row).
+- `tests/test_config.py`: docstring only ("none yet" dropped); it already checks every real row's
+  hash. A grep of `tests/` found no other empty-ledger assumption:
+  `test_a_phase3_run_appends_to_the_phase3_ledger` copies the real file but holds with any rows,
+  and no `docs/test-ledger-phase3.md` exists yet. No invariants row named the old assertions.
+
+**Checks.** `bash scripts/check.sh` green with the two rows (1,254 passed in 8 min 8 s) and with
+the header-only ledger as committed (1,254 passed in 7 min 41 s); mypy strict, ruff and the
+data guard clean.

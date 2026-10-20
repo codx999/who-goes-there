@@ -10,6 +10,7 @@ have exactly the shape `train.py` appends; the hashes are SHA-256 digests of sho
 """
 
 import hashlib
+import re
 import subprocess
 import sys
 from collections.abc import Mapping
@@ -576,7 +577,7 @@ def write_p3(tmp_path: Path, *rows: Mapping[str, str]) -> Path:
 def test_the_real_phase3_ledger_passes(capsys: pytest.CaptureFixture[str]) -> None:
     assert PHASE3_LEDGER_PATH.name == PHASE3_LEDGER_NAME == "ledger-phase3.md"
     assert main(["--check", str(PHASE3_LEDGER_PATH)]) == 0
-    assert capsys.readouterr().out.startswith("phase-3 ledger: 0 rows, every check passed")
+    assert re.match(r"phase-3 ledger: \d+ rows, every check passed", capsys.readouterr().out)
 
 
 @pytest.mark.parametrize("other", [LEDGER_PATH, PHASE2_LEDGER_PATH])

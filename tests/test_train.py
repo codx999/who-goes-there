@@ -513,10 +513,10 @@ def test_the_phase2_ledger_is_beside_the_phase1_one_with_the_same_header() -> No
     assert len(rows) == len(lines) - start - 2
 
 
-def test_the_phase3_ledger_is_beside_the_others_with_the_same_header_and_no_row() -> None:
-    """Item 13.11: docs/ledger-phase3.md holds its own text and the header of `LEDGER_COLUMNS`,
-    no row before the first phase-3 run, and passes the phase-3 checks; the phase of a ledger is
-    its file name, any other name being phase 1's."""
+def test_the_phase3_ledger_is_beside_the_others_with_the_same_header() -> None:
+    """Item 13.11: docs/ledger-phase3.md holds its own text, the header of `LEDGER_COLUMNS` and
+    zero or more rows that pass the phase-3 checks; the phase of a ledger is its file name, any
+    other name being phase 1's."""
     assert PHASE3_LEDGER_PATH == LEDGER_PATH.parent / "ledger-phase3.md"
     assert dict(train.PHASE_LEDGER_NAMES) == {2: "ledger-phase2.md", 3: "ledger-phase3.md"}
     phases = [train.ledger_phase(p) for p in (LEDGER_PATH, PHASE2_LEDGER_PATH, PHASE3_LEDGER_PATH)]
@@ -527,9 +527,11 @@ def test_the_phase3_ledger_is_beside_the_others_with_the_same_header_and_no_row(
     lines = PHASE3_LEDGER_PATH.read_text().splitlines()
     header = ledger_header().splitlines()
     start = lines.index(header[0])
-    assert lines[start:] == header  # the header, then no row
+    assert lines[start : start + 2] == header
     assert not any(line.lstrip().startswith("|") for line in lines[:start])
-    assert check_ledger(PHASE3_LEDGER_PATH) == ([], [])
+    rows, problems = check_ledger(PHASE3_LEDGER_PATH)
+    assert problems == []
+    assert len(rows) == len(lines) - start - 2
 
 
 def test_the_header_follows_the_plan_with_the_config_hash_after_the_config() -> None:

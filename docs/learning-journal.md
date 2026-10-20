@@ -983,6 +983,12 @@ Dated, oldest first. Each: what happened, how it was caught, the lesson.
   examples' loader too, and 2 tests failed. *Caught by* check.sh in main before the photos were
   committed. *Lesson:* find your own handler by what triggers it, and build the app against a
   tmp folder, not the repo's `assets/`.
+- **2026-10-19. The 6.04 trap, a third time (item 13.11).** Four phase-3 tests assumed an empty
+  `docs/ledger-phase3.md`; the first two Kaggle rows failed them. Copying the real file did not
+  only break a count: the fixture's row comes from a synthetic split, so its split hash can never
+  agree with real rows. *Caught by* check.sh in main before the rows were committed. *Lesson:* a
+  new ledger's tests copy the rule ("zero or more rows that pass"), not the moment, and start
+  from its header ([test_phase3.py](../tests/test_phase3.py), `_without_rows`).
 
 ---
 

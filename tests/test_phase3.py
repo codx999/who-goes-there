@@ -1,11 +1,12 @@
 """Item 13.11: phase 3's ConvNeXt-Tiny end to end (docs/phase3-plan.md sections 5, 8 and 9; R17,
 R26, R30, R40).
 
-On a cache-shaped synthetic fixture, `train.py`'s command line runs `p3_convnext` into a copy of
-docs/ledger-phase3.md (refused against docs/ledger.md first) and writes a ConvNeXt checkpoint
-carrying its input size; then `evaluate.py` (with a Grad-CAM overlay), `attention.py` (Grad-CAM at
-ConvNeXt's last stage) and `slices.py` (its 768 features, beside `p3_baseline`'s ResNet-18) run
-their command lines on it, and `score_test.py` loads it from its ledger row and scores it.
+On a cache-shaped synthetic fixture, `train.py`'s command line runs `p3_convnext` into
+docs/ledger-phase3.md's text and header without its rows (refused against docs/ledger.md first)
+and writes a ConvNeXt checkpoint carrying its input size; then `evaluate.py` (with a Grad-CAM
+overlay), `attention.py` (Grad-CAM at ConvNeXt's last stage) and `slices.py` (its 768 features,
+beside `p3_baseline`'s ResNet-18) run their command lines on it, and `score_test.py` loads it
+from its ledger row and scores it.
 
 Speed, said plainly: a real ConvNeXt epoch over the fixture's 440 training images takes about
 ten minutes on a CPU. So the command-line run replaces `fit` and the trans_val scoring (random
@@ -101,6 +102,14 @@ def config_file(tmp_path_factory: pytest.TempPathFactory) -> Path:
     return path
 
 
+def _without_rows(ledger: Path) -> str:
+    """`ledger`'s text through its table header, without the rows: a ledger before its first
+    run, however many rows the repo's file holds (the fixture's split hash is not theirs)."""
+    lines = ledger.read_text().splitlines()
+    end = lines.index(ledger_header().splitlines()[1]) + 1
+    return "\n".join(lines[:end]) + "\n"
+
+
 def _trimmed(split: Split) -> Split:
     return replace(split, records=MappingProxyType({k: v[:TRIM] for k, v in split.records.items()}))
 
@@ -117,8 +126,9 @@ def trimmed(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.fixture(scope="module")
 def run(cache: Path, tmp_path_factory: pytest.TempPathFactory) -> dict[str, Any]:
     """`train.py`'s command line for `p3_convnext`: first against a copy of docs/ledger.md, which
-    it refuses before training, then against a copy of docs/ledger-phase3.md, into which it
-    appends one row; random weights (no download), `fit` and the trans_val scoring replaced."""
+    it refuses before training, then against docs/ledger-phase3.md's text and header without its
+    rows, into which it appends one row; random weights (no download), `fit` and the trans_val
+    scoring replaced."""
     tmp = tmp_path_factory.mktemp("run")
     out = tmp / "out"
     argv = ["--config-name=p3_convnext", f"--data-root={cache}", f"--out-dir={out}"]
@@ -139,7 +149,7 @@ def run(cache: Path, tmp_path_factory: pytest.TempPathFactory) -> dict[str, Any]
         (train.Epoch(1, True, 1.0, Scores(1.0, 0.5, 0.5)),), 1, (2, NUM_CLASSES)
     )
     ledger = tmp / "ledger-phase3.md"
-    ledger.write_text(PHASE3_LEDGER_PATH.read_text())
+    ledger.write_text(_without_rows(PHASE3_LEDGER_PATH))
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(train, "build_model", build)
         patch.setattr(train, "fit", lambda *a, **k: fake_fit)
@@ -163,7 +173,7 @@ def test_p3_convnext_trains_into_the_phase3_ledger_only(run: dict[str, Any]) -> 
     assert row["config hash"] == config_hash(config)
     assert row["checkpoint sha256"] == file_sha256(run["checkpoint"])
     lines = run["ledger"].read_text().splitlines()
-    assert lines[:-1] == PHASE3_LEDGER_PATH.read_text().splitlines()
+    assert lines[:-1] == _without_rows(PHASE3_LEDGER_PATH).splitlines()
     assert lines[-2] == ledger_header().splitlines()[1]
     saved = torch.load(run["checkpoint"], weights_only=True)
     assert set(saved) == CHECKPOINT_KEYS
