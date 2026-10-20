@@ -5488,3 +5488,11 @@ and the data guard clean.
 
 Review: fix round (the fix touches `trailcam/evaluate/score_test.py`). One command covers both
 fix commits: `/review-session ef36910..HEAD 13.12`.
+
+**Fix-round review: clean.** `/review-session ef36910..HEAD 13.12` (the user's): code-reviewer
+(Opus, xhigh) and risk-reviewer (Fable, high) both found nothing; R03, R05, R17, R26, R32, R40
+and R42 hold. The code-reviewer ran one empty, out-of-allowlist `uv run --offline python -`
+(executed nothing, no edit), the second reviewer allowlist slip on this item. **13.12 flipped to
+`passes: true`** on the user's go-ahead (2026-10-20, through the coordinator: "if the fix-round
+review is clean, flip and merge"); tier 3 was met with three full-range reviews in place of
+`/code-review ultra` (above). The scoring run stays the user's.
