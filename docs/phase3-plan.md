@@ -6,6 +6,8 @@ presentation moves from 2026-10-26 to **2026-11-04**, and the keep rule below is
 before any phase-3 run. Phase 1 is done and was scored on test once (`docs/test-ledger.md`,
 scored at 20261018T193117Z). Phase 2 is frozen at the baseline (`docs/phase2-plan.md` section 12).
 The Space serves ResNet-18 arm B seed 2 and stays the safety net whatever phase 3 gives.
+**Results** (item 13.13, section 13): both candidates kept, phase 3 frozen at the finalist
+`p3_convnext_cp`; its test scoring waits for item 13.12 and the user's go-ahead.
 
 This file owns phase 3. `docs/plan.md` stays the source of truth for phase 1, and
 `docs/phase2-plan.md` for phase 2; phase 3 reuses phase 2's machinery and rules except where a
@@ -403,10 +405,143 @@ All four were answered before any phase-3 run (through the coordinator).
    item 13.12 (tier 3, due 2026-10-27). It is built only after a screen passes; if none passes,
    it is recorded as skipped.
 
-## 13. Results
+## 13. Results and the freeze (item 13.13)
 
-None yet. The screens, the confirms, the verdicts and the freeze go here, every delta recomputed
-from `docs/ledger-phase3.md` and `docs/ledger.md`.
+The user's seven Kaggle runs at commit `9d773b1` (the notebook's `COMMIT`), 2026-10-19 and 20 in
+the run ids' UTC, judged by section 1's screen, confirm and keep rule and its finalist rule, all
+written before the runs. Every run is a row of [ledger-phase3.md](ledger-phase3.md) (`uv run
+python -m trailcam.train.ledger --check docs/ledger-phase3.md`). Each delta is the candidate's
+score minus the baseline's at the same run seed, the baseline being phase 1's `resnet18_arm_a` in
+[ledger.md](ledger.md) (section 2); a mean is the mean of the three paired deltas, which equals
+the difference of the unrounded means. Item 13.13 recomputed every number from the two ledgers.
+
+**The control** (section 2). `p3_baseline` seed 0 gave val accuracy 0.8647, val macro-F1 0.8542,
+trans_val accuracy 0.3724 and trans_val macro-F1 0.2915, with its best epoch 9 of 10: arm A seed
+0's row to the fourth decimal on all four scores, as `p2_baseline` was. Its checkpoint hash
+differs from arm A's, as `p2_baseline`'s did. Inside both bands, so the screens were read; a
+seed-0 delta against the control equals the one against arm A, so no verdict differs between
+the two.
+
+**The screens** (run seed 0; section 1's bars: trans_val macro-F1 at least 0.3215, val macro-F1
+at least 0.8242).
+
+| config | val macro-F1 | change | trans_val macro-F1 | change | screen |
+| --- | --- | --- | --- | --- | --- |
+| `p3_convnext` | 0.8837 | +0.0295 | 0.3682 | +0.0767 | passed |
+| `p3_convnext_cp` | 0.8573 | +0.0031 | 0.3922 | +0.1007 | passed |
+
+Both went on to the confirm (seeds 1 and 2 each). Neither candidate's training was broken, so
+section 3's hold on (b) did not arise.
+
+**The confirms** (run seeds 0, 1 and 2; changes against arm A seed by seed).
+
+| config | val macro-F1 change | trans_val macro-F1 change | trans_val accuracy change | verdict |
+| --- | --- | --- | --- | --- |
+| `p3_convnext` | +0.0295, +0.0242, +0.0198 (mean +0.0245) | +0.0767, +0.0327, +0.0277 (mean +0.0457) | +0.0106, +0.0243, -0.0125 (mean +0.0075) | **kept** |
+| `p3_convnext_cp` | +0.0031, +0.0072, +0.0085 (mean +0.0063) | +0.1007, +0.1021, +0.1057 (mean +0.1028) | +0.0886, +0.1634, +0.0723 (mean +0.1081) | **kept** |
+
+Val accuracy moves with val macro-F1 in every run (`p3_convnext` +0.0317, +0.0276, +0.0234;
+`p3_convnext_cp` +0.0050, +0.0125, +0.0092).
+
+The keep rule against the baseline's rows (section 1):
+
+| config | 1. mean trans_val macro-F1 above 0.3401 | 2. above 0.2915, 0.3187, 0.3200 seed by seed | 3. mean val macro-F1 at least 0.8257 |
+| --- | --- | --- | --- |
+| `p3_convnext` | 0.3558 (+0.0457): yes | 0.3682, 0.3514, 0.3477: yes | 0.8802 (+0.0245): yes |
+| `p3_convnext_cp` | 0.4129 (+0.1028): yes | 0.3922, 0.4208, 0.4257: yes | 0.8619 (+0.0063): yes |
+
+**The verdicts.**
+
+- **`p3_convnext`: kept.** All three conditions hold, and val rose instead of paying for the
+  gain. Against its hypothesis line (section 3): val +0.0245 is above the expected 0.01 to 0.02,
+  and trans_val +0.0457 is inside the expected -0.02 to +0.06, above its point of +0.02
+  (*matched*, larger than expected on both). Most of its trans_val gain is in the macro average,
+  not in the share of images right: trans_val accuracy rose only 0.0075 on the mean and fell on
+  seed 2 while macro-F1 rose, the split between the two that phase 2 also saw at one camera.
+- **`p3_convnext_cp`: kept.** All three conditions hold: trans_val macro-F1 up 0.10 on every
+  seed, within 0.005 of each other, and trans_val accuracy up on every seed as well (+0.07 to
+  +0.16). Against its hypothesis line:
+  trans_val +0.1028 against the expected +0.08 (+0.03 to +0.12), *matched*; val +0.0063 against
+  the expected -0.015 (-0.035 to 0), above the range: the bet that ConvNeXt's val gain absorbs
+  part of copy-paste's val cost held more fully than predicted, since against the baseline the
+  cost is gone.
+- **Copy-paste on ConvNeXt** (`p3_convnext_cp` paired with `p3_convnext` by run seed, section 3; a
+  report that decides nothing): val macro-F1 -0.0264, -0.0170, -0.0113 (mean -0.0182),
+  trans_val macro-F1 +0.0240, +0.0694, +0.0780 (mean +0.0571), trans_val accuracy +0.0780,
+  +0.1391, +0.0848 (mean +0.1006). The trade is about 1:3 again (0.018 for 0.057), as it was on
+  ResNet-18 at seed 0 (0.030 for 0.097, `docs/phase2-plan.md` section 12). What changed is where
+  it starts: ConvNeXt's own val gain (+0.0245) covers copy-paste's val cost, so the recipe that
+  phase 2's rule stopped now fits inside section 1's condition 3.
+
+**The finalist** (section 1). Both are kept; the mean trans_val macro-F1s are 0.4129 and 0.3558,
+a lead of 0.0571, more than trans_val's 0.03 band, so the finalist is the higher one,
+**`p3_convnext_cp`**, and the val tie-break is not reached. On seed 0 alone the rule would have
+picked the other: 0.3922 against 0.3682 is a lead of 0.0240, inside the band, and the tie-break
+on val (0.8837 against 0.8573) goes to `p3_convnext`. The lead grew on seeds 1 and 2 (0.0694 and
+0.0780). The rule is on the three-seed means, so it was never read on seed 0, but this is the
+case it was written for: one seed of one camera would have chosen differently.
+
+**Against arm B**, the deployed model (section 2; deciding nothing). Each candidate's seed k
+against `resnet18_arm_b` seed k in [ledger.md](ledger.md), and its best-val seed against arm B
+seed 2, the Space's model:
+
+| config | val macro-F1 change | trans_val macro-F1 change | best-val seed against arm B seed 2 (val, trans_val macro-F1) |
+| --- | --- | --- | --- |
+| `p3_convnext` | +0.0410, +0.0417, +0.0295 (mean +0.0374) | +0.1094, +0.0495, +0.0005 (mean +0.0531) | seed 0: +0.0365, +0.0210 |
+| `p3_convnext_cp` | +0.0146, +0.0247, +0.0182 (mean +0.0192) | +0.1334, +0.1189, +0.0785 (mean +0.1103) | seed 2: +0.0182, +0.0785 (trans_val accuracy +0.1123) |
+
+Replacing the Space's model with the finalist's seed 2 would raise val macro-F1 by about 0.02 and
+trans_val macro-F1 by about 0.08 on these rows. On trans_val, arm B once looked no better than arm
+A and then won on every seed of trans_test (section 6), so this comparison may understate arm B;
+only the test scoring (section 7) puts the two on nine new cameras.
+
+**Context not yet read** (section 4). Bobcat recall and trans_val's per-class rows are not in the
+ledger or any committed file; they come from `notebooks/kaggle_evaluate.ipynb` on the phase-3
+checkpoints, and none is recorded yet. They decide nothing (the rule is on the two macro-F1s),
+but until they exist it is not known how much of either gain is bobcat at camera 125. They are
+owed before the slides quote the gain as anything more than one camera's macro-F1.
+
+**The runs.** Seven: the screening batch (`p3_baseline`, `p3_convnext`, `p3_convnext_cp`, seed
+0), then the four confirm runs in parallel on Kaggle. The user's reading of the Kaggle logs (the
+ledger carries no times): about 67 to 76 s per ConvNeXt epoch, so about 11 to 13 minutes of
+epochs per run, well under section 10's estimate of 25 to 35 minutes per run, which included
+setup. The total is an estimate of about 1.5 to 2 GPU hours, inside the 3-hour cap, so section
+10's order rule ((a)'s confirm before (b)'s) did not bind. Best epochs: `p3_convnext` 10, 9, 9;
+`p3_convnext_cp` 9, 10, 8. Two of the six ConvNeXt runs had their best epoch at the last of 10,
+still improving at the cap: a note for future work, not a recipe change.
+
+**The Space's seed**, chosen on val (section 7, plan.md's open question 7): `p3_convnext_cp` seed
+2, val macro-F1 0.8654, the highest of the three (seeds 0 and 1: 0.8573, 0.8631). No test score
+chose it, and none will. The redeploy waits for item 13.12's scoring and the user's go-ahead, and
+then for section 11's CPU check on the Space; until then, and if that check fails, the Space
+keeps serving ResNet-18 arm B seed 2.
+
+**The freeze.** Phase 3 is frozen at **`p3_convnext_cp`**: ConvNeXt-Tiny (`convnext_tiny.fb_in1k`)
+with arm C's copy-paste at paste probability 0.5, the phase-1 recipe otherwise. No further recipe
+changes in phase 3. Section 7's test-set rule and disclosure stand as written: a screen passed, so
+item 13.12 is built (not skipped), and then `p3_convnext_cp`'s three seeds, and nothing else, are
+scored once on cis test and trans test, with the user's go-ahead, into
+`docs/test-ledger-phase3.md`, reported beside phase 1's and disclosed as the second use of the
+test sets.
+
+**Future work.** Training beyond 10 epochs, judged as a new pre-declared recipe (two runs peaked
+at the last epoch; phase 2 named copy-paste with a longer budget as its own follow-up); the
+per-class context above; seeds 3 and 4 to narrow the means; and section 3's out-of-phase list
+(BioCLIP, MegaDetector, phase 2's unrun steps).
+
+**The honest limit, again** (section 6). Section 6's seven recipes judged on camera 125 are now
+nine, and the finalist was the better of two on it, so its trans_val gain is optimistic about the
+next new camera. trans_val is one camera with 46% bobcats. The test scoring is the check.
+
+**For the slides.** Phase 3 tried a stronger backbone, ConvNeXt-Tiny with the same ImageNet-1k
+pretraining as ResNet-18, alone and with phase 2's copy-paste, under a rule written before any
+run. Both were kept. ConvNeXt alone raised macro-F1 on familiar cameras by about 0.02 and on the
+unseen camera by about 0.05. With copy-paste, the unseen camera rose by about 0.10 on every seed,
+and the familiar cameras did not drop: the stronger backbone paid copy-paste's cost, the trade
+that stopped it in phase 2. It is the finalist, the one recipe that will be scored on test. The
+control re-ran phase 1 to the fourth decimal, and one seed alone would have picked the other
+recipe. trans_val is one camera, chosen on, so the gain is optimistic until the test sets say
+otherwise.
 
 ## Sources
 

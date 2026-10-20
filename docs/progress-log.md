@@ -5252,6 +5252,68 @@ passed in the four files); the rows were then removed and are not in this commit
 the header-only ledger as committed (1,254 passed in 7 min 41 s); mypy strict, ruff and the
 data guard clean.
 
+## 2026-10-19: session 13, item 13.13, phase 3's verdicts and the freeze (Opus 5.5, high)
+
+The user approved item 13.13 on 2026-10-20 through the coordinator (that date is the
+coordinator's; it is 2026-10-19 here). It was added to `docs/progress.json` (session 13, owner
+claude, due 2026-10-21). Docs only: no code, config or notebook change. Main at `aa6ee0a`, the
+coordinator's commit of the seven phase-3 rows (Kaggle, commit `9d773b1`).
+
+**Done.**
+
+- `docs/phase3-plan.md`: section 13, "Results and the freeze", modelled on phase 2's section 12:
+  the control, the screens, the confirms with paired deltas, the keep rule row by row, the
+  verdicts with each hypothesis word, copy-paste on ConvNeXt (paired, deciding nothing), the
+  finalist, arm B (deciding nothing), the context not yet read, the runs, the Space's seed, the
+  freeze, future work and a paragraph for the slides. The opening paragraph points to it. No rule
+  changed; section 7's test-scoring and disclosure rules are as they were.
+- `docs/slides.md`: slide 15 filled with the val and trans_val verdict (no test number), and the
+  header's source note updated to section 13.
+- `docs/learning-journal.md`, topic 15: five lines on why three seeds reversed the seed-0
+  preview of the finalist, with a command.
+
+**The verdicts.** Every number recomputed from `docs/ledger-phase3.md` and `docs/ledger.md`
+(arm A seeds 0 to 2, seed-matched) with a scratch script (not committed); the checker's group
+means agree.
+
+- Control: `p3_baseline` seed 0 equals arm A seed 0 on all four scores and the best epoch (9);
+  its checkpoint hash differs, as `p2_baseline`'s did.
+- `p3_convnext`: screen passed (trans_val +0.0767, val +0.0295); **kept** (mean trans_val
+  +0.0457, per seed +0.0767, +0.0327, +0.0277; mean val +0.0245).
+- `p3_convnext_cp`: screen passed (+0.1007, val +0.0031); **kept** (mean trans_val +0.1028, per
+  seed +0.1007, +0.1021, +0.1057; mean val +0.0063).
+- Finalist `p3_convnext_cp`: mean trans_val lead 0.0571 > 0.03. On seed 0 alone the lead was
+  0.0240 and the val tie-break would have picked `p3_convnext`.
+- Space seed on val: `p3_convnext_cp` seed 2 (val macro-F1 0.8654). Redeploy waits for 13.12's
+  scoring, the user's go-ahead and section 11's CPU check.
+- Freeze: phase 3 frozen at `p3_convnext_cp`; no further recipe changes.
+
+**Against the coordinator's figures.** All match except one rounding: `p3_convnext_cp`'s mean val
+change is **+0.0063** (the mean of the paired deltas, 0.86193 − 0.85567), not +0.0062 (the
+difference of the rounded means, 0.8619 − 0.8557). Section 13 uses +0.0063 and says how means
+are taken. "Several runs hit 10 of 10": the ledger shows two of six ConvNeXt runs
+(`p3_convnext` seed 0, `p3_convnext_cp` seed 1); section 13 says two.
+
+**For the user.**
+
+- Section 4's context (bobcat recall, trans_val's per-class rows) is not in any committed file
+  for phase 3; section 13 records it as owed before the slides read the gain as more than one
+  camera's macro-F1. It decides nothing.
+- The per-epoch times (67 to 76 s) and the GPU total (about 1.5 to 2 hours) are the user's
+  Kaggle reading and an estimate; the ledger carries no times. Section 10's "projected minutes
+  before each run" lines are not in this log for phase 3's runs.
+- README's "What's next" does not mention phase 3 (it still says phase 2's results are not in the
+  README), so it was left as it is, per the item; it is stale on phase 2 and phase 3 both.
+
+**Checks.** The ledger checker exits 0 on `docs/ledger-phase3.md` (7 rows) and `docs/ledger.md`.
+Every relative link in the changed files resolves. No test number in the new text. The journal
+command runs green. No file outside `docs/` changed.
+`bash scripts/check.sh` green before and after the edits (1,254 passed, 7 min 19 s and 7 min 6 s);
+mypy strict, ruff and the data guard clean.
+
+Review: tier 0 (docs only; `scripts/risk_files.sh` prints nothing). Nothing to run. Spec changed:
+`docs/phase3-plan.md` the opening paragraph and the new section 13, results only, no rule changed.
+
 ## 2026-10-19: item 13.12, phase 3's test-scoring code (Opus 5.5, xhigh)
 
 **Done.** Code only (`docs/phase3-plan.md` section 7): nothing was scored on a real test split,
