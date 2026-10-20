@@ -410,6 +410,14 @@ evaluation notebooks can reach a test split. A fresh clone cannot see an earlier
 once `main`'s test ledger holds a row, and `APPROVED_BY` starts empty: Run All then checks all and
 stops. A run that stops part way has appended nothing: rerun from the start with a new `--out`.
 
+**Added by 13.12, phase 3's second look.** Each look at a test set spends some of its honesty, so
+a second look is fair only if what it scores was fixed before the runs it judges (pre-registered):
+one recipe, three seeds, the plan's bars. So the code never takes the finalist's name; it
+recomputes the keep and finalist rules from the ledgers and scores those three checkpoints only,
+into [test-ledger-phase3.md](test-ledger-phase3.md). Phase 1's test scores were already seen, so
+the new ones are reported beside them as a second use (disclosed), never instead. Try:
+`uv run pytest -q tests/test_score_test_phase3.py -k "keep_rule or real"`.
+
 ## 10. Evaluation pieces built so far
 
 **What we did.** By 2026-10-15 these are built and tested (none run on real checkpoints yet):

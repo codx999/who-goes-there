@@ -1,25 +1,29 @@
-"""notebooks/kaggle_score_test.ipynb, the final scoring's notebook (item 9.03).
+"""notebooks/kaggle_score_test.ipynb, the test scoring's notebook (items 9.03 and 13.12).
 
-The notebook runs only on Kaggle, for item 9.02, the user's one run. Here it is read as JSON and
-its code cells as Python: these tests check its shape (R41 outputs cleared; R38 the one pip
-install, of the clone; R17 the scoring runs once, through one call of `score_test.py`'s command
-line, after the go-ahead cell, and no cell reaches the training or evaluation code; R06 the
-licence and citation; R07 no credentials). They also run its cells as written on the synthetic
-fixture of `tests/test_score_test.py`: random weights, never a real checkpoint, and never the real
-cis_test or trans_test. The scoring cell runs `python -m trailcam.evaluate.score_test` on that
-fixture once.
+The notebook runs only on Kaggle: for item 9.02, phase 1's one run (`PHASE = 1`, done), and for
+phase 3's one scoring of its finalist (`PHASE = 3`, the default, item 13.12), the user's. Here it
+is read as JSON and its code cells as Python: these tests check its shape (R41 outputs cleared;
+R38 the one pip install, of the clone; R17 the scoring runs once, through one call of
+`score_test.py`'s command line, after the go-ahead cell, and no cell reaches the training or
+evaluation code; R06 the licence and citation; R07 no credentials). They also run its cells as
+written on the synthetic fixture of `tests/test_score_test.py` (phase 1) and of
+`tests/test_score_test_phase3.py` (phase 3): random weights, never a real checkpoint, and never
+the real cis_test or trans_test. The scoring cell runs `python -m trailcam.evaluate.score_test`
+on each fixture once.
 """
 
 import ast
 import importlib
 import io
 import json
+import re
 import shutil
 import subprocess
 import sys
 import tarfile
 import types
 import zipfile
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +32,7 @@ import torch
 import yaml
 from PIL import Image
 
+from tests import test_score_test_phase3 as phase3
 from tests.test_score_test import (
     APPROVER,
     World,
@@ -40,6 +45,7 @@ from trailcam.data.dataset import INPUT_SIZE
 from trailcam.evaluate import evaluate, score_test
 from trailcam.evaluate.score_test import (
     ALARM_EXIT,
+    PHASE3_TEST_LEDGER_PATH,
     TEST_LEDGER_COLUMNS,
     TEST_LEDGER_PATH,
     Refusal,
@@ -50,9 +56,11 @@ from trailcam.evaluate.score_test import (
     read_ledger,
     read_test_ledger,
     scoring_header,
+    select_finalist,
 )
 from trailcam.train import device
 from trailcam.train.config import HASH_NEUTRAL, OPTIONAL_FIELDS
+from trailcam.train.train import file_sha256
 
 ROOT = Path(__file__).resolve().parents[1]
 NOTEBOOK = ROOT / "notebooks" / "kaggle_score_test.ipynb"
@@ -61,11 +69,15 @@ PUBLIC_REPO = "https://github.com/codx999/who-goes-there"
 SCORING_MODULE = "trailcam.evaluate.score_test"
 # The fixture's assets/ photo, named like an image id: its name must never be printed (R03).
 PHOTO_NAME = "fixture-6f1c2e9a-photo.jpg"
-PARAMETERS = {"COMMIT", "CACHE_ARCHIVE", "CHECKPOINTS_ROOT", "APPROVED_BY", "RUN_SEEDS"}
+PARAMETERS = {"PHASE", "COMMIT", "CACHE_ARCHIVE", "CHECKPOINTS_ROOT", "APPROVED_BY", "RUN_SEEDS"}
+# Phase 1's default COMMIT (item 9.03): its docs/ledger.md holds the 7 rows, its test ledger none.
+PHASE1_COMMIT = "b64c48691c4df3f3c2be5acf2cd33a3329104b4e"
+PHASE_LINE = "PHASE = 3  #"  # the parameter cell's PHASE, as `_namespace` rewrites it
 # Everything the notebook takes from `trailcam`, exactly: a new name (a second route to the
 # scoring, an evaluation or training call, a checkpoint loader) fails here first. From
-# score_test.py only its checks before anything is loaded and its test ledger reader and writer
-# of one line; from train.py two folder names.
+# score_test.py only its checks before anything is loaded (phase 3's: the selection, the
+# finalist's files by sha256, its resolution) and its test ledger reader and writer of one line;
+# from train.py two folder names.
 TRAILCAM_IMPORTS = {
     "trailcam.data.cache": {"archive_files", "check_images", "sidecar_folders", "unpack_cache"},
     "trailcam.data.metadata": {"DAY_NIGHT_SIDECAR", "load_metadata"},
@@ -75,11 +87,14 @@ TRAILCAM_IMPORTS = {
         "Refusal",
         "check_approver",
         "check_run_seeds",
+        "finalist_files",
         "ledger_line",
         "read_ledger",
         "read_test_ledger",
         "resolve_checkpoints",
+        "resolve_phase3_checkpoints",
         "scoring_header",
+        "select_finalist",
     },
     "trailcam.train.device": {"check_gpu"},
     "trailcam.train.train": {"CACHE_ANNOTATIONS", "CACHE_IMAGES"},
@@ -185,10 +200,16 @@ def _imports() -> dict[str, Any]:
     return names
 
 
-def _namespace(work: Path, kaggle_input: Path, **values: Any) -> dict[str, Any]:
-    """The parameter cell run with `work` and `kaggle_input` for Kaggle's two folders, then the
-    notebook's imports, then `values`."""
+def _namespace(
+    work: Path, kaggle_input: Path, phase: int | None = None, **values: Any
+) -> dict[str, Any]:
+    """The parameter cell run with `work` and `kaggle_input` for Kaggle's two folders (and
+    `phase` for its PHASE, so the paths it sets follow), then the notebook's imports, then
+    `values`."""
     source = CODE[0]
+    assert source.count(PHASE_LINE) == 1
+    if phase is not None:
+        source = source.replace(PHASE_LINE, f"PHASE = {phase}  #")
     for kaggle, local in (
         ('Path("/kaggle/working")', work),
         ('Path("/kaggle/input")', kaggle_input),
@@ -238,6 +259,7 @@ def test_trailcam_names_exist() -> None:
 def test_parameters() -> None:
     p = _parameters()
     assert isinstance(p["COMMIT"], str) and len(p["COMMIT"]) == 40
+    assert p["PHASE"] == 3  # phase 3's finalist; phase 1's scoring has run (item 9.02)
     assert p["APPROVED_BY"] == ""  # the go-ahead is the user's, filled in only for the run
     assert p["RUN_SEEDS"] == (0, 1, 2)
     assert p["CHECKPOINTS_ROOT"] is None and p["CHECKPOINTS_DATASET"] == "trailcam-checkpoints"
@@ -245,12 +267,38 @@ def test_parameters() -> None:
     assert p["INPUT"] == "Path('/kaggle/input')" and p["WORK"] == "Path('/kaggle/working')"
     assert p["CLONE"] == "WORK / 'who-goes-there'"
     assert p["CONFIG_FILE"] == "CLONE / 'config.yaml'"
-    assert p["LEDGER"] == "CLONE / 'docs' / 'ledger.md'"
-    assert p["TEST_LEDGER"] == "CLONE / 'docs' / 'test-ledger.md'"
+    assert p["LEDGER"] == "CLONE / 'docs' / ('ledger-phase3.md' if PHASE == 3 else 'ledger.md')"
+    assert p["BASELINE_LEDGER"] == "CLONE / 'docs' / 'ledger.md'"
+    assert p["TEST_LEDGER"] == (
+        "CLONE / 'docs' / ('test-ledger-phase3.md' if PHASE == 3 else 'test-ledger.md')"
+    )
     assert p["ASSETS"] == "CLONE / 'assets'"
     assert p["OUT"] == "WORK / 'score'"  # --out /kaggle/working/score
     assert p["LOCAL_CACHE"] == "Path('/tmp/trailcam-cache')"  # local disk, not /kaggle/working
     assert p["MAIN_TEST_LEDGER"] == "Path('/tmp/trailcam-main-test-ledger.md')"
+
+
+@pytest.mark.parametrize(
+    ("phase", "ledger", "test_ledger"),
+    [(3, "ledger-phase3.md", "test-ledger-phase3.md"), (1, "ledger.md", "test-ledger.md")],
+)
+def test_phase_sets_the_ledgers(phase: int, ledger: str, test_ledger: str) -> None:
+    """PHASE picks the ledger and the test ledger of the clone; the baseline is docs/ledger.md."""
+    names = _namespace(Path("/kaggle/working"), Path("/kaggle/input"), phase=phase)
+    docs = Path("/kaggle/working/who-goes-there/docs")
+    assert names["PHASE"] == phase
+    assert (names["LEDGER"], names["TEST_LEDGER"]) == (docs / ledger, docs / test_ledger)
+    assert names["BASELINE_LEDGER"] == docs / "ledger.md"
+
+
+@pytest.mark.parametrize("phase", [2, 0, "3"])
+def test_the_check_cell_refuses_another_phase(
+    phase: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "unset by the test")  # the cell pins it; restored
+    names = {**_namespace(Path("/kaggle/working"), Path("/kaggle/input")), "PHASE": phase}
+    with pytest.raises(ValueError, match="PHASE must be 3"):
+        _run(next(i for i, source in enumerate(CODE) if "COMMIT must be" in source), names)
 
 
 def test_the_cache_archive_is_the_training_notebook_s() -> None:
@@ -286,7 +334,9 @@ def test_the_parameter_cell_is_the_only_one_that_sets_a_parameter() -> None:
     ]
     assert later == []
     (check,) = [source for source in CODE if "COMMIT must be" in source]
-    for shown in ("COMMIT {COMMIT}", "RUN_SEEDS {RUN_SEEDS}", "APPROVED_BY {APPROVED_BY!r}"):
+    for shown in ("PHASE {PHASE}", "COMMIT {COMMIT}", "RUN_SEEDS {RUN_SEEDS}"):
+        assert shown in check
+    for shown in ("APPROVED_BY {APPROVED_BY!r}",):
         assert shown in check
     for shown in ("CACHE_ARCHIVE {CACHE_ARCHIVE}", "CHECKPOINTS_ROOT {CHECKPOINTS_ROOT}"):
         assert shown in check
@@ -310,13 +360,49 @@ def _read_as_today(config_text: bytes) -> bytes:
     return yaml.safe_dump(raw, sort_keys=False).encode("utf-8")
 
 
-def test_the_default_commit_holds_the_ledger_the_scoring_accepts(tmp_path: Path) -> None:
-    """The default COMMIT is on this branch's history, and score_test.py's checks pass on its
-    ledger, test ledger and configs for the default RUN_SEEDS: the 7 rows of phase 1, complete for
-    seeds 0, 1 and 2, no test row (CI checks out the full history). A config.yaml older than item
-    13.02 is read as today's code reads it (`_read_as_today`)."""
+def _show(commit: str, name: str) -> bytes | None:
+    """The file `name` at `commit` of this repo, or None if the commit has none."""
+    shown = subprocess.run(
+        ["git", "-C", str(ROOT), "show", f"{commit}:{name}"], check=False, capture_output=True
+    )
+    return shown.stdout if shown.returncode == 0 else None
+
+
+def test_the_default_commit_holds_the_ledgers_the_phase3_scoring_accepts(tmp_path: Path) -> None:
+    """The default COMMIT is on this branch's history; at it, docs/ledger-phase3.md and
+    docs/ledger.md give the finalist p3_convnext_cp, whose rows still hash to their configs in
+    its config.yaml, and docs/test-ledger-phase3.md holds no row, or does not exist yet (the
+    default predates item 13.12's merge; the coordinator gives the commit to run). Its
+    docs/test-ledger.md holds phase 1's rows, so a PHASE = 1 run is refused."""
+    commit = str(_parameters()["COMMIT"])
+    git = ["git", "-C", str(ROOT)]
+    ancestor = subprocess.run([*git, "merge-base", "--is-ancestor", commit, "HEAD"], check=False)
+    assert ancestor.returncode == 0, f"COMMIT {commit} is not in this branch's history"
+    for name in ("docs/ledger-phase3.md", "docs/ledger.md", "config.yaml", "docs/test-ledger.md"):
+        shown = _show(commit, name)
+        assert shown is not None, name
+        (tmp_path / Path(name).name).write_bytes(shown)
+    selection = select_finalist(
+        read_ledger(tmp_path / "ledger-phase3.md"), read_ledger(tmp_path / "ledger.md")
+    )
+    assert selection.finalist.config == "p3_convnext_cp"
+    assert [int(r["run seed"]) for r in selection.finalist.rows] == [0, 1, 2]
+    for row in selection.finalist.rows:
+        score_test._config_of(row, tmp_path / "config.yaml")
+    phase3_test_ledger = _show(commit, "docs/test-ledger-phase3.md")
+    if phase3_test_ledger is not None:
+        (tmp_path / "test-ledger-phase3.md").write_bytes(phase3_test_ledger)
+        assert read_test_ledger(tmp_path / "test-ledger-phase3.md") == []
+    assert len(read_test_ledger(tmp_path / "test-ledger.md")) == 7  # phase 1 has been scored
+
+
+def test_phase1_s_commit_holds_the_ledger_the_scoring_accepted(tmp_path: Path) -> None:
+    """Phase 1's default COMMIT (item 9.03) is on this branch's history, and score_test.py's
+    checks pass on its ledger, test ledger and configs for the default RUN_SEEDS: the 7 rows of
+    phase 1, complete for seeds 0, 1 and 2, no test row (CI checks out the full history). A
+    config.yaml older than item 13.02 is read as today's code reads it (`_read_as_today`)."""
     p = _parameters()
-    commit = str(p["COMMIT"])
+    commit = PHASE1_COMMIT
     git = ["git", "-C", str(ROOT)]
     ancestor = subprocess.run([*git, "merge-base", "--is-ancestor", commit, "HEAD"], check=False)
     assert ancestor.returncode == 0, f"COMMIT {commit} is not in this branch's history"
@@ -481,9 +567,11 @@ def test_no_split_is_named_in_code() -> None:
 # The scoring cell's command.
 
 
-def _score_with(exit_code: int, **values: Any) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    """The scoring cell run as written with a stand-in `subprocess.Popen` that records its
-    arguments, prints one line and exits `exit_code`."""
+def _score_with(
+    exit_code: int, phase: int = 3, **values: Any
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """The scoring cell run as written, with PHASE `phase`, with a stand-in `subprocess.Popen`
+    that records its arguments, prints one line and exits `exit_code`."""
     calls: list[dict[str, Any]] = []
 
     class Popen:
@@ -499,7 +587,7 @@ def _score_with(exit_code: int, **values: Any) -> tuple[dict[str, Any], list[dic
             return None
 
     work = Path("/kaggle/working")
-    names = _namespace(work, Path("/kaggle/input"), APPROVED_BY=APPROVER)
+    names = _namespace(work, Path("/kaggle/input"), phase, APPROVED_BY=APPROVER)
     names["subprocess"] = types.SimpleNamespace(
         Popen=Popen, PIPE=subprocess.PIPE, STDOUT=subprocess.STDOUT
     )
@@ -513,28 +601,36 @@ def _score_with(exit_code: int, **values: Any) -> tuple[dict[str, Any], list[dic
     return _run(_scoring_cell(), names), calls
 
 
+@pytest.mark.parametrize("phase", [3, 1])
 @pytest.mark.parametrize("seeds", [(0, 1, 2), (0,), (2, 0)])
 def test_run_seeds_and_the_paths_reach_the_command_line(
-    seeds: tuple[int, ...], capsys: pytest.CaptureFixture[str]
+    seeds: tuple[int, ...], phase: int, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """RUN_SEEDS reaches --run-seeds, APPROVED_BY --approved-by (a name starting with a dash
-    too), and the clone's config, ledger and test ledger, OUT, the cache, every checked
-    checkpoint and every assets/ photo reach theirs, as score_test.py's own parser reads them."""
+    """PHASE reaches --phase, RUN_SEEDS --run-seeds, APPROVED_BY --approved-by (a name starting
+    with a dash too), and the clone's config, ledger (and for phase 3 its baseline ledger) and test
+    ledger, OUT, the cache, every checked checkpoint and every assets/ photo reach theirs, as
+    score_test.py's own parser reads them."""
+    docs = Path("/kaggle/working/who-goes-there/docs")
+    ledger, test_ledger = (
+        ("ledger-phase3.md", "test-ledger-phase3.md")
+        if phase == 3
+        else ("ledger.md", "test-ledger.md")
+    )
     for approver in (APPROVER, "-dash name"):
-        names, calls = _score_with(0, RUN_SEEDS=seeds, APPROVED_BY=approver)
+        names, calls = _score_with(0, phase, RUN_SEEDS=seeds, APPROVED_BY=approver)
         ((call,),) = [calls]
         command = call["command"]
         assert command[:3] == [sys.executable, "-m", SCORING_MODULE]
         args = score_test.build_parser().parse_args(command[3:])
+        assert args.phase == phase
         assert args.run_seeds == list(seeds)
         assert args.approved_by == approver
         assert args.checkpoint == [c.path for c in names["checked"]]
         assert args.data_root == names["data_root"]
         assert args.config == names["CONFIG_FILE"]
-        assert (
-            args.ledger == names["LEDGER"] == Path("/kaggle/working/who-goes-there/docs/ledger.md")
-        )
-        assert args.test_ledger == names["TEST_LEDGER"]
+        assert args.ledger == names["LEDGER"] == docs / ledger
+        assert args.baseline_ledger == (docs / "ledger.md" if phase == 3 else None)
+        assert args.test_ledger == names["TEST_LEDGER"] == docs / test_ledger
         assert args.out == names["OUT"] == Path("/kaggle/working/score")
         assert args.assets == names["ASSETS"]
         assert args.overlay == [(photo, None) for photo in names["overlay_photos"]]
@@ -644,8 +740,9 @@ def _kaggle(world: World, root: Path) -> tuple[Path, Path]:
 
 
 def _fixture_names(world: World, root: Path, **values: Any) -> dict[str, Any]:
+    """Phase 1's cells on the phase-1 fixture."""
     work, kaggle_input = _kaggle(world, root)
-    return _namespace(work, kaggle_input, data_root=world.cache, head="0" * 40, **values)
+    return _namespace(work, kaggle_input, 1, data_root=world.cache, head="0" * 40, **values)
 
 
 @pytest.fixture
@@ -664,9 +761,9 @@ def forbid_loading(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_the_rehearsal_checks_everything_and_stops_before_anything_is_loaded(
     world: World, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """APPROVED_BY empty, its default: the cache and the checkpoints pass their checks, then the
-    go-ahead cell refuses, before any checkpoint is loaded, any image opened or the scoring
-    started; OUT is never made."""
+    """Phase 1, APPROVED_BY empty, its default: the cache and the checkpoints pass their checks,
+    then the go-ahead cell refuses, before any checkpoint is loaded, any image opened or the
+    scoring started; OUT is never made."""
     names = _fixture_names(world, tmp_path, RUN_SEEDS=(0,))
     assert names["APPROVED_BY"] == ""
     for cell in (_cell("check_images"), _cell("os.walk"), _cell("resolve_checkpoints")):
@@ -770,51 +867,237 @@ def test_the_notebook_scores_the_fixture_once_and_prints_and_zips_the_rows(
     assert TEST_LEDGER_PATH.read_bytes() == repo_test_ledger
 
 
+# Phase 3's cells on the phase-3 fixture of tests/test_score_test_phase3.py.
+
+
+@pytest.fixture(scope="module")
+def world3(tmp_path_factory: pytest.TempPathFactory) -> phase3.World:
+    """The phase-3 fixture: a cache, the finalist's three random-weight ResNet-18 checkpoints and
+    stand-ins for the other phase-3 runs, both ledgers and an assets/ photo."""
+    return phase3._build_world(tmp_path_factory.mktemp("score_notebook_phase3"))
+
+
+def _kaggle3(world3: phase3.World, root: Path, others: Sequence[Path] = ()) -> tuple[Path, Path]:
+    """A clone with the phase-3 fixture's config, both ledgers, an empty phase-3 test ledger and
+    the photo, and an input folder holding a file for every phase-3 row and `others` (phase 1's
+    checkpoints, as the real dataset may hold them), as Kaggle mounts a dataset."""
+    work, kaggle_input = root / "working", root / "input"
+    clone = work / "who-goes-there"
+    (clone / "docs").mkdir(parents=True)
+    (clone / "assets").mkdir()
+    shutil.copy(world3.config_file, clone / "config.yaml")
+    shutil.copy(world3.ledger, clone / "docs" / "ledger-phase3.md")
+    shutil.copy(world3.baseline, clone / "docs" / "ledger.md")
+    _empty_test_ledger(clone / "docs" / "test-ledger-phase3.md")
+    shutil.copy(world3.photo, clone / "assets" / PHOTO_NAME)
+    mount = kaggle_input / "datasets" / "someone" / "trailcam-checkpoints" / "models"
+    mount.mkdir(parents=True)
+    for path in [*world3.files.values(), *others]:
+        (mount / f"{path.parent.name}-{path.name}").symlink_to(path)
+    return work, kaggle_input
+
+
+def _phase3_names(
+    world3: phase3.World, root: Path, others: Sequence[Path] = (), **values: Any
+) -> dict[str, Any]:
+    work, kaggle_input = _kaggle3(world3, root, others)
+    return _namespace(work, kaggle_input, 3, data_root=world3.cache, head="0" * 40, **values)
+
+
+@pytest.mark.usefixtures("forbid_loading")
+def test_the_phase3_rehearsal_picks_the_finalist_and_stops_before_anything_is_loaded(
+    world: World, world3: phase3.World, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """PHASE 3, APPROVED_BY empty: section 4 prints both verdicts and the finalist, keeps the
+    finalist's three files out of every file in the dataset (the other phase-3 runs' and phase
+    1's too), by sha256, and passes the scoring's own checks on them; then the go-ahead cell
+    refuses, before any checkpoint is loaded, image opened or process started."""
+    names = _phase3_names(world3, tmp_path, list(world.checkpoints.values()))
+    assert (names["PHASE"], names["APPROVED_BY"]) == (3, "")
+    for cell in (_cell("check_images"), _cell("os.walk"), _cell("resolve_checkpoints")):
+        _run(cell, names)
+    out = capsys.readouterr().out
+    total = len(world3.files) + len(world.checkpoints)
+    assert "- p3_convnext: kept" in out and "- p3_convnext_cp: kept" in out
+    assert "- The finalist: p3_convnext_cp (the higher mean trans_val macro-F1" in out
+    assert f"3 of the {total} .pt files are the finalist p3_convnext_cp's, by sha256" in out
+    assert "3 checkpoints, one per ledger row to score" in out
+    assert [file_sha256(c.path) for c in names["checked"]] == [
+        file_sha256(p) for p in world3.finalist()
+    ]
+    assert [c.row["config"] for c in names["checked"]] == ["p3_convnext_cp"] * 3
+    with pytest.raises(RuntimeError, match="needs the user's go-ahead"):
+        _run(_cell("check_approver"), names)
+    assert not names["OUT"].exists()
+
+
+def _broken3(names: dict[str, Any], world3: phase3.World, how: str) -> None:
+    mount = names["INPUT"] / "datasets" / "someone" / "trailcam-checkpoints" / "models"
+    link = mount / f"checkpoints-{world3.files[('p3_convnext_cp', 1)].name}"
+    if how == "missing":
+        link.unlink()
+    elif how == "changed":
+        data = link.read_bytes()
+        link.unlink()
+        link.write_bytes(data + b"\0")
+    elif how == "scored":
+        names["TEST_LEDGER"].write_text(
+            names["TEST_LEDGER"].read_text()
+            + ledger_line(dict.fromkeys(TEST_LEDGER_COLUMNS, "x"))
+            + "\n"
+        )
+    elif how == "seeds":
+        names["RUN_SEEDS"] = (0, 1)
+    elif how == "nothing kept":
+        scores = phase3._with(
+            p3_convnext_0=("0.8837", "0.3100"), p3_convnext_cp_2=("0.8654", "0.3100")
+        )
+        drop = [("p3_convnext", 1), ("p3_convnext", 2)]
+        phase3.write_ledgers(world3, names["LEDGER"].parent, scores, drop=drop)
+
+
+@pytest.mark.usefixtures("forbid_loading")
+@pytest.mark.parametrize(
+    ("how", "why"),
+    [
+        ("missing", "the finalist's run p3_convnext_cp-seed1-"),
+        ("changed", "missing from the dataset, or changed since it was trained"),
+        ("scored", "the test ledger already holds 1 rows"),
+        ("seeds", "--run-seeds 0 1: phase 3 scores run seeds 0 1 2"),
+        ("nothing kept", "no phase-3 candidate was kept, so phase 3 has no test scoring"),
+    ],
+)
+def test_the_phase3_checks_refuse_before_anything_is_loaded(
+    world3: phase3.World, tmp_path: Path, how: str, why: str
+) -> None:
+    """Section 4 in phase 3: a finalist file missing from the dataset, one whose bytes changed
+    (no file has its row's sha256), a test ledger that holds a row (the scoring has run), seeds
+    other than 0, 1 and 2, and ledgers where nothing was kept."""
+    names = _phase3_names(world3, tmp_path)
+    _broken3(names, world3, how)
+    _run(_cell("os.walk"), names)
+    with pytest.raises(Refusal, match=re.escape(why)):
+        _run(_cell("resolve_checkpoints"), names)
+
+
+def test_the_notebook_scores_the_phase3_finalist_once(
+    world: World, world3: phase3.World, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Sections 3 to 7 as written, PHASE 3, with the go-ahead, on the phase-3 fixture, the dataset
+    holding phase 1's checkpoints too: one run of score_test's command line, with --phase 3 and
+    --baseline-ledger, appends the finalist's three rows to the clone's test-ledger-phase3.md, in
+    seed order, with each file's sha256 and the approver; the cell after prints them under the
+    header for docs/test-ledger-phase3.md. Run again in the session, section 4 refuses. The
+    clone's ledgers and the repo's docs are unchanged."""
+    figures_before = _figures_snapshot()
+    repo = {path: path.read_bytes() for path in (PHASE3_TEST_LEDGER_PATH, TEST_LEDGER_PATH)}
+    names = _phase3_names(world3, tmp_path, list(world.checkpoints.values()), APPROVED_BY=APPROVER)
+    ledgers = {p: p.read_bytes() for p in (names["LEDGER"], names["BASELINE_LEDGER"])}
+    cells = ["check_images", "os.walk", "resolve_checkpoints", "check_approver"]
+    for cell in [*map(_cell, cells), _scoring_cell(), _cell("ledger_line")]:
+        _run(cell, names)
+    _run(_cell("shutil.make_archive"), names)
+    captured = capsys.readouterr()
+
+    assert names["exit_code"] in (0, ALARM_EXIT), captured.out[-3000:]
+    rows = read_test_ledger(names["TEST_LEDGER"])
+    finalist = [r for r in read_ledger(names["LEDGER"]) if r["config"] == "p3_convnext_cp"]
+    assert [row["run id"] for row in rows] == [r["run id"] for r in finalist]
+    assert [row["checkpoint sha256"] for row in rows] == [file_sha256(p) for p in world3.finalist()]
+    assert {row["approved by"] for row in rows} == {APPROVER}
+    assert " --phase 3 " in captured.out and " --baseline-ledger " in captured.out
+    assert PHOTO_NAME not in captured.out + captured.err
+    printed = captured.out.split(
+        "for docs/test-ledger-phase3.md (paste once, below its header):\n", 1
+    )[1]
+    assert printed.startswith(scoring_header() + "\n")
+    assert [ledger_line(row) for row in rows] == printed.splitlines()[2:5]
+    with zipfile.ZipFile(names["WORK"] / "score.zip") as archive:
+        held = set(archive.namelist())
+    assert "score/headline.md" in held
+    assert {f"score/{row['run id']}/metrics.md" for row in rows} <= held
+
+    with pytest.raises(Refusal, match="already holds 3 rows"):
+        _run(_cell("resolve_checkpoints"), names)
+    assert {p: p.read_bytes() for p in ledgers} == ledgers
+    assert {path: path.read_bytes() for path in repo} == repo
+    assert _figures_snapshot() == figures_before
+
+
 # Install and unpack: the training notebook's patterns.
 
 
-def test_the_clone_may_differ_from_commit_in_the_test_ledger_only(tmp_path: Path) -> None:
-    """The clone cell run as written, cloning this repo: a changed docs/test-ledger.md (the
-    scoring appended to it) is let through, so section 4's run-once refusal is reached; any other
-    change, docs/ledger.md included, is refused."""
-    names = _namespace(tmp_path / "working", tmp_path / "input", REPO_URL=str(ROOT))
+GIT_AS_TEST = ["-c", "user.name=t", "-c", "user.email=t@example.com"]
+GIT_AS_TEST += ["-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false"]
+
+
+def _origin(root: Path, phase: int) -> tuple[Path, str]:
+    """A local stand-in for the public repo, a clone of this one, and the commit to run: for
+    phase 1 its `main` is phase 1's COMMIT, whose test ledger holds no row; for phase 3 the
+    default COMMIT plus one commit adding a header-only docs/test-ledger-phase3.md, as item
+    13.12's merge does (the file is built from `scoring_header`, never copied from the repo)."""
+    origin = root / "origin"
+    subprocess.run(["git", "clone", "--quiet", str(ROOT), str(origin)], check=True)
+    commit = PHASE1_COMMIT if phase == 1 else str(_parameters()["COMMIT"])
+    subprocess.run(
+        ["git", "-C", str(origin), "checkout", "--quiet", "-B", "main", commit], check=True
+    )
+    if phase == 3:
+        _empty_test_ledger(origin / "docs" / "test-ledger-phase3.md")
+        git = ["git", "-C", str(origin), *GIT_AS_TEST]
+        subprocess.run([*git, "add", "docs/test-ledger-phase3.md"], check=True)
+        subprocess.run([*git, "commit", "--quiet", "-m", "the phase-3 test ledger"], check=True)
+        commit = subprocess.run(
+            [*git, "rev-parse", "HEAD"], check=True, capture_output=True, text=True
+        ).stdout.strip()
+    return origin, commit
+
+
+@pytest.mark.parametrize(
+    ("phase", "appended", "other"),
+    [(1, "test-ledger.md", "ledger.md"), (3, "test-ledger-phase3.md", "test-ledger.md")],
+)
+def test_the_clone_may_differ_from_commit_in_the_test_ledger_only(
+    tmp_path: Path, phase: int, appended: str, other: str
+) -> None:
+    """The clone cell run as written: a changed test ledger of the phase (the scoring appended to
+    it) is let through, so section 4's run-once refusal is reached; any other change, the
+    ledgers and the other phase's test ledger included, is refused."""
+    origin, commit = _origin(tmp_path, phase)
+    names = _namespace(
+        tmp_path / "working", tmp_path / "input", phase, REPO_URL=str(origin), COMMIT=commit
+    )
     (clone_cell,) = [i for i, tree in enumerate(TREES) if "'git', 'clone'" in ast.unparse(tree)]
     _run(clone_cell, names)
     docs = names["CLONE"] / "docs"
-    with (docs / "test-ledger.md").open("a") as ledger:
+    assert names["TEST_LEDGER"] == docs / appended
+    with (docs / appended).open("a") as ledger:
         ledger.write(ledger_line(dict.fromkeys(TEST_LEDGER_COLUMNS, "x")) + "\n")
     _run(clone_cell, names)  # reused, the test ledger changed: passes
-    with (docs / "ledger.md").open("a") as ledger:
+    with (docs / other).open("a") as ledger:
         ledger.write("\n")
     with pytest.raises(RuntimeError, match="1 changed files, not a clean"):
         _run(clone_cell, names)
 
 
-def _origin(root: Path) -> Path:
-    """A local stand-in for the public repo: a clone of this one whose `main` is the default
-    COMMIT, so its test ledger holds no row."""
-    origin = root / "origin"
-    subprocess.run(["git", "clone", "--quiet", str(ROOT), str(origin)], check=True)
-    commit = str(_parameters()["COMMIT"])
-    subprocess.run(
-        ["git", "-C", str(origin), "checkout", "--quiet", "-B", "main", commit], check=True
-    )
-    return origin
-
-
+@pytest.mark.parametrize(
+    ("phase", "test_ledger"), [(1, "test-ledger.md"), (3, "test-ledger-phase3.md")]
+)
 def test_a_scoring_recorded_on_main_stops_the_notebook_before_score_test(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, phase: int, test_ledger: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Review 9.03 (the user's decision): a fresh clone at COMMIT holds that commit's empty test
-    ledger, so the cell after the imports reads origin/main's, fetched first, and refuses when it
-    holds any row. Run in notebook order, the cells stop there: before the cache is unpacked and
-    before the scoring cell. A clone reused in the session sees a row committed to main after the
-    clone was made."""
-    origin = _origin(tmp_path)
+    ledger, so the cell after the imports reads origin/main's copy of the phase's test ledger,
+    fetched first, and refuses when it holds any row. Run in notebook order, the cells stop
+    there: before the cache is unpacked and before the scoring cell. A clone reused in the
+    session sees a row committed to main after the clone was made."""
+    origin, commit = _origin(tmp_path, phase)
     names = _namespace(
         tmp_path / "working",
         tmp_path / "input",
+        phase,
         REPO_URL=str(origin),
+        COMMIT=commit,
         MAIN_TEST_LEDGER=tmp_path / "main-test-ledger.md",
     )
     (clone_cell,) = [i for i, tree in enumerate(TREES) if "'git', 'clone'" in ast.unparse(tree)]
@@ -822,17 +1105,40 @@ def test_a_scoring_recorded_on_main_stops_the_notebook_before_score_test(
     assert _imports_cell() < main_cell < _cell("unpack_cache") < _scoring_cell()
     _run(clone_cell, names)
     _run(main_cell, names)
-    assert "holds no row" in capsys.readouterr().out
+    assert f"origin/main's docs/{test_ledger} holds no row" in capsys.readouterr().out
 
-    with (origin / "docs" / "test-ledger.md").open("a", encoding="utf-8") as ledger:
+    with (origin / "docs" / test_ledger).open("a", encoding="utf-8") as ledger:
         ledger.write(ledger_line(dict.fromkeys(TEST_LEDGER_COLUMNS, "x")) + "\n")
-    git = ["git", "-C", str(origin), "-c", "user.name=t", "-c", "user.email=t@example.com"]
-    git += ["-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false"]
-    subprocess.run([*git, "commit", "--quiet", "-am", "the final scoring's rows"], check=True)
+    git = ["git", "-C", str(origin), *GIT_AS_TEST]
+    subprocess.run([*git, "commit", "--quiet", "-am", "the scoring's rows"], check=True)
     with pytest.raises(RuntimeError, match="already been recorded on main, and it runs once"):
         for cell in range(main_cell, _scoring_cell() + 1):
             _run(cell, names)
     assert "command" not in names and "exit_code" not in names  # the scoring cell never ran
+
+
+def test_phase1_is_refused_on_today_s_main(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Phase 1 has been scored: with origin/main at the default COMMIT, whose docs/test-ledger.md
+    holds phase 1's rows, a PHASE = 1 run stops in the cell after the imports."""
+    origin = tmp_path / "origin"
+    subprocess.run(["git", "clone", "--quiet", str(ROOT), str(origin)], check=True)
+    commit = str(_parameters()["COMMIT"])
+    subprocess.run(
+        ["git", "-C", str(origin), "checkout", "--quiet", "-B", "main", commit], check=True
+    )
+    names = _namespace(
+        tmp_path / "working",
+        tmp_path / "input",
+        1,
+        REPO_URL=str(origin),
+        MAIN_TEST_LEDGER=tmp_path / "main-test-ledger.md",
+    )
+    (clone_cell,) = [i for i, tree in enumerate(TREES) if "'git', 'clone'" in ast.unparse(tree)]
+    _run(clone_cell, names)
+    with pytest.raises(RuntimeError, match="phase 1's scoring has already been recorded on main"):
+        _run(_cell("MAIN_TEST_LEDGER.write_bytes"), names)
 
 
 def test_the_only_pip_install_is_the_clone() -> None:
@@ -939,9 +1245,14 @@ def test_markdown_says_once_part_way_and_never_save_and_run_all() -> None:
         "touched by accident",
         "`APPROVED_BY` starts empty",
         never,
-        "So section 3 also reads `origin/main`'s `docs/test-ledger.md` and refuses if it holds any "
-        "row: once the rows are pasted into `docs/test-ledger.md`, committed and pushed to `main` "
-        "on GitHub, the notebook stops in seconds",
+        "So section 3 also reads `origin/main`'s copy of the phase's test ledger "
+        "(`docs/test-ledger-phase3.md`, or `docs/test-ledger.md` for phase 1) and refuses if it "
+        "holds any row: once the rows are pasted into it, committed and pushed to `main` on "
+        "GitHub, the notebook stops in seconds",
+        "Phase 3's scoring is the test sets' second use, declared before any phase-3 run, for one "
+        "recipe chosen on val and trans_val only, and reported beside phase 1's, never in its "
+        "place",
+        "The finalist is never typed in here",
         "## If it stops part way",
         "run again from the start with a new `--out`, the recovery `score_test.py` documents",
         "If it stopped after `appended ... rows`, the scoring has run: never run it again.",
@@ -962,14 +1273,16 @@ def test_how_to_run_says_import_attach_rehearse_then_run_once() -> None:
         "Add Input > Notebook",
         "Add Input > Dataset: the private dataset `trailcam-checkpoints`",
         "Keep exactly one parameter cell",
-        "at or after the merge of item 9.03",
+        "`PHASE` is 3.",
+        "at or after the merge of item 13.12",
         "Accelerator GPU T4 x2",
         "Internet on",
         "Rehearse: with `APPROVED_BY` empty, Run All.",
         "Then stop the session",
         "The one run, when the user means it",
         "Save Version > Save & Run All (Commit)",
-        "paste the rows section 7 prints into `docs/test-ledger.md`, once",
+        "paste the rows section 7 prints into the phase's test ledger, "
+        "`docs/test-ledger-phase3.md` (phase 1: `docs/test-ledger.md`), once",
         "and commit and push them to `main` on GitHub: from then on section 3 refuses every run",
         "Download `score.zip`",
     ]

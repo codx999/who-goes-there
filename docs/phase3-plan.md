@@ -276,6 +276,19 @@ Phase 3's rule, written before any phase-3 run:
   2026-10-27). It is built only after a screen passes; if none passes, it is recorded as
   skipped. Phase 2 named the same idea 13.06 and never added it; 13.12 takes a new id so that
   phase 2's references to 13.06 keep their meaning.
+  **Built on 2026-10-19 by item 13.12**, after both screens passed: `score_test.py --phase 3`
+  and the notebook's `PHASE = 3` (the default), into a header-only `docs/test-ledger-phase3.md`
+  that the code requires to exist. The finalist is never typed in: the code recomputes section
+  1's screen, keep rule and finalist rule and section 2's control check from the two ledgers,
+  and on the ledgers of 2026-10-20 gives `p3_convnext_cp`. Its readings of what this plan leaves
+  open, for the user to confirm at the review: the comparisons are exact (the 4-decimal cells as
+  decimals, so a mean gain of exactly 0.03 is not "more than 0.03"); "within 0.03" includes a
+  gap of exactly 0.03; two kept candidates within the band and with equal mean val macro-F1 are
+  refused, for the user to decide; a candidate that passed the screen but lacks seed 1 or 2 is
+  refused (its confirm may still be training), never judged "not kept"; a candidate with no
+  seed-0 row, a `p3_` config this plan does not name, a seed other than 0, 1 or 2, and a control
+  outside its bands are refused; and a control that is not bit for bit with arm A seed 0 is
+  refused only where a screen verdict would differ against the two (section 2).
 - **The scores choose nothing.** Not the finalist (chosen before), not the Space's seed (chosen on
   val, as in plan.md's open question 7).
 - **Disclosure.** The README and the slides report phase 1's test results (`docs/test-ledger.md`)

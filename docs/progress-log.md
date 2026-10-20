@@ -5251,3 +5251,81 @@ passed in the four files); the rows were then removed and are not in this commit
 **Checks.** `bash scripts/check.sh` green with the two rows (1,254 passed in 8 min 8 s) and with
 the header-only ledger as committed (1,254 passed in 7 min 41 s); mypy strict, ruff and the
 data guard clean.
+
+## 2026-10-19: item 13.12, phase 3's test-scoring code (Opus 5.5, xhigh)
+
+**Done.** Code only (`docs/phase3-plan.md` section 7): nothing was scored on a real test split,
+and no real checkpoint was read. Built after both screens passed (main at `aa6ee0a`: 7 rows in
+`docs/ledger-phase3.md`).
+
+- **`score_test.py --phase 3`.** Scores the finalist's three checkpoints, each once on cis_test
+  and trans_test (the phase-1 mode's one pass, outputs and append-last), into
+  `docs/test-ledger-phase3.md`, with `--approved-by` in every row. It takes `--ledger` named
+  `ledger-phase3.md`, `--test-ledger` named `test-ledger-phase3.md` and `--baseline-ledger`
+  (default `docs/ledger.md`). The headline, `metrics.md`, `attention.md` and `slices.md` carry the
+  verdicts, the finalist rule's choice and the disclosure that the test sets were used a second
+  time (section 7).
+- **The finalist is recomputed, never typed.** `select_finalist` reads the two ledgers and
+  applies section 2's control check, section 1's screen (seed 0), keep rule (paired by seed
+  against `resnet18_arm_a`) and finalist rule, with the cells read as `Decimal` (a float mean of
+  a gain of exactly 0.03 is 0.030000000000000027, which would pass "more than 0.03"; a test shows
+  it). On the real ledgers: `p3_convnext` kept (mean trans_val macro-F1 +0.0457, val +0.0245),
+  `p3_convnext_cp` kept (+0.1028, +0.0063), **finalist `p3_convnext_cp`**, the means 0.0571
+  apart (a test asserts its three rows, compared with the ledger's own rows of that config; no
+  run id is typed and nothing is hashed or loaded).
+- **Readings of what the plan leaves open, for the user to confirm at the review** (also added
+  to section 7 of the plan): "within 0.03" includes 0.03 exactly; two kept candidates within the
+  band and with equal mean val macro-F1 are refused, for the user; a candidate that passed the
+  screen but lacks seed 1 or 2 is refused (its confirm may still be training; judging only the
+  other could pick the wrong finalist), while one that failed the screen is not kept whatever
+  other rows it has; no seed-0 row, a `p3_` config the plan does not name, a seed outside 0 to 2,
+  a control outside its bands, or a control not bit for bit whose screen verdicts would differ,
+  are refused. Known limitation: a second `p3_baseline` seed-0 row (the re-run section 4 asks for
+  if a training-path file changed before a confirm) is refused as two runs of one config and
+  seed, as in phase 1; the real ledger has one.
+- **Refusals** (exit 1 before any checkpoint is loaded or any test image read): no approver; a
+  test ledger with a row; `--run-seeds` other than 0 1 2; a recipe not kept, kept but not the
+  finalist, or nothing kept; a file of another config (the control, the other candidate); a file
+  with no row or changed bytes, given twice or missing; a finalist seed with no file; a phase-1
+  or phase-2 `--ledger`, `test-ledger.md`, or a phase-2 or phase-3 baseline ledger, by name; a
+  missing phase-3 test ledger (refused, never created).
+- **Phase-1 mode.** Its code path is unchanged; it now refuses `ledger-phase3.md`,
+  `ledger-phase2.md`, `test-ledger-phase3.md` and `--baseline-ledger` by name. Two visible
+  changes: `FEATURE_MODELS` gains `convnext_tiny` (768 features; phase 1 has none), and the
+  missing-test-ledger message names the file given. `docs/ledger.md`, `docs/test-ledger.md` and
+  `tests/test_score_test.py` are unchanged.
+- **`docs/test-ledger-phase3.md` is committed with its header and no row**, because the code
+  requires it to exist: a missing file is refused rather than created, so a mistyped path cannot
+  pass for an empty test ledger, and the notebook's `origin/main` check reads it. The run's rows
+  go there, pasted by the user.
+- **Notebook.** `PHASE = 3`, the default (1 is phase 1's, refused now on `main`), sets `LEDGER`,
+  `BASELINE_LEDGER` and `TEST_LEDGER`. Section 4 prints the verdicts, picks the finalist's three
+  files from every `.pt` in `trailcam-checkpoints` by sha256 (`finalist_files`; the dataset may
+  hold phase 1's and the other phase-3 runs too, never given to the scoring), then runs
+  `resolve_phase3_checkpoints`. The scoring cell adds `--phase` and, for phase 3,
+  `--baseline-ledger`; the clone check and the `origin/main` check follow `TEST_LEDGER`. The
+  default `COMMIT` is `aa6ee0a`, which predates this item's merge: the coordinator gives the merge
+  commit. Outputs cleared.
+- **Tests.** `tests/test_score_test_phase3.py` (61, about 31 s; its finalist checkpoints are
+  ResNet-18s under the fixture's `p3_` configs, since a ConvNeXt pass over the fixture's test
+  splits takes minutes on a CPU; `score_test.py`'s ConvNeXt loading is `tests/test_phase3.py`'s);
+  `tests/test_score_notebook.py` (64, from the 9.03 tests now pinned to `PHASE = 1` plus the
+  phase-3 rehearsal, refusals, one scoring on the fixture, clone and `origin/main` checks, and
+  phase 1 refused on today's `main`). Every fixture ledger is built in `tmp_path`. Mutation
+  checks: 8 of 8 caught (the keep rule's two bars, the finalist band, the finalist-config check,
+  the seed check, the run-once check, the control check, the phase-1 name check).
+- **Docs.** `docs/review/invariants.md` R17 and R40 (13.12's lines; R40's source gains P3 §7);
+  `docs/phase3-plan.md` section 7 (built, and the readings above); learning journal topic 9.
+
+**Not flipped.** 13.12's steps end with the tier-3 review, which is the user's to start.
+
+**Next.** The tier-3 review; after the merge, the user's rehearsal on Kaggle (`PHASE = 3`,
+`APPROVED_BY` empty, `COMMIT` the merge commit, the finalist's three checkpoints in
+`trailcam-checkpoints`), then the one run with the go-ahead.
+
+**Checks.** `bash scripts/check.sh` green: 1,334 passed in 8 min 34 s (80 more than 13.11's
+1,254, about 1 min 30 s added); mypy strict, ruff check and format and the data guard clean.
+
+Review: tier 3 (the final scoring code, `trailcam/evaluate/score_test.py`, and its notebook).
+Command: `/review-session aa6ee0a..HEAD 13.12`. Spec changed: `docs/phase3-plan.md` section 7
+(built, and the readings above) and `docs/review/invariants.md` R17 and R40.
