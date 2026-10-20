@@ -37,7 +37,9 @@ and 8).
 
 Against the baseline's rows that reads: a mean trans_val macro-F1 above 0.3401 (the baseline's
 0.3101 plus 0.03), seed by seed above 0.2915, 0.3187 and 0.3200, and a mean val macro-F1 of at
-least 0.8257 (0.8557 minus 0.03). Accuracy is reported beside macro-F1 everywhere; the rule is on
+least 0.8257 (0.8557 minus 0.03). Those two figures are rounded: the exact reading, each delta
+paired by seed at full precision, governs (section 7, the user's decision of 2026-10-20).
+Accuracy is reported beside macro-F1 everywhere; the rule is on
 macro-F1, as in phases 1 and 2.
 
 Conditions 1 and 2 are phase 2's keep conditions unchanged (`docs/phase2-plan.md` section 3), so

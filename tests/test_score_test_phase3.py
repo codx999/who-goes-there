@@ -1095,3 +1095,81 @@ def test_a_run_that_stops_part_way_records_nothing_and_may_run_again(
     finalist = [r["run id"] for r in read_ledger(fresh.ledger) if r["config"] == FINALIST]
     assert [r["run id"] for r in rows] == finalist
     assert score_test.main(fresh.argv(tmp_path / "third")) == REFUSED_EXIT  # then, never again
+
+
+# The fixes of the third review (/code-review xhigh, the user's decisions of 2026-10-20).
+
+
+def test_a_screened_out_candidate_s_extra_rows_are_named_not_read(
+    world: World, tmp_path: Path
+) -> None:
+    """A candidate that fails the screen but has rows of seeds 1 and 2 (a confirm the plan does
+    not run) is still not kept, and its verdict says those rows exist and are not read."""
+    scores = _with(p3_convnext_cp_0=("0.8573", "0.3214"))  # +0.0299: fails the screen
+    selection = select_finalist(*_rows(world, tmp_path, scores))
+    (verdict,) = [v for v in selection.verdicts if v.config == FINALIST]
+    assert (verdict.screened, verdict.kept) == (False, False)
+    assert verdict.why.endswith(
+        "; its rows of run seed 1, 2 are not read, since the plan runs no confirm for a "
+        "candidate that fails the screen (docs/phase3-plan.md section 1)"
+    )
+    assert selection.finalist.config == "p3_convnext"
+    alone = select_finalist(
+        *_rows(world, tmp_path / "alone", scores, drop=[(FINALIST, 1), (FINALIST, 2)])
+    )
+    assert "not read" not in alone.lines()[1]
+
+
+@pytest.mark.parametrize(
+    ("config", "run"),
+    [
+        ("p3_convnext", "p3_convnext-seed0-"),  # the candidate not scored
+        ("p3_baseline", "p3_baseline-seed0-"),  # the control
+        ("resnet18_arm_a", "resnet18_arm_a-seed0-"),  # the keep rule's baseline
+        (FINALIST, "p3_convnext_cp-seed0-"),
+    ],
+)
+def test_a_deciding_row_whose_config_changed_exits_1(
+    fresh: World,
+    tmp_path: Path,
+    config: str,
+    run: str,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Every row the selection rests on, not the finalist's alone, must still hash to its config
+    in the clone's config.yaml: a changed block of the other candidate, the control or arm A is
+    refused before any checkpoint is hashed or loaded."""
+    changed = tmp_path / "config.yaml"
+    settings = yaml.safe_load(fresh.config_file.read_text())
+    settings["configs"][config]["weight_decay"] = 0.5
+    changed.write_text(yaml.safe_dump(settings))
+    _forbid_reading(monkeypatch)
+    monkeypatch.setattr(score_test, "file_sha256", _forbid_hashing)
+    why = f"config {config} in config.yaml no longer matches its ledger row (config hash)"
+    before = fresh.test_ledger.read_text()
+    assert score_test.main(fresh.argv(tmp_path / "out", config_file=changed)) == REFUSED_EXIT
+    err = capsys.readouterr().err
+    assert "score_test refused" in err and why in err and f"run {run}" in err, err
+    assert fresh.test_ledger.read_text() == before
+
+
+def test_the_dataset_scan_skips_non_files_and_takes_one_copy_of_a_checkpoint(
+    world: World, tmp_path: Path
+) -> None:
+    """`finalist_files`: a folder and a dangling link named `.pt` are skipped, not hashed; two
+    byte-identical copies of a finalist checkpoint are one checkpoint, the first given, scored
+    once; a missing finalist file is still refused, the skipped paths counted."""
+    selection = select_finalist(read_ledger(world.ledger), read_ledger(world.baseline))
+    folder = tmp_path / "models.pt"
+    folder.mkdir()
+    dangling = tmp_path / "gone.pt"
+    dangling.symlink_to(tmp_path / "nowhere.pt")
+    copy = tmp_path / "copy-of-seed1.pt"
+    copy.write_bytes(world.files[(FINALIST, 1)].read_bytes())
+    stand_ins = [p for k, p in world.files.items() if k[0] != FINALIST]
+    seed0, seed1, seed2 = world.finalist()
+    paths = [folder, dangling, copy, *stand_ins, seed2, seed1, seed0]
+    assert score_test.finalist_files(paths, selection) == [seed0, copy, seed2]
+    with pytest.raises(Refusal, match=re.escape("(2 paths named .pt are not files and were")):
+        score_test.finalist_files([folder, dangling, seed0, seed1], selection)

@@ -5448,3 +5448,43 @@ Command: `/review-session ef36910..HEAD 13.12`. Spec changed: `docs/phase3-plan.
 **Deviation from tier 3:** /code-review ultra not run (the user's quota was used up); replaced
 by a third full-range review, /code-review xhigh, the user's decision, 2026-10-20. If ultra
 becomes available before the scoring run, the user may still run it.
+
+## 2026-10-20: item 13.12, fix round of the third review (Opus 5.5, xhigh)
+
+The third full-range review, `/code-review xhigh --max-findings all aa6ee0a..HEAD`, ran in this
+session's context, not a fresh one; the user accepts it as the third review (2026-10-20). It
+found 14 low findings and none that let a run other than the finalist's reach a test split. The
+user's decisions, through the coordinator: fix four, defer ten. No scoring result and no keep or
+finalist logic changed; on the real ledgers the finalist is still `p3_convnext_cp`.
+
+- **Fixed 1: a screened-out candidate's extra rows are named.** A candidate that fails the screen
+  but has rows of seed 1 or 2 is still not kept; its verdict now ends "its rows of run seed 1, 2
+  are not read, since the plan runs no confirm for a candidate that fails the screen".
+- **Fixed 2: every row the selection rests on is checked against the config.**
+  `resolve_phase3_checkpoints` runs `_config_of` on every phase-3 row (the control and both
+  candidates, not only the finalist) and on arm A's rows of the baseline ledger, against the
+  clone's `config.yaml`, before any checkpoint is hashed; a mismatch is refused with the run id
+  and the column. The 10 real rows all match.
+- **Fixed 3: section 4's dataset scan.** `finalist_files` skips a folder or a dangling link
+  named `.pt` (counted in the refusal if a finalist file is then missing) and takes byte-identical
+  copies of one finalist checkpoint as one checkpoint, the first, scored once.
+- **Fixed 4: `docs/phase3-plan.md` section 1** points from 0.3401 and 0.8257 to section 7's
+  note that the exact paired reading governs.
+- Tests: `tests/test_score_test_phase3.py` (the named extra rows; a changed config of the other
+  candidate, the control, arm A and the finalist, each refused; the scan of a folder, a dangling
+  link and a copy) and `tests/test_score_notebook.py` (section 4 with the three in the mounted
+  dataset). Mutation checks: 4 of 4 caught.
+- **Deferred, not fixed (the user's decision), from the third review:** the crash test's
+  headline check is vacuous in its feature-map case; the mean row says `convnext_tiny arm C`
+  where the feature line says ConvNeXt-Tiny; `phase3_header` hard-codes phase 1's scoring date;
+  `resolve_phase3_checkpoints` repeats `resolve_checkpoints`'s hashing loop; the test fixtures
+  repeat `tests/test_score_test.py`'s cache and config builders and `_kaggle`; the finalist files
+  are hashed three times on Kaggle; `Verdict.screened` and a screened-out verdict's sums are
+  unused or one-seed; the repo-ledger read guard matches constant names only; `--phase`
+  duplicates the phase the ledger's name implies.
+
+**Checks.** `bash scripts/check.sh` green: 1,344 passed (7 more) in 9 min 2 s; mypy strict, ruff
+and the data guard clean.
+
+Review: fix round (the fix touches `trailcam/evaluate/score_test.py`). One command covers both
+fix commits: `/review-session ef36910..HEAD 13.12`.

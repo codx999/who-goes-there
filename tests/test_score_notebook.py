@@ -931,6 +931,26 @@ def test_the_phase3_rehearsal_picks_the_finalist_and_stops_before_anything_is_lo
     assert not names["OUT"].exists()
 
 
+@pytest.mark.usefixtures("forbid_loading")
+def test_section_4_skips_non_files_and_takes_one_copy_of_a_finalist_checkpoint(
+    world3: phase3.World, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The third review's fix: a folder and a dangling link named `.pt` in the dataset are
+    skipped, and a second, byte-identical copy of a finalist checkpoint is the same checkpoint,
+    given to the scoring once; section 4 passes with the finalist's three files."""
+    names = _phase3_names(world3, tmp_path)
+    mount = names["INPUT"] / "datasets" / "someone" / "trailcam-checkpoints" / "models"
+    (mount / "folder.pt").mkdir()
+    (mount / "dangling.pt").symlink_to(tmp_path / "nowhere.pt")
+    (mount / "zz-copy.pt").write_bytes(world3.files[("p3_convnext_cp", 0)].read_bytes())
+    for cell in (_cell("os.walk"), _cell("resolve_checkpoints")):
+        _run(cell, names)
+    assert "3 checkpoints, one per ledger row to score" in capsys.readouterr().out
+    assert [file_sha256(c.path) for c in names["checked"]] == [
+        file_sha256(p) for p in world3.finalist()
+    ]
+
+
 def _broken3(names: dict[str, Any], world3: phase3.World, how: str) -> None:
     mount = names["INPUT"] / "datasets" / "someone" / "trailcam-checkpoints" / "models"
     link = mount / f"checkpoints-{world3.files[('p3_convnext_cp', 1)].name}"

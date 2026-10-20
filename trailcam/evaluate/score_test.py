@@ -578,12 +578,19 @@ def _verdict(
         )
     if not passed:
         first = _score(rows[0], TRANS_VAL), _score(rows[0], VAL)
+        extra = [str(n) for n in sorted(rows) if n != 0]
+        unread = (
+            f"; its rows of run seed {', '.join(extra)} are not read, since the plan runs no "
+            "confirm for a candidate that fails the screen (docs/phase3-plan.md section 1)"
+            if extra
+            else ""
+        )
         return Verdict(
             config,
             (rows[0],),
             False,
             False,
-            f"{config}: not kept, failed the screen ({screen})",
+            f"{config}: not kept, failed the screen ({screen}){unread}",
             *first,
         )
     missing = [str(n) for n in PHASE3_SEEDS if n not in rows]
@@ -704,6 +711,11 @@ def select_finalist(ledger: Sequence[Row], baseline: Sequence[Row]) -> Selection
     )
 
 
+def baseline_rows(baseline: Sequence[Row]) -> list[Row]:
+    """The rows of the baseline ledger the keep rule reads: `PHASE3_BASELINE`'s."""
+    return [row for row in baseline if row["config"] == PHASE3_BASELINE]
+
+
 def _not_scored(config: str, selection: Selection) -> str:
     """Why a run of `config`, not the finalist's, is never scored."""
     verdict = next((v for v in selection.verdicts if v.config == config), None)
@@ -722,8 +734,10 @@ def resolve_phase3_checkpoints(
 ) -> tuple[Selection, list[Checkpoint]]:
     """The finalist's three checkpoints, each with its row and config, in seed order, and the
     selection. Refuses a test ledger with any row, run seeds other than 0, 1 and 2, every refusal
-    of `select_finalist`, a file that is missing, given twice, has no row in the phase-3 ledger or
-    is a run of another config, and a finalist seed with no file."""
+    of `select_finalist`, a row of the phase-3 ledger or arm A's of the baseline ledger whose config
+    in `config_file` no longer matches it (every row the selection rests on, not the finalist's
+    alone), a file that is missing, given twice, has no row in the phase-3 ledger or is a run of
+    another config, and a finalist seed with no file."""
     if not paths:
         raise Refusal("no --checkpoint given")
     if scored:
@@ -738,6 +752,8 @@ def resolve_phase3_checkpoints(
             "keep rule's seeds (docs/phase3-plan.md section 1), and no others"
         )
     selection = select_finalist(ledger, baseline)
+    for deciding in [*ledger, *baseline_rows(baseline)]:
+        _config_of(deciding, config_file)  # every row the selection rests on, still its config
     finalist = selection.finalist
     by_hash = {row["checkpoint sha256"]: row for row in ledger}
     given: dict[str, Path] = {}
@@ -779,25 +795,27 @@ def resolve_phase3_checkpoints(
 
 def finalist_files(paths: Sequence[Path], selection: Selection) -> list[Path]:
     """The files among `paths` (every `.pt` of the checkpoints' dataset, which may hold other
-    runs too) whose sha256 is one of the finalist's rows, in seed order: what the notebook gives
-    the scoring. Refuses a finalist row that no file matches (missing, or changed since training)
-    or that two files match. The scoring checks the files given again."""
+    runs too) whose sha256 is one of the finalist's rows, one per row, in seed order: what the
+    notebook gives the scoring. A path that is not a file (a folder, a dangling link) is skipped,
+    and byte-identical copies of one checkpoint are one checkpoint (the first, in `paths` order),
+    scored once. Refuses a finalist row that no file matches (missing, or changed since training).
+    The scoring checks the files given again."""
     wanted = {row["checkpoint sha256"]: row for row in selection.finalist.rows}
-    found: dict[str, list[Path]] = {}
-    for path in paths:
+    files = [path for path in paths if path.is_file()]
+    found: dict[str, Path] = {}
+    for path in files:
         digest = file_sha256(path)
         if digest in wanted:
-            found.setdefault(digest, []).append(path)
+            found.setdefault(digest, path)
     missing = [row["run id"] for digest, row in wanted.items() if digest not in found]
     if missing:
+        skipped = len(paths) - len(files)
         raise Refusal(
-            f"no file among the {len(paths)} .pt files has the sha256 of the finalist's run "
+            f"no file among the {len(files)} .pt files has the sha256 of the finalist's run "
             f"{', '.join(missing)}: missing from the dataset, or changed since it was trained"
+            + (f" ({skipped} paths named .pt are not files and were skipped)" if skipped else "")
         )
-    twice = [wanted[digest]["run id"] for digest, files in found.items() if len(files) > 1]
-    if twice:
-        raise Refusal(f"two files hold the checkpoint of run {', '.join(twice)}")
-    return [found[digest][0] for digest in wanted]
+    return [found[digest] for digest in wanted]
 
 
 def check_ledger_names(
