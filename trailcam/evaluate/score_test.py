@@ -42,8 +42,9 @@ from the `assets/` photos alone, so one that fails stops the run before any test
 **Output, under `--out`.**
 
 - `headline.md`: accuracy and macro-F1 on cis_test and trans_test and the gap (cis minus trans)
-  per checkpoint, and their means over the seeds of a model and arm; rows in ledger order, never
-  by a score. The leakage alarms of `train.py` are applied to the test scores.
+  per checkpoint, and their means over the seeds of a model and arm; rows in ledger order (phase
+  3: the finalist's seed order), never by a score. The leakage alarms of `train.py` are applied
+  to the test scores.
 - `slices.md`, and `features_by_species.png` and `features_by_camera.png` for the ResNet-18 (or,
   in phase 3, ConvNeXt-Tiny) checkpoints side by side.
 - Per checkpoint, in a folder named by its run id: `metrics.md` with the per-class precision,
@@ -134,6 +135,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
+from types import MappingProxyType
 from typing import Final
 
 import torch
@@ -187,8 +189,22 @@ TEST_LEDGER_COLUMNS: Final = (
     "approved by",
 )
 HEADLINE_NAME: Final = "headline.md"
-# The feature map; the small CNN's features are too large. ConvNeXt-Tiny's are 768 wide.
-FEATURE_MODELS: Final = ("resnet18", "convnext_tiny")
+# The feature map's models, with the name the outputs give them; the small CNN's features are too
+# large. ConvNeXt-Tiny's are 768 wide.
+FEATURE_MODELS: Final = MappingProxyType(
+    {"resnet18": "ResNet-18", "convnext_tiny": "ConvNeXt-Tiny"}
+)
+# How the headline's rows are ordered: phase 1's ledger order, phase 3's seed order.
+LEDGER_ORDER: Final = (
+    "Rows in ledger order,",
+    "the order the runs were trained, never by a score; a mean row averages the seeds of one",
+    "model and arm.",
+)
+SEED_ORDER: Final = (
+    "Rows in seed order,",
+    "the finalist's run seeds 0, 1 and 2, never by a score; the mean row averages its three",
+    "seeds.",
+)
 REFUSED_EXIT: Final = 1
 STAMP: Final = "%Y%m%dT%H%M%SZ"
 CITATION: Final = "Data: Caltech Camera Traps (CCT20), Beery et al. 2018, CDLA-Permissive 1.0."
@@ -965,17 +981,23 @@ def render_headline(
     alarms: Sequence[str],
     header: Sequence[str] = (),
     title: str = "Final scoring",
+    order: Sequence[str] = LEDGER_ORDER,
+    feature_models: Sequence[str] = ("resnet18",),
 ) -> str:
-    """The headline table, the alarms and where the other outputs are."""
+    """The headline table, the alarms and where the other outputs are. `order` says how the rows
+    are ordered (`LEDGER_ORDER`, or phase 3's `SEED_ORDER`); `feature_models` are the models of
+    the scored checkpoints whose feature maps were drawn, named by `FEATURE_MODELS`."""
+    named = ", ".join(
+        dict.fromkeys(FEATURE_MODELS[m] for m in feature_models if m in FEATURE_MODELS)
+    )
     lines = [
         f"# {title}: cis_test and trans_test",
         "",
         *header,
         *([""] if header else []),
         "Accuracy and macro-F1 (over the classes present) on cis_test, cameras seen in training,",
-        "and trans_test, cameras never seen; the gap is cis minus trans. Rows in ledger order,",
-        "the order the runs were trained, never by a score; a mean row averages the seeds of one",
-        "model and arm.",
+        f"and trans_test, cameras never seen; the gap is cis minus trans. {order[0]}",
+        *order[1:],
         "",
         "| checkpoint | run id | cis_test images | trans_test images | cis_test accuracy "
         "| cis_test macro-F1 | trans_test accuracy | trans_test macro-F1 | accuracy gap "
@@ -998,7 +1020,9 @@ def render_headline(
         "  both splits; `<run id>/attention.md` and `attention_in_box.png`: attention-in-box and",
         "  the animal-removed test; `<run id>/gradcam_overlay_<n>.png`: the `assets/` overlays.",
         "- `slices.md`: day and night, common and rare species, cis and trans at one night share.",
-        "- `features_by_species.png`, `features_by_camera.png`: the ResNet-18 feature maps.",
+        f"- `features_by_species.png`, `features_by_camera.png`: the {named} feature maps."
+        if named
+        else "- No feature maps: no checkpoint of a model in `FEATURE_MODELS`.",
         "",
         CITATION,
     ]
@@ -1226,7 +1250,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     rows = [headline(s) for s in scored]
     alarms = [alarm for row in rows for alarm in scoring_alarms(row)]
     table = out / HEADLINE_NAME
-    table.write_text(render_headline([*rows, *seed_means(scored)], alarms, common, title), "utf-8")
+    names = [s.checkpoint.config.model for s in scored]
+    order = LEDGER_ORDER if selection is None else SEED_ORDER
+    text = render_headline([*rows, *seed_means(scored)], alarms, common, title, order, names)
+    table.write_text(text, "utf-8")
     lines = [f"- {c.label}: run {c.run_id}, checkpoint sha256 {c.sha256}" for c in checkpoints]
     slices.write_report({s.checkpoint.label: s.runs for s in scored}, out, [*common, "", *lines])
     projections = {

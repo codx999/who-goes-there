@@ -291,6 +291,15 @@ Phase 3's rule, written before any phase-3 run:
   seed-0 row, a `p3_` config this plan does not name, a seed other than 0, 1 or 2, and a control
   outside its bands are refused; and a control that is not bit for bit with arm A seed 0 is
   refused only where a screen verdict would differ against the two (section 2).
+  **The keep rule's exact reading governs** (the user's decision after the review, 2026-10-20):
+  each delta is taken against arm A's row of the same seed and compared at full precision, as a
+  sum over the three seeds (a mean bar of 0.03 is a sum bar of 0.09). Section 1's absolute
+  figures (a mean trans_val macro-F1 above 0.3401, a mean val macro-F1 of at least 0.8257) are
+  rounded restatements: they come from the baseline's means rounded to 0.3101 and 0.8557 (exactly
+  0.310067 and 0.855667), so at the border they disagree with the exact reading, which a
+  candidate whose mean is exactly 0.3401 on trans_val, or 0.825667 on val, passes. No real result
+  is near that border: the smallest real margin is `p3_convnext`'s mean trans_val gain of +0.0457
+  against the 0.03 bar, so this reading changes no verdict.
 - **The scores choose nothing.** Not the finalist (chosen before), not the Space's seed (chosen on
   val, as in plan.md's open question 7).
 - **Disclosure.** The README and the slides report phase 1's test results (`docs/test-ledger.md`)

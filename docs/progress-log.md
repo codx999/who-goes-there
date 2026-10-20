@@ -5391,3 +5391,60 @@ and no real checkpoint was read. Built after both screens passed (main at `aa6ee
 Review: tier 3 (the final scoring code, `trailcam/evaluate/score_test.py`, and its notebook).
 Command: `/review-session aa6ee0a..HEAD 13.12`. Spec changed: `docs/phase3-plan.md` section 7
 (built, and the readings above) and `docs/review/invariants.md` R17 and R40.
+
+## 2026-10-20: item 13.12, fix round of the review (Opus 5.5, xhigh)
+
+The review of `aa6ee0a..HEAD` found no high finding (risk-reviewer: none; code-reviewer: two
+low). The user's decisions, through the coordinator, 2026-10-20:
+
+- **Finding 1 (the keep rule's exact reading vs section 1's absolute figures): option (a).** The
+  code is unchanged: deltas paired by seed against arm A, at full precision, as sums. Recorded in
+  `docs/phase3-plan.md` section 7: section 1's 0.3401 and 0.8257 are rounded restatements (from
+  the baseline means rounded to 0.3101 and 0.8557; exactly 0.310067 and 0.855667) and the exact
+  paired reading governs. No real result is near the border (the smallest real margin is
+  `p3_convnext`'s +0.0457 against 0.03), so it changes no verdict; settled after the review.
+- **Finding 2 (fixed labels in `headline.md`): fixed.** `render_headline` takes the row order
+  (`LEDGER_ORDER`, or phase 3's `SEED_ORDER`) and the scored checkpoints' models, named by
+  `FEATURE_MODELS` (now a map: `resnet18` "ResNet-18", `convnext_tiny` "ConvNeXt-Tiny"), so a
+  ConvNeXt finalist's headline says "the ConvNeXt-Tiny feature maps" and "Rows in seed order";
+  phase 1's text is byte for byte as before. Test:
+  `test_a_convnext_finalist_s_headline_names_its_model_and_the_seed_order` (candidates named
+  `convnext_tiny` in a fixture config, the passes replaced by stand-ins; no ConvNeXt is built).
+- **Crash safety: confirmed and pinned.** The rows are appended last, after every checkpoint is
+  scored and every table and figure is written, so a run that fails part way (a CUDA
+  out-of-memory in Grad-CAM on the second checkpoint, or in the feature maps after all three)
+  leaves `docs/test-ledger-phase3.md` with no row, and the run-once guard lets a clean re-run
+  with a new `--out` through, which then appends the three rows once.
+  `test_a_run_that_stops_part_way_records_nothing_and_may_run_again` (both cases, then a third
+  run refused). The append itself is one `write_text` of the file; a crash inside that call is
+  the one window left, and the Kaggle file is the clone's copy, the repo's rows being pasted
+  from the log. **What a re-run means for "scored once":** nothing was recorded, and the re-run
+  scores the same three pinned checkpoints (by sha256) with the same code and data, in eval mode,
+  so its numbers are the first attempt's (up to GPU rounding in the last digit); it is the same
+  measurement completed, not a second look. But a row printed before the crash has been seen:
+  the progress log should say so, and nothing may be chosen or changed between the two attempts.
+- **Memory (an estimate, not measured).** Grad-CAM's forward keeps the whole graph in fp32
+  (the input requires a gradient), about 110 MB of saved activations per 224-px image for
+  ConvNeXt-Tiny by layer count, so about 7 GB at batch 64 of a T4's 15 GB; training at batch 64
+  (AMP, full backward and AdamW state) already fit. No batch size is changed, so no score can
+  change. If the run does fail on memory, nothing is recorded (above), and a smaller batch for
+  the attention pass would be a new, reviewed change; the rehearsal cannot show it, since it
+  loads nothing.
+- **Sync with main**: `ba46662` (item 13.13) merged with the sync tool (merge `ef36910`); the one
+  conflict, `docs/progress-log.md`, kept both entries (13.13's first). Section 13 names the same
+  finalist and margins the code computes.
+- Mutation checks of the new tests: 3 of 3 caught (the hard-coded label, the ledger order in
+  phase 3, the append moved before the feature maps).
+
+**Checks.** `bash scripts/check.sh` green: 1,337 passed (3 more) in 17 min 54 s, about twice the
+usual, most likely another suite running at the same time; mypy strict, ruff and the data guard
+clean.
+
+Review: fix round (the fix touches `trailcam/evaluate/score_test.py`, a high-stakes file).
+Command: `/review-session ef36910..HEAD 13.12`. Spec changed: `docs/phase3-plan.md` section 7
+(the exact reading governs). Then the third, full-range review:
+`/code-review xhigh --max-findings all aa6ee0a..HEAD` (the whole 13.12 range, fresh context).
+
+**Deviation from tier 3:** /code-review ultra not run (the user's quota was used up); replaced
+by a third full-range review, /code-review xhigh, the user's decision, 2026-10-20. If ultra
+becomes available before the scoring run, the user may still run it.

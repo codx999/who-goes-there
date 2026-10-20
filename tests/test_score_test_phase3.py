@@ -989,3 +989,109 @@ def test_the_selection_lines_are_the_verdicts_and_the_finalist(
     selection: Selection = select_finalist(*_rows(world, tmp_path))
     lines = selection.lines()
     assert len(lines) == 3 and lines[-1].startswith("- The finalist: p3_convnext_cp (")
+
+
+# The headline's labels and a run that stops part way, with the passes replaced (fast, no image).
+
+
+def _fake_passes(
+    monkeypatch: pytest.MonkeyPatch, fail_at: int | None = None, maps_fail: bool = False
+) -> list[str]:
+    """Replace loading, the overlays, the passes over the test splits and the figure writers with
+    stand-ins: each checkpoint "predicts" four images, and the `fail_at`-th call of
+    `score_checkpoint` (from 1) raises as a CUDA out-of-memory would; `maps_fail` makes the
+    feature maps, written after every checkpoint is scored, raise. Returns the run ids scored."""
+    scored: list[str] = []
+
+    def score(model: Any, checkpoint: Any, *_: Any, **__: Any) -> score_test.Scored:
+        if fail_at is not None and len(scored) + 1 == fail_at:
+            raise RuntimeError("CUDA out of memory (a stand-in)")
+        scored.append(checkpoint.run_id)
+        runs = tuple(
+            slices.SplitPredictions(split, (0, 0, 1, 1), (0, 1, 1, 1), (False,) * 4, (1,) * 4)
+            for split in TEST_SPLITS
+        )
+        return score_test.Scored(checkpoint, runs, ())
+
+    def outputs(result: Any, out_dir: Path, header: Any) -> list[Path]:
+        out_dir.mkdir(parents=True, exist_ok=True)  # as the real writers make it
+        return []
+
+    def maps(*_: Any, **__: Any) -> None:
+        if maps_fail:
+            raise RuntimeError("CUDA out of memory in the feature maps (a stand-in)")
+
+    monkeypatch.setattr(score_test, "load_models", lambda cs: [torch.nn.Identity() for _ in cs])
+    monkeypatch.setattr(score_test, "write_overlays", lambda *_, **__: [])
+    monkeypatch.setattr(score_test, "score_checkpoint", score)
+    monkeypatch.setattr(score_test, "write_checkpoint_outputs", outputs)
+    monkeypatch.setattr(score_test.slices, "write_report", lambda *_, **__: None)
+    monkeypatch.setattr(score_test, "project", lambda runs: None)
+    monkeypatch.setattr(score_test, "write_feature_maps", maps)
+    return scored
+
+
+def test_a_convnext_finalist_s_headline_names_its_model_and_the_seed_order(
+    fresh: World,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Review 13.12, finding 2: with the candidates named `convnext_tiny` in the config (as the
+    real ones are), the headline calls the feature maps ConvNeXt-Tiny's, from the scored
+    checkpoints' configs, and its rows in seed order; phase 1's text stays "ResNet-18" and
+    "ledger order". No ConvNeXt is built: the passes are stand-ins."""
+    config_file = _config_file(tmp_path / "config.yaml")
+    settings = yaml.safe_load(config_file.read_text())
+    for name in PHASE3_CANDIDATES:
+        settings["configs"][name]["model"] = "convnext_tiny"
+    config_file.write_text(yaml.safe_dump(settings))
+    convnext = World(**{**fresh.__dict__, "config_file": config_file})
+    ledger, baseline = write_ledgers(convnext, tmp_path / "ledgers")
+    assert {r["model"] for r in read_ledger(ledger) if r["config"] in PHASE3_CANDIDATES} == {
+        "convnext_tiny"
+    }
+    _fake_passes(monkeypatch)
+    out = tmp_path / "out"
+    argv = convnext.argv(out, ledger=ledger, baseline=baseline, config_file=config_file)
+    assert score_test.main(argv) in (0, ALARM_EXIT), capsys.readouterr().err
+    headline = (out / "headline.md").read_text()
+    assert "`features_by_camera.png`: the ConvNeXt-Tiny feature maps." in headline
+    assert "ResNet-18" not in headline
+    assert "Rows in seed order,\nthe finalist's run seeds 0, 1 and 2, never by a score" in headline
+    assert "ledger order" not in headline
+    assert "| convnext_tiny arm C, mean of 3 seeds | 3 runs |" in headline
+    phase1 = score_test.render_headline([], [])
+    assert "the ResNet-18 feature maps." in phase1 and "Rows in ledger order," in phase1
+
+
+@pytest.mark.parametrize(("fail_at", "maps_fail", "printed"), [(2, False, 1), (None, True, 3)])
+def test_a_run_that_stops_part_way_records_nothing_and_may_run_again(
+    fresh: World,
+    tmp_path: Path,
+    fail_at: int | None,
+    maps_fail: bool,
+    printed: int,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Coordinator's check after review 13.12: an out-of-memory on the second checkpoint, or in
+    the feature maps after all three are scored, stops the run with the rows scored printed and
+    `test-ledger-phase3.md` still without a row (the rows are appended last, after every output),
+    so the run-once guard lets a clean re-run with a new `--out` through, which appends the three
+    rows once."""
+    scored = _fake_passes(monkeypatch, fail_at, maps_fail)
+    with pytest.raises(RuntimeError, match="CUDA out of memory"):
+        score_test.main(fresh.argv(tmp_path / "first"))
+    out = capsys.readouterr().out
+    assert out.count("test ledger row of") == printed == len(scored)
+    assert score_test.read_test_ledger(fresh.test_ledger) == []
+    assert not (tmp_path / "first" / "headline.md").exists() or maps_fail
+
+    scored.clear()
+    _fake_passes(monkeypatch)
+    assert score_test.main(fresh.argv(tmp_path / "again")) in (0, ALARM_EXIT)
+    rows = score_test.read_test_ledger(fresh.test_ledger)
+    finalist = [r["run id"] for r in read_ledger(fresh.ledger) if r["config"] == FINALIST]
+    assert [r["run id"] for r in rows] == finalist
+    assert score_test.main(fresh.argv(tmp_path / "third")) == REFUSED_EXIT  # then, never again
