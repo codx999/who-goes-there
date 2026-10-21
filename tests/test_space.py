@@ -6,10 +6,11 @@ temporary folder, missing or holding synthetic photos, so no test depends on wha
 `assets/` holds (item 8.05 fills it). The requirements file is checked against `uv export` of the
 lock and against the imports `app.py` loads at startup; the README's header against the lock.
 
-Item 13.11: the Space's weights belong to the config `space/config_name.txt` names (ResNet-18 arm B
-until phase 3 freezes). A copy of `app.py` beside a random-weight ConvNeXt-Tiny checkpoint and a
-`config_name.txt` naming `p3_convnext` loads it with the real `load_model` and classifies, Grad-CAM
-included; the requirements carry timm and its own requirements, which a ConvNeXt build imports.
+Item 13.11: the Space's weights belong to the config `space/config_name.txt` names; item 13.15
+switched it from ResNet-18 arm B to phase 3's finalist, `p3_convnext_cp`. A copy of `app.py` beside
+a random-weight ConvNeXt-Tiny checkpoint and a copy of the real `config_name.txt` loads it with the
+real `load_model` and classifies, Grad-CAM included; the requirements carry timm and its own
+requirements, which a ConvNeXt build imports.
 """
 
 import ast
@@ -152,12 +153,14 @@ def fake_spaces(wrapped: list[Callable[..., Any]]) -> types.ModuleType:
 def test_the_space_loads_space_model_pt_with_the_config_its_file_names_on_the_cpu(
     monkeypatch: pytest.MonkeyPatch, no_assets: Path
 ) -> None:
-    """Item 13.11: `space/config_name.txt` names the weights' config; it is ResNet-18 arm B,
-    the local demo's default, until phase 3 freezes (docs/phase3-plan.md section 11)."""
+    """Item 13.11: `space/config_name.txt` names the weights' config. Item 13.15: it is phase
+    3's finalist, ConvNeXt-Tiny with copy-paste (docs/phase3-plan.md section 13); the local
+    demo's default stays ResNet-18 arm B, the Space's rollback."""
     monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
     space = load_space(monkeypatch, spaces=None, assets=no_assets)
     name = predict.read_config_name(CONFIG_NAME_FILE)
-    assert name == space.CONFIG_NAME == predict.DEFAULT_CONFIG == "resnet18_arm_b"
+    assert name == space.CONFIG_NAME == "p3_convnext_cp"
+    assert predict.DEFAULT_CONFIG == "resnet18_arm_b"
     assert space.loaded.calls == [(SPACE / "model.pt", name, CONFIG_PATH)]
     assert space.loaded.devices == [torch.device("cpu")]
     assert isinstance(space.demo, gr.Blocks)
@@ -254,9 +257,10 @@ def test_the_space_loads_and_runs_a_convnext_checkpoint_under_a_p3_config(
     monkeypatch: pytest.MonkeyPatch, photo: Image.Image, no_assets: Path, tmp_path: Path
 ) -> None:
     """Item 13.11, end to end with the real `load_model`: `app.py` copied beside a random-weight
-    ConvNeXt-Tiny checkpoint saved as `train.py` saves it and a `config_name.txt` naming
-    `p3_convnext` loads the model and classifies a photo, Grad-CAM on and off. The same files
-    with `resnet18_arm_b` named are refused at startup: the checkpoint is not that config's."""
+    ConvNeXt-Tiny checkpoint saved as `train.py` saves it and a copy of the real
+    `space/config_name.txt` (item 13.15: `p3_convnext_cp`) loads the model and classifies a
+    photo, Grad-CAM on and off. The same files with `resnet18_arm_b` named (the rollback's
+    config) are refused at startup: the checkpoint is not that config's."""
     monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
     monkeypatch.setattr(gradcam, "ASSETS_DIR", no_assets)
     monkeypatch.setitem(sys.modules, "spaces", None)
@@ -265,9 +269,9 @@ def test_the_space_loads_and_runs_a_convnext_checkpoint_under_a_p3_config(
     state = build_model("convnext_tiny", pretrained=False).state_dict()
     saved = {"model": "convnext_tiny", "classes": list(CLASSES), "state_dict": state}
     torch.save({**saved, "input_size": 224}, tmp_path / "model.pt")
-    (tmp_path / predict.SPACE_CONFIG_FILE).write_text("# phase 3's finalist\np3_convnext\n")
+    shutil.copyfile(CONFIG_NAME_FILE, tmp_path / predict.SPACE_CONFIG_FILE)
     space = _exec_app(tmp_path / "app.py")
-    assert space.CONFIG_NAME == "p3_convnext"
+    assert space.CONFIG_NAME == "p3_convnext_cp"
     assert type(space.MODEL).__name__ == "ConvNeXt" and not space.MODEL.training
     scores, seconds, overlay = space.classify_on_device(photo, False)
     assert len(scores) == predict.TOP_K and 0 < sum(scores.values()) <= 1 + 1e-6

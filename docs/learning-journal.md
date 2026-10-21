@@ -746,6 +746,10 @@ borrows a GPU per call. Look at [space/app.py](../space/app.py),
 uv run python scripts/deploy_space.py --dry-run --weights models/<run>.pt
 ```
 
+**Added by 13.15, a bigger model on a CPU.** A CPU Space has a latency budget (well under a second),
+and Grad-CAM adds a backward pass. FLOPs don't predict it: ConvNeXt-Tiny ran 40x slower than ResNet-18
+on the Mac (its torch lacks oneDNN, so depthwise convs fall back); profile, then measure on the target.
+
 ## 15. What we'd improve next, and how
 
 **What we did.** Planned phase 2 (item 13.01), run in the week before the presentation (13.02): a

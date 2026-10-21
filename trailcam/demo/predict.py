@@ -21,10 +21,10 @@ a timm model (EfficientNet-B0, ConvNeXt-Tiny) is built. gradio is the app's alon
 **The Space's config (item 13.11).** The Space's weights belong to the config named in
 `config_name.txt` beside its `app.py` (`SPACE_CONFIG_FILE`, `space/config_name.txt` in the repo),
 which `read_config_name` reads; `scripts/deploy_space.py` checks the weights against the same
-file before an upload. It names `DEFAULT_CONFIG`, ResNet-18 arm B, until phase 3 freezes; a kept
-phase-3 finalist is deployed by naming its `p3_` config there in a commit
-(`docs/phase3-plan.md` section 11). `DEFAULT_CONFIG` stays the local demo's and the sorter's
-default.
+file before an upload. Since item 13.15 it names `p3_convnext_cp`, phase 3's finalist
+(ConvNeXt-Tiny with copy-paste, `docs/phase3-plan.md` section 13); naming `DEFAULT_CONFIG`,
+ResNet-18 arm B, there in a commit is the rollback. `DEFAULT_CONFIG` stays the local demo's and
+the sorter's default.
 """
 
 from __future__ import annotations

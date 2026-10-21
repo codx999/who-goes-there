@@ -1,5 +1,5 @@
 # The config of the Space's weights (model.pt), read by app.py and checked by
 # scripts/deploy_space.py before an upload (trailcam/demo/predict.py, read_config_name).
-# ResNet-18 arm B until phase 3 freezes; a kept phase-3 finalist's p3_ config goes here, in a
-# commit, only then (docs/phase3-plan.md section 11).
-resnet18_arm_b
+# Phase 3's finalist, ConvNeXt-Tiny with copy-paste, seed 2 chosen on val (item 13.15;
+# docs/phase3-plan.md section 13). Rollback: resnet18_arm_b here, in a commit, with arm B's weights.
+p3_convnext_cp

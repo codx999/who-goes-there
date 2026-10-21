@@ -5496,3 +5496,58 @@ and R42 hold. The code-reviewer ran one empty, out-of-allowlist `uv run --offlin
 `passes: true`** on the user's go-ahead (2026-10-20, through the coordinator: "if the fix-round
 review is clean, flip and merge"); tier 3 was met with three full-range reviews in place of
 `/code-review ultra` (above). The scoring run stays the user's.
+
+## 2026-10-20: item 13.15, the Space switched to p3_convnext_cp seed 2 (code side; Opus 5.5, high)
+
+**Added** to `docs/progress.json` on the user's OK via the coordinator (2026-10-20), owner claude,
+session 13, due 2026-10-22. Left at `passes: false`: see "Flag" below.
+
+**Done.**
+- **Checkpoint.** `p3_convnext_cp-seed2-20261020T021420Z.pt` (outside the repo, never copied in):
+  sha256 `67a6de97…5fa6` matches its `docs/ledger-phase3.md` row. Seed 2 has the best val
+  macro-F1 of the three (0.8654 against 0.8573 and 0.8631), so the seed is chosen on val.
+- **`space/config_name.txt`** names `p3_convnext_cp`; its comment names the rollback. Tests:
+  `tests/test_space.py` (the real file names `p3_convnext_cp`, `DEFAULT_CONFIG` stays
+  `resnet18_arm_b`; the end-to-end ConvNeXt test uses a copy of the real file) and
+  `tests/test_deploy_space.py` (the `weights` fixture is now a ConvNeXt-Tiny checkpoint, the model
+  the committed file names; the 320 px refusal on a ConvNeXt; the 13.11 test now checks the
+  rollback: `resnet18_arm_b` committed deploys a ResNet-18 and refuses the ConvNeXt). Docstrings
+  of `space/app.py`, `trailcam/demo/predict.py`, `scripts/deploy_space.py` and R36's test column in
+  `docs/review/invariants.md` no longer say "until phase 3 freezes". No behaviour changed.
+- **Local timing** (Apple M2 Pro, 12 cores, torch 2.14.1, the Space's path: `read_config_name` of
+  `space/config_name.txt`, `load_model`, `classify` on `assets/trans_bobcat_day_01.jpg`; medians
+  of 10 after a warm-up): model load 0.86 s; forward pass as the Space shows it (`timed_forward`)
+  0.368 s; `classify` without Grad-CAM 0.693 s wall (two forward passes, by design); with Grad-CAM
+  1.125 s wall. At 2 threads (CPU Basic has 2 vCPU): forward 0.49 s, forward + backward 1.87 s.
+  ResNet-18 arm B on the same Mac: forward 0.009 s (8 threads), 0.012 s (2 threads).
+- **Assets predictions:** 8 of 10 right (ResNet-18 arm B seed 2: 5 of 10). Top-class counts:
+  bobcat 1, car 1, cat 3, coyote 2, dog 1, raccoon 1, squirrel 1. Wrong: `trans_opossum_day_10`
+  (squirrel) and `trans_raccoon_day_07` (cat).
+- **Dry run** (on a temporary commit of this item's sources, then `git reset --soft`): `uv run
+  python scripts/deploy_space.py --dry-run --weights <the checkpoint>` exit 0, 50 files (the
+  app, requirements, README, config name, `config.yaml`, 10 photos, 34 `trailcam` modules,
+  `model.pt` 111.4 MB). The arm B weights under the new name: refused ("holds a resnet18, the
+  config a convnext_tiny"), as designed.
+- **Text.** `space/README.md`: ConvNeXt-Tiny with copy-paste (phase 3), seed 2, a test table of
+  its `docs/test-ledger-phase3.md` row beside phase 1's arm B seed 2 from `docs/test-ledger.md`,
+  and the second-use disclosure. `README.md`: the Demo section only (13.14 rewrites Results); its
+  local command now names `p3_convnext_cp` and runs (`--check` with the real checkpoint: 10
+  examples). 3 lines in `docs/learning-journal.md` topic 14.
+
+**Flag: forward + Grad-CAM is 1.13 s locally, over the ~1 s line.** The cause is this Mac's
+wheel, not the model's size: `torch.backends.mkldnn.is_available()` is False on the macOS arm64
+build, so ConvNeXt's depthwise 7×7 convolutions run on `aten::_slow_conv2d_forward` (6,628 calls,
+82% of the forward pass in the profiler), which is why it is 40x ResNet-18 here against about
+2.5x the FLOPs. The Space's Linux `+cpu` wheel has oneDNN, so the Mac is likely *slower* than CPU
+Basic for this model, the opposite of ResNet-18's case (0.009 s here, 0.033 s on the Space). The
+local number cannot settle the plan's limit either way; `docs/phase3-plan.md` section 11 says it
+is measured on the Space, with and without Grad-CAM. Hence `passes: false` until the user's read.
+
+**Data caveat.** `docs/test-ledger-phase3.md`'s three rows are in the main checkout as the user's
+uncommitted paste; the card's seed-2 numbers come from there and need that file committed too.
+
+**Checks.** `bash scripts/check.sh` green: 1,344 passed in 9 min 48 s; mypy strict, ruff and the data
+guard clean.
+
+**Next (the user's).** Commit the test-ledger rows; merge; deploy from main; read the Space's
+seconds on a few examples with Grad-CAM off and on; then flip or roll back. Review tier below.

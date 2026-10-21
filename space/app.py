@@ -2,9 +2,10 @@
 
 The Space runs this file as `app.py` at its root, beside the `trailcam` package, `config.yaml`, the
 `assets/` examples, the weights (`model.pt`) and the name of their config (`config_name.txt`, item
-13.11: ResNet-18 arm B until phase 3 freezes), all uploaded by `scripts/deploy_space.py`. It
-holds no prediction code of its own: the interface is `build_app` of `trailcam/demo/app.py`, and
-the button runs `classify`, which calls `predict` of `trailcam/demo/predict.py` (eval transform,
+13.11; since item 13.15 phase 3's finalist, `p3_convnext_cp`), all uploaded by
+`scripts/deploy_space.py`. It holds no prediction code of its own: the interface is `build_app`
+of `trailcam/demo/app.py`, and the button runs `classify`, which calls `predict` of
+`trailcam/demo/predict.py` (eval transform,
 `timed_forward`, softmax top 3) and, when the box is ticked, Grad-CAM. Grad-CAM is in the Space and
 off by default (open question 5, closed 2026-10-16). Analytics are off, as in the local app.
 

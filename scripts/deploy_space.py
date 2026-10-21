@@ -12,10 +12,10 @@ The Space gets, in one commit, these files and nothing else (`ALLOWED`):
 - the weights, `--weights <path>`, as `model.pt`. The arm is chosen after the final scoring (open
   question 7), so no run is named here. The file must be a `train.py` checkpoint of the config
   that the committed `space/config_name.txt` names (`read_config_name`; item 13.11): its model,
-  class map and input size, as `load_model` checks them. That file names `resnet18_arm_b` until
-  phase 3 freezes, so the command below deploys the arm B checkpoint as before; a phase-3
-  finalist is deployed by naming its `p3_` config there in a commit. A fixture config (the dry
-  run's) is refused; anything else is refused too.
+  class map and input size, as `load_model` checks them. Since item 13.15 that file names
+  `p3_convnext_cp`, phase 3's finalist, so the command below deploys its seed-2 checkpoint; the
+  rollback to arm B is `resnet18_arm_b` named there in a commit and arm B's checkpoint passed. A
+  fixture config (the dry run's) is refused; anything else is refused too.
 
 Refused before anything is read for upload or any token is looked at: a file under `data/` (this
 checkout's, the main checkout's, or `TRAILCAM_DATA_ROOT`), links followed; a file outside this

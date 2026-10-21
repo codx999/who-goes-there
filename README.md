@@ -116,14 +116,16 @@ Phase 2 tries to close more of the unseen-camera gap: see
 
 ## Demo
 
-Live demo on Hugging Face Spaces: **<https://huggingface.co/spaces/Codx999/who-goes-there>**. It serves ResNet-18
-arm B seed 2: upload a camera-trap photo, get the top class with its confidence, the two
-runners-up, the inference time and an optional Grad-CAM overlay.
+Live demo on Hugging Face Spaces: **<https://huggingface.co/spaces/Codx999/who-goes-there>**. It serves phase 3's
+finalist, ConvNeXt-Tiny with copy-paste training, run seed 2 (chosen on val): upload a camera-trap
+photo, get the top class with its confidence, the two runners-up, the inference time and an
+optional Grad-CAM overlay. Phase 1's ResNet-18 arm B seed 2, which it served before, is the
+fallback.
 
 Run it locally (the weights are never in this repo; pass a `train.py` checkpoint):
 
 ```bash
-uv run python -m trailcam.demo.app --checkpoint <run>.pt --config-name resnet18_arm_b
+uv run python -m trailcam.demo.app --checkpoint <run>.pt --config-name p3_convnext_cp
 ```
 
 Without a checkpoint, `--check` builds the interface with random weights and exits:

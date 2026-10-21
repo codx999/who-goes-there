@@ -2,11 +2,13 @@
 
 Each test builds a small git repository in a temporary folder with the real `space/` files,
 `config.yaml` and `.gitignore`, two trailcam modules, one example photo and an ignored `data/`.
-The weights are random ResNet-18 and small-CNN checkpoints saved as `train.py` saves them.
+The weights are random ConvNeXt-Tiny, ResNet-18 and small-CNN checkpoints saved as `train.py`
+saves them.
 huggingface_hub's `HfApi` is replaced by a fake and sockets refuse to connect: no test touches the
 network, and no real token is used. Item 13.11: the weights are checked against the config the
-committed `space/config_name.txt` names (ResNet-18 arm B, so the arm B deploy is unchanged), and a
-random ConvNeXt-Tiny checkpoint deploys once that file names `p3_convnext`.
+committed `space/config_name.txt` names. Item 13.15: that is `p3_convnext_cp`, so the deploy's
+weights here are a ConvNeXt-Tiny checkpoint; the rollback (`resnet18_arm_b` committed there) deploys
+a ResNet-18 and refuses the ConvNeXt.
 """
 
 import importlib.util
@@ -71,8 +73,9 @@ def _checkpoint(path: Path, model: str) -> Path:
 
 @pytest.fixture(scope="module")
 def weights(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """A ResNet-18 checkpoint, the model of `DEFAULT_CONFIG`, outside any repository."""
-    return _checkpoint(tmp_path_factory.mktemp("models") / "run.pt", "resnet18")
+    """A ConvNeXt-Tiny checkpoint, the model of the config `space/config_name.txt` names
+    (`p3_convnext_cp`, item 13.15), outside any repository."""
+    return _checkpoint(tmp_path_factory.mktemp("models") / "run.pt", "convnext_tiny")
 
 
 @pytest.fixture
@@ -340,14 +343,19 @@ def test_weights_that_are_not_a_default_config_checkpoint_are_refused(
 
 
 def test_weights_of_another_input_size_are_refused(repo: Path, tmp_path: Path) -> None:
-    """Item 13.02, the review's low finding: a ResNet-18 checkpoint trained at 320 px (a
-    `p2_res320` run) has the Space model's weights, but records its input size, so the deploy's
-    load under the Space's 224 px config refuses it instead of serving it at 224."""
+    """Item 13.02, the review's low finding: a checkpoint of the Space's model trained at 320 px
+    (as a `p2_res320` run was, item 13.15: now a ConvNeXt-Tiny) records its input size, so the
+    deploy's load under the Space's 224 px config refuses it instead of serving it at 224."""
     path = tmp_path / "res320.pt"
     torch.manual_seed(0)
-    state = build_model("resnet18", pretrained=False).state_dict()
+    state = build_model("convnext_tiny", pretrained=False).state_dict()
     torch.save(
-        {"model": "resnet18", "classes": list(CLASSES), "state_dict": state, "input_size": 320},
+        {
+            "model": "convnext_tiny",
+            "classes": list(CLASSES),
+            "state_dict": state,
+            "input_size": 320,
+        },
         path,
     )
     with pytest.raises(deploy.DeployError, match="trained at 320 px"):
@@ -357,31 +365,32 @@ def test_weights_of_another_input_size_are_refused(repo: Path, tmp_path: Path) -
 def test_the_weights_are_checked_against_the_config_the_committed_file_names(
     repo: Path, weights: Path, tmp_path: Path
 ) -> None:
-    """Item 13.11: the real `space/config_name.txt` names `resnet18_arm_b`, so the arm B
-    ResNet-18 deploys as before (the tests above). Committed naming `p3_convnext`, a ConvNeXt
-    checkpoint deploys and the ResNet-18 is refused; uncommitted, the change is refused before
-    anything is checked; a fixture config, an unknown one or a malformed file is refused."""
-    assert deploy.read_config_name(ROOT / "space" / "config_name.txt") == "resnet18_arm_b"
-    convnext = _checkpoint(tmp_path / "convnext.pt", "convnext_tiny")
-    with pytest.raises(deploy.DeployError, match="not a resnet18_arm_b checkpoint"):
-        deploy.plan(convnext, repo)
+    """Item 13.15: the real `space/config_name.txt` names `p3_convnext_cp`, so a ConvNeXt-Tiny
+    checkpoint deploys (the tests above) and a ResNet-18 is refused. The rollback, committed
+    naming `resnet18_arm_b`, deploys the ResNet-18 and refuses the ConvNeXt; uncommitted, the
+    change is refused before anything is checked; a fixture config, an unknown one or a
+    malformed file is refused."""
+    assert deploy.read_config_name(ROOT / "space" / "config_name.txt") == "p3_convnext_cp"
+    resnet = _checkpoint(tmp_path / "resnet.pt", "resnet18")
+    with pytest.raises(deploy.DeployError, match="not a p3_convnext_cp checkpoint"):
+        deploy.plan(resnet, repo)
     name_file = repo / "space" / "config_name.txt"
-    name_file.write_text("p3_convnext\n")
+    name_file.write_text("resnet18_arm_b\n")
     with pytest.raises(deploy.DeployError, match="uncommitted"):
-        deploy.plan(convnext, repo)
+        deploy.plan(resnet, repo)
     _commit(repo)
-    assert _paths(deploy.plan(convnext, repo)) == EXPECTED
-    with pytest.raises(deploy.DeployError, match="not a p3_convnext checkpoint"):
+    assert _paths(deploy.plan(resnet, repo)) == EXPECTED
+    with pytest.raises(deploy.DeployError, match="not a resnet18_arm_b checkpoint"):
         deploy.plan(weights, repo)
     for text, message in [
         ("dryrun\n", "names dryrun, a fixture config"),
         ("p3_resnet9\n", "no config 'p3_resnet9'"),
-        ("p3_convnext\nresnet18_arm_b\n", "one config name"),
+        ("p3_convnext_cp\nresnet18_arm_b\n", "one config name"),
     ]:
         name_file.write_text(text)
         _commit(repo)
         with pytest.raises(deploy.DeployError, match=message):
-            deploy.plan(convnext, repo)
+            deploy.plan(weights, repo)
 
 
 def test_weights_must_be_a_pt_file(repo: Path, weights: Path, tmp_path: Path) -> None:
