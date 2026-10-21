@@ -5696,3 +5696,35 @@ times after one warm-up click: the forward-pass seconds the Space shows, and the
 click with Grad-CAM off and on (a stopwatch or the browser's network panel), with the Space
 commit id. Well under a second with Grad-CAM on: flip 13.15 and update plan section 8's
 "Deployed" paragraph. Otherwise: the rollback, and 13.15 stays open.
+
+## 2026-10-21: item 13.15, the deploy and the CPU check on the Space; flipped (Opus 5.5, high)
+
+**Deployed by the user** from main at `495c627`: `uv run python scripts/deploy_space.py --space
+Codx999/who-goes-there --weights ~/Desktop/trailcam/p3_convnext_cp-seed2-20261020T021420Z.pt`
+(sha256 `67a6de97…5fa6`, checked 2026-10-20), 50 files uploaded, 0 stale deleted, Space commit
+`fb0dfa8a09d289f883aed2b0b60c64172d185a86`. The upload stalled at 20% for several minutes on a
+slow connection, then finished; the Space rebuilt and was RUNNING on cpu-basic about 2 minutes
+after.
+
+**Measured by the coordinator** in a browser on the public Space, after one warm-up click each
+(wall: the click to the output updating, measured in the page):
+
+| photo | forward pass shown | wall, Grad-CAM off | wall, Grad-CAM on | prediction |
+| --- | --- | --- | --- | --- |
+| `trans_bobcat_day_01` | 0.104, 0.108, 0.142 s (0.150 on the first); 0.099 to 0.136 s with Grad-CAM | 0.37 to 0.45 s | 0.45 to 0.58 s | bobcat 84%, cat 16%, coyote 0% |
+| `trans_coyote_night_05` | 0.084 to 0.110 s | 0.31 to 0.40 s | 0.58 s (one click measured) | coyote 100% |
+
+The overlay returns as a 224 × 224 image with the heat drawn. Every click is well under a second,
+Grad-CAM on included, so `docs/phase3-plan.md` section 11's check passes and the user keeps the
+ConvNeXt (2026-10-21, through the coordinator). The Space's CPU is about 3.5x faster than the
+Mac's for this model (forward about 0.1 s against 0.37 s), as the oneDNN profile predicted; for
+ResNet-18 it was the other way round (0.033 s against 0.009 s). The bobcat, cat 79% under arm B,
+is now right.
+
+**Done.** `docs/plan.md` section 8: a "Redeployed" paragraph under "Deployed" (model, config,
+Space commit, date, timings, rollback). `README.md` Demo and `docs/slides.md` slide 4 (the model
+line, the note, the demo-photo speaker note) describe the live model, no longer conditional; arm
+B seed 2 is the documented rollback. **13.15 flipped to `passes: true`** on the user's decision.
+
+**Checks.** `bash scripts/check.sh` green: 1,344 passed in 7 min 50 s; mypy strict, ruff and the data
+guard clean. Review: none needed (docs only; `scripts/risk_files.sh` prints nothing).

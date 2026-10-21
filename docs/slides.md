@@ -77,15 +77,13 @@ recipe, disclosed on slides 5 and 15.
 
 **On the slide.** The Space, live: <https://huggingface.co/spaces/Codx999/who-goes-there>. Upload
 a camera-trap photo; it returns the top class with its confidence, the two runners-up, the time of
-the forward pass and an optional Grad-CAM heat map. Model: ResNet-18 arm B seed 2 until the
-switch; after the switch, phase 3's ConvNeXt-Tiny + copy-paste seed 2; each picked on val (cite on
-any photo shown).
+the forward pass and an optional Grad-CAM heat map. Model: phase 3's ConvNeXt-Tiny + copy-paste
+seed 2, picked on val (cite on any photo shown).
 
-> **The switch, item 13.15.** The code is merged; the switch goes live with the user's deploy
-> and a CPU-speed check on the Space (Grad-CAM off and on), else the Space stays on arm B seed 2.
-> The phase-3 model scores 0.6540 accuracy and 0.5315 macro-F1 on trans_test, against arm B seed
-> 2's 0.5399 and 0.4275 (plan section 7). On the day, check which model the Space's card names,
-> and use the matching answers in the notes.
+> **Switched on 2026-10-21, item 13.15** (plan section 8). The phase-3 model scores 0.6540
+> accuracy and 0.5315 macro-F1 on trans_test, against arm B seed 2's 0.5399 and 0.4275 (plan
+> section 7). On the Space's CPU a click takes about 0.3 to 0.6 s, Grad-CAM on included. Arm B
+> seed 2 is the rollback; if it is ever rolled back, the arm B answers in the notes apply.
 
 **Then the live sort** (item 12.05): `trailcam/demo/sort.py` sorts a folder of about 200
 trans-test photos into class folders with a visible timer and per-class counts.
@@ -96,14 +94,13 @@ backup video of the Space and the sort (item 12.04), opened in a tab before the 
 **Speaker notes.**
 
 - **Pick the demo photos in advance and know which are right and which are wrong.** The Space's
-  model gets 5 of the 10 `assets/` photos right (plan section 7), in line with its trans_test
-  score. Rehearse on the Space and write down each photo's answer. Known from the Grad-CAM run:
-  the bobcat (`trans_bobcat_day_01`) comes back as cat and the opossum (`trans_opossum_day_10`)
-  as coyote; both coyotes (`trans_coyote_day_04`, `trans_coyote_night_05`) are right. **After
-  the switch** the phase-3 model (seed 2) gets 8 of the 10 right, from the scoring's Grad-CAM
-  run. The bobcat is now bobcat (0.84). The opossum is still wrong, called squirrel (0.39), and
-  the raccoon by day (`trans_raccoon_day_07`) is called cat (0.92). Rehearse again on the
-  switched Space; its CPU numbers may differ slightly.
+  model (phase 3, seed 2) gets 8 of the 10 `assets/` photos right, from the scoring's Grad-CAM
+  run. The bobcat (`trans_bobcat_day_01`) is bobcat (0.84 on the Space, 2026-10-21) and the night
+  coyote (`trans_coyote_night_05`) coyote (1.00). The opossum (`trans_opossum_day_10`) is wrong,
+  called squirrel (0.39), and so is the raccoon by day (`trans_raccoon_day_07`), called cat
+  (0.92). Rehearse on the Space and write down each photo's answer. If it is rolled back to arm B
+  seed 2: 5 of 10 right (plan section 7); the bobcat comes back as cat and the opossum as coyote;
+  both coyotes (`trans_coyote_day_04`, `trans_coyote_night_05`) are right.
 - Show one right and one wrong on purpose; say before clicking which you expect. A wrong answer
   you predicted is a better demo than a right one you hoped for.
 - Say "confidence" as the model's own estimate, not a calibrated probability (plan section 8;

@@ -551,6 +551,18 @@ CPU Basic, from commit `c3ea399` (Space commit `7d58559`), weights arm B seed 2
 (`resnet18_arm_b-seed2-20261017T162445Z`, sha256 checked against the ledger). The deploy token is
 fine-grained, write access to this Space only.
 
+**Redeployed** (2026-10-21, item 13.15): phase 3's finalist, ConvNeXt-Tiny with copy-paste
+(`p3_convnext_cp`, named in `space/config_name.txt`), run seed 2 chosen on val
+(`p3_convnext_cp-seed2-20261020T021420Z`, sha256 checked against `docs/ledger-phase3.md`), from
+commit `495c627` (Space commit `fb0dfa8`), CPU Basic. The CPU check (`docs/phase3-plan.md`
+section 11), measured on the public Space after one warm-up click: on `trans_bobcat_day_01` the
+forward pass shown is 0.10 to 0.14 s, the click 0.37 to 0.45 s with Grad-CAM off and 0.45 to
+0.58 s with it on; on `trans_coyote_night_05` 0.08 to 0.11 s, 0.31 to 0.40 s and 0.58 s. Every
+click is well under a second, so the switch stays. The Mac's CPU was slower (0.37 s forward):
+its torch build has no oneDNN, so ConvNeXt's depthwise convolutions fall back to a slow path.
+The rollback is arm B seed 2: `resnet18_arm_b` named in `space/config_name.txt` in a commit, then
+the deploy with arm B's weights.
+
 The local app's `--share` link is the free, temporary backup. Account and Space creation are the
 user's steps. The Space serves arm B if it wins, else arm A.
 
