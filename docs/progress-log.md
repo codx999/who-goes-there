@@ -5648,11 +5648,51 @@ Basic for this model, the opposite of ResNet-18's case (0.009 s here, 0.033 s on
 local number cannot settle the plan's limit either way; `docs/phase3-plan.md` section 11 says it
 is measured on the Space, with and without Grad-CAM. Hence `passes: false` until the user's read.
 
-**Data caveat.** `docs/test-ledger-phase3.md`'s three rows are in the main checkout as the user's
-uncommitted paste; the card's seed-2 numbers come from there and need that file committed too.
+**Data caveat (corrected in the fix round below).** When this was written,
+`docs/test-ledger-phase3.md`'s three rows were not on this branch; they are on main at `2e4cda6`,
+now merged here.
 
 **Checks.** `bash scripts/check.sh` green: 1,344 passed in 9 min 48 s; mypy strict, ruff and the data
 guard clean.
 
 **Next (the user's).** Commit the test-ledger rows; merge; deploy from main; read the Space's
 seconds on a few examples with Grad-CAM off and on; then flip or roll back. Review tier below.
+
+**Review: tier 2, clean of high findings.** `/review-session 58d92f7..HEAD 13.15` (the user's):
+code-reviewer (Opus, xhigh) and risk-reviewer (Fable, high), one low finding each; R02 to R07,
+R20, R21, R23, R33 to R36 and R42 hold. Low 1 (code-reviewer): README's Demo said the Space
+already serves the ConvNeXt, before the deploy and the CPU check. Low 2 (risk-reviewer): the
+card's test numbers had no source row on this branch (main's `2e4cda6` was not merged); its
+suggested card-to-ledger test was not added (the user's decision: the fixes suggested only). The
+code-reviewer ran one out-of-allowlist `uv run python -c "print(1)"` (printed nothing, no edit).
+
+## 2026-10-21: item 13.15, the review's fix round (Opus 5.5, high)
+
+The user's decisions through the coordinator (2026-10-21): make the suggested fixes; no
+re-review (README and docs only); 13.15 stays at `passes: false` until the user's deploy and the
+measurement on the Space.
+
+- **Synced with main** (`aee96ca`: item 13.14 and `2e4cda6`, the phase-3 test rows) with the
+  sync tool; the two overlaps at the end of `docs/progress.json` and this log kept both sides,
+  13.14 before 13.15.
+- **The card's numbers checked against the ledger rows now on this branch:** the seed-2 row of
+  `docs/test-ledger-phase3.md` and arm B seed 2's of `docs/test-ledger.md`, all twelve cells
+  equal (a script compared the card's table rows with the ledger cells).
+- **`README.md` Demo:** conditional, true before and after the deploy: the Space is switching
+  from arm B seed 2 to `p3_convnext_cp` seed 2, live once a CPU-speed check on the Space passes;
+  until then, and as the fallback, arm B seed 2; the Space's card names the model it serves.
+  `README.md:107`'s phase-1 note left as it is (the user's decision).
+- **`docs/slides.md` slide 4:** the model line names both, "until the switch" and "after the
+  switch"; the note says the code is merged and the switch goes live with the deploy and the
+  CPU check, else arm B stays.
+- **The data caveat above** corrected.
+
+**Checks.** `bash scripts/check.sh` green on the merged branch: 1,344 passed in 8 min 50 s; mypy
+strict, ruff and the data guard clean.
+
+**After the deploy (the user's):** record in a dated entry here, from the Space's own readings on
+`trans_bobcat_day_01` and `trans_coyote_night_05` (as 2026-10-19 did), each photo clicked three
+times after one warm-up click: the forward-pass seconds the Space shows, and the wall time of the
+click with Grad-CAM off and on (a stopwatch or the browser's network panel), with the Space
+commit id. Well under a second with Grad-CAM on: flip 13.15 and update plan section 8's
+"Deployed" paragraph. Otherwise: the rollback, and 13.15 stays open.

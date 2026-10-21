@@ -242,11 +242,12 @@ Data: Caltech Camera Traps (CCT20), Beery et al. 2018, CDLA-Permissive 1.0 (see
 
 ## Demo
 
-Live demo on Hugging Face Spaces: **<https://huggingface.co/spaces/Codx999/who-goes-there>**. It serves phase 3's
-finalist, ConvNeXt-Tiny with copy-paste training, run seed 2 (chosen on val): upload a camera-trap
-photo, get the top class with its confidence, the two runners-up, the inference time and an
-optional Grad-CAM overlay. Phase 1's ResNet-18 arm B seed 2, which it served before, is the
-fallback.
+Live demo on Hugging Face Spaces: **<https://huggingface.co/spaces/Codx999/who-goes-there>**. Upload a
+camera-trap photo, get the top class with its confidence, the two runners-up, the inference time
+and an optional Grad-CAM overlay. The Space is switching from phase 1's ResNet-18 arm B seed 2 to
+phase 3's finalist, ConvNeXt-Tiny with copy-paste training (`p3_convnext_cp`) seed 2, both chosen
+on val. The switch goes live once a CPU-speed check on the Space passes; until then, and as the
+fallback, it serves arm B seed 2. The Space's own card names the model it serves.
 
 Run it locally (the weights are never in this repo; pass a `train.py` checkpoint):
 

@@ -77,14 +77,15 @@ recipe, disclosed on slides 5 and 15.
 
 **On the slide.** The Space, live: <https://huggingface.co/spaces/Codx999/who-goes-there>. Upload
 a camera-trap photo; it returns the top class with its confidence, the two runners-up, the time of
-the forward pass and an optional Grad-CAM heat map. Model: ResNet-18 arm B seed 2, picked on val
-(cite on any photo shown).
+the forward pass and an optional Grad-CAM heat map. Model: ResNet-18 arm B seed 2 until the
+switch; after the switch, phase 3's ConvNeXt-Tiny + copy-paste seed 2; each picked on val (cite on
+any photo shown).
 
-> **The switch is pending, item 13.15.** The Space is to serve phase 3's ConvNeXt-Tiny +
-> copy-paste seed 2, also picked on val. That model scores 0.6540 accuracy and 0.5315 macro-F1 on
-> trans_test, against arm B seed 2's 0.5399 and 0.4275 (plan section 7). Until 13.15 is merged and
-> the Space checked, the slide and the notes below describe arm B seed 2. Once it is switched,
-> change the model line and use the phase-3 answers in the notes.
+> **The switch, item 13.15.** The code is merged; the switch goes live with the user's deploy
+> and a CPU-speed check on the Space (Grad-CAM off and on), else the Space stays on arm B seed 2.
+> The phase-3 model scores 0.6540 accuracy and 0.5315 macro-F1 on trans_test, against arm B seed
+> 2's 0.5399 and 0.4275 (plan section 7). On the day, check which model the Space's card names,
+> and use the matching answers in the notes.
 
 **Then the live sort** (item 12.05): `trailcam/demo/sort.py` sorts a folder of about 200
 trans-test photos into class folders with a visible timer and per-class counts.
