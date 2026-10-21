@@ -3,9 +3,11 @@
 Item 12.01. The outline of the capstone talk (presentation 2026-11-04), one section per slide, each
 with what goes on the slide, the figure from `docs/figures/` and the speaker notes. Every result
 number is from [`ledger.md`](ledger.md) or [`plan.md`](plan.md) section 7, except the phase-2
-slide, whose numbers are from [`phase2-plan.md`](phase2-plan.md) section 12, and the phase-3 slide's
-results, from [`phase3-plan.md`](phase3-plan.md) section 13 (val and trans_val only; both marked
-there, and flagged in `docs/progress-log.md`). Headline claims use the mean of 3 seeds.
+slide, whose numbers are from [`phase2-plan.md`](phase2-plan.md) section 12, and the phase-3
+numbers. Phase 3's val and trans_val numbers are from [`phase3-plan.md`](phase3-plan.md) section
+13. Its test numbers are from [`test-ledger-phase3.md`](test-ledger-phase3.md) and plan section 7,
+"Phase 3's test results", and are always shown beside phase 1's with the disclosure (slides 5 and
+15). Headline claims use the mean of 3 seeds.
 
 **Data citation**, on every slide that shows a dataset photo or a chart of the data (marked
 "cite" below): Caltech Camera Traps (CCT20), Beery, Van Horn, Perona, "Recognition in Terra
@@ -55,8 +57,8 @@ section 2): `empty` is a different problem, the other three are too rare to lear
 
 - A ResNet-18 pretrained on ImageNet, fine-tuned end to end; a small CNN trained from scratch as
   the baseline.
-- Test sets, scored once at the end: cis_test 14,478 images; trans_test 21,473 images from 9
-  cameras never seen.
+- Test sets, scored once at the end of phase 1 (and a second, disclosed time for phase 3):
+  cis_test 14,478 images; trans_test 21,473 images from 9 cameras never seen.
 - Accuracy **and** macro-F1: the classes are imbalanced, so a model that guesses the big classes
   can look good on accuracy alone.
 
@@ -65,8 +67,9 @@ section 2): `empty` is a different problem, the other three are too rare to lear
 **Speaker notes.** Why ResNet-18: few training images, so pretraining supplies the low-level
 features; small enough for a CPU Space; the standard Grad-CAM subject (plan section 9). Why
 macro-F1: every class counts the same, so a rare class the model ignores pulls it down. Test-set
-isolation: every choice was made on val; the test sets were scored once, for all 7 checkpoints
-together, with my go-ahead, and logged.
+isolation: every choice was made on val. Phase 1 scored the test sets once, for all 7
+checkpoints together, with my go-ahead, and logged. Phase 3 used them a second time, for one
+recipe, disclosed on slides 5 and 15.
 
 ---
 
@@ -76,6 +79,12 @@ together, with my go-ahead, and logged.
 a camera-trap photo; it returns the top class with its confidence, the two runners-up, the time of
 the forward pass and an optional Grad-CAM heat map. Model: ResNet-18 arm B seed 2, picked on val
 (cite on any photo shown).
+
+> **The switch is pending, item 13.15.** The Space is to serve phase 3's ConvNeXt-Tiny +
+> copy-paste seed 2, also picked on val. That model scores 0.6540 accuracy and 0.5315 macro-F1 on
+> trans_test, against arm B seed 2's 0.5399 and 0.4275 (plan section 7). Until 13.15 is merged and
+> the Space checked, the slide and the notes below describe arm B seed 2. Once it is switched,
+> change the model line and use the phase-3 answers in the notes.
 
 **Then the live sort** (item 12.05): `trailcam/demo/sort.py` sorts a folder of about 200
 trans-test photos into class folders with a visible timer and per-class counts.
@@ -89,7 +98,11 @@ backup video of the Space and the sort (item 12.04), opened in a tab before the 
   model gets 5 of the 10 `assets/` photos right (plan section 7), in line with its trans_test
   score. Rehearse on the Space and write down each photo's answer. Known from the Grad-CAM run:
   the bobcat (`trans_bobcat_day_01`) comes back as cat and the opossum (`trans_opossum_day_10`)
-  as coyote; both coyotes (`trans_coyote_day_04`, `trans_coyote_night_05`) are right.
+  as coyote; both coyotes (`trans_coyote_day_04`, `trans_coyote_night_05`) are right. **After
+  the switch** the phase-3 model (seed 2) gets 8 of the 10 right, from the scoring's Grad-CAM
+  run. The bobcat is now bobcat (0.84). The opossum is still wrong, called squirrel (0.39), and
+  the raccoon by day (`trans_raccoon_day_07`) is called cat (0.92). Rehearse again on the
+  switched Space; its CPU numbers may differ slightly.
 - Show one right and one wrong on purpose; say before clicking which you expect. A wrong answer
   you predicted is a better demo than a right one you hoped for.
 - Say "confidence" as the model's own estimate, not a calibrated probability (plan section 8;
@@ -105,16 +118,20 @@ backup video of the Space and the sort (item 12.04), opened in a tab before the 
 
 ## Slide 5. The honest test: cis vs trans
 
-**On the slide.** The headline table, test sets scored once (plan section 7, test results):
+**On the slide.** The headline table: phase 1's one test scoring, then phase 3's below it (plan
+section 7, test results and phase 3's test results):
 
 | model | cis_test accuracy | cis_test macro-F1 | trans_test accuracy | trans_test macro-F1 | accuracy gap | macro-F1 gap |
 | --- | --- | --- | --- | --- | --- | --- |
 | small CNN, seed 0 | 0.5026 | 0.4504 | 0.3140 | 0.2041 | 0.1886 | 0.2463 |
 | ResNet-18 arm A, mean of 3 seeds | 0.6708 | 0.6216 | 0.5137 | 0.4127 | 0.1571 | 0.2089 |
 | ResNet-18 arm B, mean of 3 seeds | 0.6808 | 0.6361 | 0.5387 | 0.4309 | 0.1422 | 0.2051 |
+| phase 3: ConvNeXt-Tiny + copy-paste, mean of 3 seeds (test sets' 2nd use) | 0.7565 | 0.7241 | 0.6598 | 0.5367 | 0.0967 | 0.1874 |
 
 One line under it: "On cameras it has never seen, the model loses 0.1571 of accuracy and 0.2089
-of macro-F1" (arm A, mean of 3 seeds).
+of macro-F1" (arm A, mean of 3 seeds). Under the phase-3 row, in the slide's footnote: "Phase 3:
+the test sets' second use, for one recipe chosen on val only, after phase 1's test scores had
+been seen (2026-10-18)." The last row is shown under the phase-1 rows, never in their place.
 
 **Figure (optional, beside the table).** `docs/figures/test_trans_per_camera_arm_b_seed0.png`,
 accuracy per unseen camera.
@@ -123,7 +140,10 @@ accuracy per unseen camera.
 trans_test accuracy over the small CNN, but the gap stays: the ResNet-18 is better everywhere and
 still much worse on new cameras. No leakage alarm fired: no image or sequence in two splits, no
 trans camera in training. The per-camera bars show the spread across the 9 unseen cameras; the
-worst camera has no photo in `assets/`, so it is shown as a bar only.
+worst camera has no photo in `assets/`, so it is shown as a bar only. Mention the last row in one
+sentence and point to slide 15. Phase 3 narrowed the accuracy gap to 0.0967, but the macro-F1 gap
+is still 0.1874. Say the disclosure in the same breath: the second row comes from a second use of
+the test sets.
 
 ---
 
@@ -237,6 +257,10 @@ coyote is right, but part of the heat is on the sand: a right answer is not alwa
 reason. The numbers in parentheses are the model's confidence. The overlay numbers are the
 photo's place in `assets/` in name order, not the index in the file name. Grad-CAM is
 hand-written (`trailcam/evaluate/gradcam.py`), the same function that scores attention-in-box.
+For slide 15 or a question: the same two photos under phase 3's model (seed 2) are
+`docs/figures/p3_gradcam_overlay_01.png`, the bobcat now right (0.84), and
+`p3_gradcam_overlay_08.png`, the opossum still wrong, called squirrel (0.39), but with the heat
+now on the animal.
 
 ---
 
@@ -323,39 +347,63 @@ say out loud: trans_val is one camera, so these are one-camera results.
 
 ---
 
-## Slide 15. Phase 3: a stronger backbone, both kept
+## Slide 15. Phase 3: a stronger backbone, kept and tested
 
-> Val and trans_val only, from [`phase3-plan.md`](phase3-plan.md) section 13 (item 13.13; every
-> number from `docs/ledger-phase3.md` and `docs/ledger.md`). **No test number** goes here until
-> item 13.12's one scoring has run with the user's go-ahead.
+> Val and trans_val from [`phase3-plan.md`](phase3-plan.md) section 13 (item 13.13; every number
+> from `docs/ledger-phase3.md` and `docs/ledger.md`). Test numbers from
+> [`test-ledger-phase3.md`](test-ledger-phase3.md) beside [`test-ledger.md`](test-ledger.md)
+> (plan section 7, "Phase 3's test results"; item 13.14). The scoring ran once, on 2026-10-20,
+> with the user's go-ahead.
 
-**On the slide.** Two candidates against the same baseline as phase 2 (phase 1's arm A, 3 seeds),
-judged by a keep rule **fixed before any run**: trans_val macro-F1 up more than 0.03 on the mean
-of 3 seeds **and** on every seed, val macro-F1 down no more than 0.03. Macro-F1 changes, mean of
-3 seeds (per seed for trans_val):
+**On the slide.** Two candidates were judged against the same baseline as phase 2 (phase 1's arm
+A, 3 seeds), by a keep rule **fixed before any run**. trans_val macro-F1 had to rise by more than
+0.03 on the mean of 3 seeds **and** on every seed; val macro-F1 could fall by no more than 0.03.
+Macro-F1 changes, mean of 3 seeds (per seed for trans_val):
 
 | change | val | trans_val | verdict |
 | --- | --- | --- | --- |
 | ConvNeXt-Tiny (ImageNet-1k), everything else phase 1's | +0.0245 | +0.0457 (+0.0767, +0.0327, +0.0277) | kept |
 | ConvNeXt-Tiny plus copy-paste, p 0.5 | +0.0063 | +0.1028 (+0.1007, +0.1021, +0.1057) | kept, **the finalist** |
 
-**Frozen at ConvNeXt-Tiny plus copy-paste.** Only it will be scored on test, once. The Space keeps
-arm B seed 2 until that scoring and the user's go-ahead; the seed it would serve (seed 2) was
-chosen on val.
+**Then the test sets, once, for the finalist only** (mean of 3 seeds, beside phase 1):
 
-**If the finalist is scored on test:** slide 5 shows phase 1's and phase 3's test numbers side by
-side, never one in place of the other, and says the test sets were used a **second time**, for
-one recipe chosen on val and trans_val only, after phase 1's test scores had been seen
-(`phase3-plan.md` section 7).
+| model | cis_test macro-F1 | trans_test accuracy | trans_test macro-F1 | accuracy gap | macro-F1 gap |
+| --- | --- | --- | --- | --- | --- |
+| phase 1: ResNet-18 arm A | 0.6216 | 0.5137 | 0.4127 | 0.1571 | 0.2089 |
+| phase 1: ResNet-18 arm B | 0.6361 | 0.5387 | 0.4309 | 0.1422 | 0.2051 |
+| phase 3: ConvNeXt-Tiny + copy-paste | 0.7241 | 0.6598 | 0.5367 | 0.0967 | 0.1874 |
 
-**Speaker notes.** The phase-2 trade-off comes back on a stronger backbone: against ConvNeXt
-alone, copy-paste again costs about 1 point of val macro-F1 for 3 on the new camera (-0.018 for
-+0.057), but ConvNeXt's own val gain pays the cost, so the recipe phase 2 had to stop now passes
-the same kind of rule. The finalist rule (higher mean trans_val, unless within 0.03, then higher
-val) chose it by 0.057 on 3 seeds; on seed 0 alone the two were within 0.03 and val would have
-picked ConvNeXt alone. That is why the rule reads the mean of 3 seeds. Say out loud: trans_val is
-one camera (46% bobcats), now judged against nine recipes and chosen on, so the gain is optimistic
-until the test sets say otherwise; the per-class view of where it came from is still to be read.
+- trans_test macro-F1 rose +0.12 over arm A, on every seed. On trans_val the gain had been +0.10,
+  so this time the one validation camera predicted it well.
+- The accuracy gap shrank by more than a third. The macro-F1 gap barely moved, because the
+  familiar cameras improved too.
+- **Disclosure, on the slide:** "The test sets' second use: one recipe, chosen on val and
+  trans_val only, after phase 1's test scores had been seen (2026-10-18)."
+
+**Figure (optional).** `docs/figures/p3_test_trans_per_class_seed2.png`: rodent at zero, bird the
+next weakest (cite).
+
+**Speaker notes.**
+
+- **How the finalist was chosen.** The phase-2 trade-off came back on a stronger backbone.
+  Against ConvNeXt alone, copy-paste again costs about 1 point of val macro-F1 for 3 on the new
+  camera (-0.018 for +0.057). But ConvNeXt's own val gain pays that cost, so the recipe phase 2
+  had to stop now passes the same kind of rule. The finalist rule (higher mean trans_val, unless
+  within 0.03, then higher val) chose it by 0.057 on 3 seeds. On seed 0 alone the two were within
+  0.03, and val would have picked ConvNeXt alone. That is why the rule reads the mean of 3 seeds.
+- **The test result, in this order:**
+  1. The disclosure first.
+  2. Then the gain: about 12 points of macro-F1 and 15 of accuracy on the nine unseen cameras.
+     Every phase-3 seed beats every phase-1 checkpoint there.
+  3. Then the limit: the macro-F1 gap is still about 0.19, and rare species on new cameras are
+     the hard part. On trans_test the rare species' macro-F1 is 0.43 against 0.63 for the common
+     ones, and no rodent is right on any seed.
+- **Say out loud: two things changed at once.** The backbone and copy-paste changed together.
+  ConvNeXt alone was kept but not test-scored, so the test result cannot split the credit; only
+  trans_val, one camera, can.
+- **The background shortcut is still there.** More of the Grad-CAM heat lands in the box (0.38
+  against 0.23, across two networks, so roughly). But with the animal blanked, 47% of the
+  accuracy survives, against 43% for arm B, so the scenery carries as large a share as before.
 
 ---
 
@@ -364,7 +412,8 @@ until the test sets say otherwise; the per-class view of where it came from is s
 **On the slide.**
 
 - **Limitations.** One dataset, one region, one species set. 3 seeds per arm. trans_val is one
-  camera. Confidences are not calibrated. Rare species are weak.
+  camera. Confidences are not calibrated. Rare species are weak, on new cameras most of all. The
+  test sets have been used twice, and phase 3 changed two things at once.
 - **The biggest lever: detect, then classify.** A detector (MegaDetector) finds the animal, the
   classifier sees only the crop. The dataset paper found crops more than halve the error. It
   changes the product: two models, a detector at inference.
@@ -386,16 +435,21 @@ BioCLIP needs a data audit, sequence voting needs the bursts at inference.
 
 - Using boxes to steer a classifier is a known idea; detect-then-classify is the deployed answer.
 - What this project adds: a controlled measurement on CCT20, two arms, 3 seeds, unseen cameras,
-  with an attention score and an animal-removed test, the test sets scored once.
+  with an attention score and an animal-removed test, the test sets scored once for it.
 - The answer: a small, consistent gain on new cameras; the attention barely moved; the
   background still carries the predictions.
+- Then, under a rule fixed in advance and disclosed as the test sets' second use: a stronger
+  backbone with copy-paste raised trans_test macro-F1 from 0.41 to 0.54. The macro-F1 gap stayed
+  near 0.19.
 - Data: Caltech Camera Traps (CCT20), Beery et al. 2018, CDLA-Permissive 1.0. Code MIT. Repo
   and Space links.
 
 **Speaker notes.** End on the sentence in the title. Then questions. Likely questions and where
 the answer is: "why not use the boxes at test?" (slide 16, detection); "is the gain real?"
 (slide 8, every seed, but small); "why is val so much higher than test?" (slide 6, time shift);
-"what did phase 2 find?" (slide 14).
+"what did phase 2 find?" (slide 14). "Isn't scoring the test set twice cheating?" (slide 15: one
+recipe chosen before the scoring, shown beside phase 1, never instead of it). "Was it the
+backbone or copy-paste?" (slide 15: the test cannot say).
 
 ---
 
@@ -410,3 +464,12 @@ the answer is: "why not use the boxes at test?" (slide 16, detection); "is the g
 - **How the test sets were protected** (plan section 7, protocol): one scoring, a script that
   refuses a second run, the user's go-ahead, logged in `docs/test-ledger.md`.
 - **The data**: `docs/figures/burst_length.png` (why the split is by sequence) (cite).
+- **Phase 3 on trans_test** (seed 2, the Space's next model; cite):
+  - `docs/figures/p3_test_trans_confusion_matrix_seed2.png`;
+  - `docs/figures/p3_attention_test_seed2.png`;
+  - `docs/figures/p3_features_by_camera_test.png`, where the features still group by camera;
+  - every seed in `docs/figures/p3_headline_test.md` and `docs/figures/p3_slices_test.md`.
+- **How the second test use was guarded** (`phase3-plan.md` section 7):
+  - one recipe, all three seeds, scored once;
+  - the finalist recomputed by the code from the ledgers, never typed in;
+  - its own test ledger, so phase 1's run-once guard stayed as it was.

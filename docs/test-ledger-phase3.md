@@ -26,3 +26,6 @@ Data: Caltech Camera Traps (CCT20), Beery et al. 2018, CDLA-Permissive 1.0.
 
 | run id | model | arm | config | split hash | checkpoint sha256 | cis_test accuracy | cis_test macro-F1 | trans_test accuracy | trans_test macro-F1 | accuracy gap | macro-F1 gap | scored at | approved by |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| p3_convnext_cp-seed0-20261020T013607Z | convnext_tiny | C | p3_convnext_cp | c78a9c1048f63aa52f34578ca17a6391315afdc2e478b4dbfd8a3aa954d1b009 | 1f25b156f936025480671b29aac11227445c135b35d189dd378134f9046d6068 | 0.7579 | 0.7260 | 0.6662 | 0.5465 | 0.0917 | 0.1794 | 20261020T213420Z | codx999 |
+| p3_convnext_cp-seed1-20261020T021059Z | convnext_tiny | C | p3_convnext_cp | c78a9c1048f63aa52f34578ca17a6391315afdc2e478b4dbfd8a3aa954d1b009 | 58b6e589588362b50831754610db6e94c50cdccc63869d4f53870dfdd274791e | 0.7490 | 0.7171 | 0.6592 | 0.5319 | 0.0898 | 0.1851 | 20261020T213420Z | codx999 |
+| p3_convnext_cp-seed2-20261020T021420Z | convnext_tiny | C | p3_convnext_cp | c78a9c1048f63aa52f34578ca17a6391315afdc2e478b4dbfd8a3aa954d1b009 | 67a6de97379f75e6c523a72ae358bf4ade2a76d53492cc7d55241bf3852e5fa6 | 0.7627 | 0.7292 | 0.6540 | 0.5315 | 0.1087 | 0.1977 | 20261020T213420Z | codx999 |

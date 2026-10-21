@@ -5497,6 +5497,111 @@ and R42 hold. The code-reviewer ran one empty, out-of-allowlist `uv run --offlin
 review is clean, flip and merge"); tier 3 was met with three full-range reviews in place of
 `/code-review ultra` (above). The scoring run stays the user's.
 
+## 2026-10-20: session 13, item 13.14, phase 3's test scoring reported beside phase 1's (Opus 5.5, high)
+
+The user approved item 13.14 on 2026-10-20 through the coordinator. It was added to
+`docs/progress.json` (session 13, owner claude, due 2026-10-22). Only docs and docs/figures (and
+README) changed: no code, config or notebook. Main at `2e4cda6`, the coordinator's commit of the
+three phase-3 test rows. The scoring ran on Kaggle at `58d92f7`, approved by codx999, scored at
+20261020T213420Z, with no leakage alarm. This session found main without those rows at first and
+stopped. It went on after the coordinator's commit, synced to `2e4cda6` by fast-forward.
+
+**Done.**
+
+- `README.md`:
+  - Status: phases 1 to 3 complete.
+  - Results: an intro saying the test sets were used twice; phase 1's subsections kept and
+    labelled "(phase 1)"; a new subsection, "Phase 3: ConvNeXt-Tiny with copy-paste, the second
+    test scoring".
+  - The new subsection holds the disclosure, the side-by-side table, the deltas, the gap
+    reading, the two-changes caveat, the attention and slice tables, the Space's next model,
+    6 figures and the citation.
+  - Honest notes updated; "What's next" rewritten (it was stale since phase 2).
+  - The Demo section is untouched, left to item 13.15.
+- `docs/plan.md` section 7: a "Phase 3's test results" block after phase 1's, with the disclosure,
+  the tables, the deltas, the readings, the figures and the Space's next model. No rule changed.
+- `docs/phase3-plan.md`:
+  - the opening paragraph: the scoring ran, and phase 3 is complete;
+  - the sources sentence now names the two phase-3 ledgers;
+  - section 13: a new "The test scoring" block and "Phase 3 is complete." Earlier text is kept
+    as the dated record.
+- `docs/slides.md`:
+  - the header's sources;
+  - slide 3: the second use;
+  - slide 4: the switch, pending 13.15, and the phase-3 model's answers on `assets/`, for after
+    the switch;
+  - slide 5: the phase-3 row under phase 1's, with the disclosure footnote;
+  - slide 10: the phase-3 overlays, in the notes;
+  - slide 15: rewritten, no longer pending; the test table, the disclosure and the
+    two-changes caveat;
+  - slides 16 and 17, and the backup slides.
+- `docs/figures/`: 6 PNGs, from seed 2's outputs unless noted:
+  - `p3_test_trans_confusion_matrix_seed2.png`;
+  - `p3_test_trans_per_class_seed2.png`;
+  - `p3_attention_test_seed2.png`;
+  - `p3_features_by_camera_test.png` (all 3 seeds);
+  - `p3_gradcam_overlay_01.png` and `p3_gradcam_overlay_08.png`, the same `assets/` photos as
+    phase 1's 01 and 08.
+
+  Also `p3_headline_test.md` and `p3_slices_test.md`, copied unchanged. Checked first: they hold
+  counts, scores, run ids, checkpoint and split hashes, and the scoring's own output names (e.g.
+  `attention_in_box.png`), but no image id or dataset file name. Nothing else was copied from the
+  scoring's 61 files: not `metrics.md`, not `attention.md`, and no other PNG.
+- `docs/learning-journal.md`, topic 16: what a second look at the test set costs and how
+  disclosure pays for it, with a command.
+
+**The numbers.**
+
+- Every phase-3 test number was read from `docs/test-ledger-phase3.md`, every phase-1 one from
+  `docs/test-ledger.md`. The means and deltas were recomputed with a scratch script (not
+  committed).
+- They agree with the coordinator's figures. Only the fourth decimal of two means depends on how
+  they are taken. The scoring's mean row (`p3_headline_test.md`) averages unrounded scores:
+  trans_test macro-F1 0.5367, macro-F1 gap 0.1874. Averaging the ledger's 4-decimal rows gives
+  0.5366 and 0.1875.
+- The docs use the scoring's mean row and say so (plan section 7). The deltas follow from it:
+  - against arm A: trans_test macro-F1 +0.1240;
+  - against arm B: +0.1058.
+- The attention, animal-removed and slice numbers were read from the scoring's per-seed
+  `attention.md` and `slices.md` and averaged here: attention 0.3547 and 0.3794; blanked
+  accuracy 0.3510 of 0.7485 on trans_test.
+- Rodent: 0 of 58 right on trans_test, from each seed's `metrics.md` confusion matrix (counts
+  only, not copied).
+
+**For the user.**
+
+- **"Shrank by about a third" is 38%** (0.1571 to 0.0967). The docs say "more than a third".
+- **The Grad-CAM comparison crosses networks.** Attention-in-box rose from 0.23 to 0.38, but the
+  map comes from ConvNeXt's last stage, not ResNet-18's `layer4`. The docs call the comparison
+  rough. With the box blanked, 47% of the trans_test accuracy survives, against 43% for both
+  phase-1 arms. So the docs say the shortcut is still there, not that it shrank.
+- **The phase-3 seed-2 model gets 8 of the 10 `assets/` photos right** (arm B seed 2: 5), read
+  from the overlay titles. The opossum is called squirrel (0.39) and the raccoon by day cat
+  (0.92). Slide 4 carries this as "after the switch".
+- **Item 13.15 was not merged** when this was written (origin/main at `2e4cda6`). The README's
+  Demo section still names arm B seed 2, and slide 4 says the switch is pending. Once 13.15
+  lands, slide 4's model line needs the one-line change its note describes.
+- **The README disclosure goes a little further than section 7's wording.** It says phases 2
+  and 3 were designed after phase 1's test scores were seen, so those scores may have shaped
+  what was tried. Phase 2 grounds copy-paste in val's animal-removed test, so the docs say "may".
+
+**Checks.**
+
+- `uv run python scripts/guard_data.py --all` exit 0 (37 images in `docs/figures/`, 8.8 MB).
+- Every relative link and anchor in the changed files resolves, and every `p3_` file named in
+  the docs exists.
+- No file changed outside `README.md` and `docs/`.
+- The journal command runs green.
+- `bash scripts/check.sh` green at the start (1,344 passed in 9 min 18 s, beside item 13.15's
+  suite) and again before the commit (1,344 passed in 10 min 10 s); mypy strict, ruff and the
+  data guard clean.
+- **13.14 flipped to `passes: true`.**
+
+Review: tier 0 (no code changed; `scripts/risk_files.sh` prints nothing). Nothing to run.
+Spec changed, results only, no rule: `docs/plan.md` section 7 (a new phase-3 results block) and
+`docs/phase3-plan.md` (the opening paragraph and section 13). The invariant rows that cite those
+sections (R04, R17, R35, R40) are unchanged, because no rule they quote changed.
+
 ## 2026-10-20: item 13.15, the Space switched to p3_convnext_cp seed 2 (code side; Opus 5.5, high)
 
 **Added** to `docs/progress.json` on the user's OK via the coordinator (2026-10-20), owner claude,

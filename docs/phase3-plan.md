@@ -7,7 +7,10 @@ before any phase-3 run. Phase 1 is done and was scored on test once (`docs/test-
 scored at 20261018T193117Z). Phase 2 is frozen at the baseline (`docs/phase2-plan.md` section 12).
 The Space serves ResNet-18 arm B seed 2 and stays the safety net whatever phase 3 gives.
 **Results** (item 13.13, section 13): both candidates kept, phase 3 frozen at the finalist
-`p3_convnext_cp`; its test scoring waits for item 13.12 and the user's go-ahead.
+`p3_convnext_cp`. **Its one test scoring ran on 2026-10-20** (item 13.12's code, the user's
+go-ahead; section 13, "The test scoring", item 13.14): trans_test macro-F1 0.5367 against phase
+1's 0.4127 (arm A) and 0.4309 (arm B), means of 3 seeds, the test sets' disclosed second use.
+Phase 3 is complete.
 
 This file owns phase 3. `docs/plan.md` stays the source of truth for phase 1, and
 `docs/phase2-plan.md` for phase 2; phase 3 reuses phase 2's machinery and rules except where a
@@ -16,8 +19,8 @@ limits, for phase 3 only: a backbone larger than ResNet-18, and (candidate b) mo
 training-time change.
 
 Data: Caltech Camera Traps (CCT20), Beery et al. 2018, CDLA-Permissive 1.0. Every score below
-comes from `docs/ledger.md`, `docs/ledger-phase2.md`, `docs/test-ledger.md`, `docs/plan.md` or
-`docs/phase2-plan.md`, or is derived from them (a difference or a mean of their rows).
+comes from `docs/ledger.md`, `docs/ledger-phase2.md`, `docs/ledger-phase3.md`, `docs/test-ledger.md`,
+`docs/test-ledger-phase3.md`, `docs/plan.md` or `docs/phase2-plan.md`, or is derived from them (a difference or a mean of their rows).
 Hypotheses and run times are estimates and say so. Model sizes are not quoted here: item 13.11's
 shape table (`/review-shapes`) measures them.
 
@@ -553,6 +556,61 @@ that stopped it in phase 2. It is the finalist, the one recipe that will be scor
 control re-ran phase 1 to the fourth decimal, and one seed alone would have picked the other
 recipe. trans_val is one camera, chosen on, so the gain is optimistic until the test sets say
 otherwise.
+
+**The test scoring** (item 13.14 records it, 2026-10-20). Section 7's one scoring ran as written:
+`notebooks/kaggle_score_test.ipynb` with `PHASE = 3` at commit `58d92f7`, approved by codx999,
+scored at 20261020T213420Z. The code recomputed the finalist from the two ledgers and got
+`p3_convnext_cp`, the same as above. It scored that recipe's 3 seeds once each on cis_test and
+trans_test and nothing else. No leakage alarm fired. The rows are in
+[test-ledger-phase3.md](test-ledger-phase3.md). **Disclosure** (section 7): this is the test sets'
+second use, for one recipe chosen on val and trans_val only and fixed before the scoring, after
+phase 1's test scores (2026-10-18) had been seen. It is reported beside phase 1's, never in its
+place.
+
+| model | cis_test accuracy | cis_test macro-F1 | trans_test accuracy | trans_test macro-F1 | accuracy gap | macro-F1 gap |
+| --- | --- | --- | --- | --- | --- | --- |
+| phase 1: ResNet-18 arm A, mean of 3 seeds | 0.6708 | 0.6216 | 0.5137 | 0.4127 | 0.1571 | 0.2089 |
+| phase 1: ResNet-18 arm B, mean of 3 seeds | 0.6808 | 0.6361 | 0.5387 | 0.4309 | 0.1422 | 0.2051 |
+| `p3_convnext_cp`, seed 0 | 0.7579 | 0.7260 | 0.6662 | 0.5465 | 0.0917 | 0.1794 |
+| `p3_convnext_cp`, seed 1 | 0.7490 | 0.7171 | 0.6592 | 0.5319 | 0.0898 | 0.1851 |
+| `p3_convnext_cp`, seed 2 | 0.7627 | 0.7292 | 0.6540 | 0.5315 | 0.1087 | 0.1977 |
+| `p3_convnext_cp`, mean of 3 seeds | 0.7565 | 0.7241 | 0.6598 | 0.5367 | 0.0967 | 0.1874 |
+
+The phase-1 rows come from [test-ledger.md](test-ledger.md). The mean row is the scoring's own,
+which averages the unrounded scores. Averaging the 4-decimal rows gives trans_test macro-F1 0.5366
+and a macro-F1 gap of 0.1875.
+
+- **Against the baseline** (arm A; means of 3 seeds): cis_test accuracy +0.0857, macro-F1
+  +0.1025; trans_test accuracy +0.1461, macro-F1 +0.1240, up on every seed (macro-F1 +0.1394,
+  +0.1150, +0.1174). **Against arm B**, the deployed model: trans_test accuracy +0.1211,
+  macro-F1 +0.1058.
+- **trans_val against trans_test.** Section 6's worry was that a gain chosen on one camera would
+  not carry to new ones. This time it did: the mean trans_val gain over arm A was +0.1028
+  macro-F1 and +0.1081 accuracy; on trans_test's nine cameras it is +0.1240 and +0.1461. The
+  optimism section 6 expected did not show up. That is one outcome, and it does not make
+  trans_val a reliable guide.
+- **The gap.** The accuracy gap shrank by more than a third (0.1571 to 0.0967). The macro-F1 gap
+  barely moved (0.2089 to 0.1874), because cis_test macro-F1 rose by +0.10 as well. Rare species
+  on new cameras remain the hard part. On trans_test, the rare species' macro-F1 is 0.43 against
+  0.63 for the common ones (means of 3 seeds, [p3_slices_test.md](figures/p3_slices_test.md)),
+  and no rodent is predicted right on any seed.
+- **What the scoring cannot say.** The finalist changed two things at once, the backbone and
+  copy-paste. `p3_convnext` alone was kept but, by section 7, not scored on test. The split
+  between the two is known only on trans_val (+0.0457 for the backbone, +0.0571 for copy-paste on
+  top of it), one camera.
+- **Where it looks.** The rest of the evaluation is in [plan.md](plan.md) section 7, "Phase 3's
+  test results": attention-in-box, the animal-removed test, the slices and the figures. In short,
+  more of the Grad-CAM mass is in the box (0.3794 against arm B's 0.2331 on trans_test, across
+  two networks, so roughly). With the box blanked, 47% of the trans_test accuracy survives, against
+  43%, so the background still carries a large share. The features still group by camera.
+- **The Space.** Its next model, seed 2, was chosen on val above, before the scoring. It scores
+  0.6540 accuracy and 0.5315 macro-F1 on trans_test, against the live arm B seed 2's 0.5399 and
+  0.4275. The switch and section 11's CPU check are item 13.15. Until then the Space serves arm B
+  seed 2.
+
+**Phase 3 is complete.** Its one recipe has been kept, frozen and scored once on test. No further
+phase-3 run or test scoring follows. The future-work list above stands. Separating the backbone
+from copy-paste on unseen cameras would need cameras the test sets do not already hold.
 
 ## Sources
 

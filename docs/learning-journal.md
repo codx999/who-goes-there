@@ -895,6 +895,22 @@ See [slides.md](slides.md). Try:
 uv run python -m trailcam.train.ledger --check docs/ledger.md
 ```
 
+**Added by 13.14, the second test scoring.** Looking at a test set again costs some of its
+honesty. Phase 3 was designed after phase 1's test scores were known, so its +0.12 macro-F1 on
+new cameras is a less clean estimate than phase 1's numbers. Disclosure pays that cost back in
+three ways:
+
+- the recipe was fixed on val before the scoring, and only it was scored, once;
+- the result sits beside phase 1's, never in its place;
+- every place that shows it says it was the second use.
+
+What the test set still cannot say is also stated: two changes at once can't be told apart. See
+[README.md](../README.md), "Phase 3", and [phase3-plan.md](phase3-plan.md) section 7. Try:
+
+```bash
+uv run python scripts/guard_data.py --all
+```
+
 ---
 
 ## Surprises and lessons

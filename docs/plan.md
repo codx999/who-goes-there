@@ -403,6 +403,90 @@ methods. Mixed outcomes are reported as mixed. A negative result is a result.
     `test_trans_per_camera_arm_{a,b}_seed0.png`, `attention_test_arm_{a,b}_seed0.png`,
     `features_by_{species,camera}_test.png`, `slices_test.md` and `headline_test.md`.
   - The Space serves arm B seed 2, chosen on val (section 11, open question 7).
+- **Phase 3's test results (the test sets' second use, 2026-10-20)**: reported beside phase 1's
+  above, never in their place. **Disclosure** (`docs/phase3-plan.md` section 7): the test sets
+  were used a second time, for one recipe chosen on val and trans_val only and fixed before the
+  scoring, after phase 1's test scores had been seen (2026-10-18). The recipe is
+  `p3_convnext_cp`: ConvNeXt-Tiny (`convnext_tiny.fb_in1k`) with phase 2's arm C copy-paste at
+  paste probability 0.5, phase 1's recipe otherwise (`docs/phase3-plan.md` section 13, the
+  freeze). `notebooks/kaggle_score_test.ipynb` with `PHASE = 3` at commit `58d92f7`, approved by
+  codx999, scored at 20261020T213420Z, its 3 seeds scored once each on the same cis_test (14,478
+  images) and trans_test (21,473 images, 9 unseen cameras). No leakage alarm fired. The rows are
+  in `docs/test-ledger-phase3.md`, and the full table is in `docs/figures/p3_headline_test.md`.
+
+  | model | cis_test accuracy | cis_test macro-F1 | trans_test accuracy | trans_test macro-F1 | accuracy gap | macro-F1 gap |
+  | --- | --- | --- | --- | --- | --- | --- |
+  | phase 1: ResNet-18 arm A, mean of 3 seeds | 0.6708 | 0.6216 | 0.5137 | 0.4127 | 0.1571 | 0.2089 |
+  | phase 1: ResNet-18 arm B, mean of 3 seeds | 0.6808 | 0.6361 | 0.5387 | 0.4309 | 0.1422 | 0.2051 |
+  | phase 3: ConvNeXt-Tiny + copy-paste, seed 0 | 0.7579 | 0.7260 | 0.6662 | 0.5465 | 0.0917 | 0.1794 |
+  | phase 3: ConvNeXt-Tiny + copy-paste, seed 1 | 0.7490 | 0.7171 | 0.6592 | 0.5319 | 0.0898 | 0.1851 |
+  | phase 3: ConvNeXt-Tiny + copy-paste, seed 2 | 0.7627 | 0.7292 | 0.6540 | 0.5315 | 0.1087 | 0.1977 |
+  | phase 3: ConvNeXt-Tiny + copy-paste, mean of 3 seeds | 0.7565 | 0.7241 | 0.6598 | 0.5367 | 0.0967 | 0.1874 |
+
+  The phase-3 mean row is the scoring's own: it averages the unrounded scores. Averaging the
+  ledger's 4-decimal rows gives the same row except trans_test macro-F1 0.5366 and macro-F1 gap
+  0.1875 (rounding). The deltas below use the mean row.
+
+  - **Against arm A** (mean of 3 seeds): cis_test accuracy +0.0857, macro-F1 +0.1025;
+    trans_test accuracy +0.1461, macro-F1 +0.1240. Seed by seed on trans_test, macro-F1 +0.1394,
+    +0.1150, +0.1174 and accuracy +0.1531, +0.1376, +0.1475. **Against arm B**: trans_test
+    accuracy +0.1211, macro-F1 +0.1058 (seed by seed, macro-F1 +0.1102, +0.1029, +0.1040). The
+    lowest phase-3 seed on trans_test (accuracy 0.6540, macro-F1 0.5315) is above the highest
+    phase-1 checkpoint (0.5435, 0.4363).
+  - **The gap.** The accuracy gap shrank by more than a third, from 0.1571 to 0.0967 (arm A's
+    mean). The macro-F1 gap barely moved, from 0.2089 to 0.1874, because cis_test macro-F1 rose
+    by about as much as trans_test's (+0.10 against +0.12). On trans_test, the rare species
+    (bird, rodent, skunk) have a macro-F1 of 0.4281 against 0.6337 for the common ones; on
+    cis_test the rare species score 0.7845 (means of 3 seeds, `p3_slices_test.md`). No rodent
+    on trans_test (58 images) is predicted right on any seed. Rare species on new cameras
+    remain the hard part.
+  - **trans_val predicted the gain this time.** The finalist's mean trans_val gain over arm A
+    was +0.1028 macro-F1 and +0.1081 accuracy (`docs/phase3-plan.md` section 13); on trans_test it
+    is +0.1240 and +0.1461. In phase 1, trans_val had pointed the wrong way. One camera is
+    sometimes right, which is not the same as reliable.
+  - **Two changes at once.** ConvNeXt-Tiny and copy-paste changed together, so this result
+    cannot separate them. `p3_convnext` (ConvNeXt-Tiny alone) was also kept on val and trans_val
+    but, by section 7's rule, not scored on test. On trans_val only, the backbone gave +0.0457
+    macro-F1 and copy-paste +0.0571 on top (`docs/phase3-plan.md` section 13): one camera's split,
+    not a test result.
+  - Attention-in-box and the animal-removed test, mean of 3 seeds, on the images whose box lies
+    inside the centre crop (the same 11,312 and 16,982 as phase 1; an even map scores 0.127 and
+    0.137):
+
+    | model | attention-in-box, cis_test | attention-in-box, trans_test | trans_test accuracy | trans_test accuracy, box blanked | cis_test accuracy | cis_test accuracy, box blanked |
+    | --- | --- | --- | --- | --- | --- | --- |
+    | phase 1: arm A | 0.2119 | 0.2315 | 0.5754 | 0.2470 | 0.7455 | 0.3445 |
+    | phase 1: arm B | 0.2173 | 0.2331 | 0.6039 | 0.2613 | 0.7557 | 0.3406 |
+    | phase 3: ConvNeXt-Tiny + copy-paste | 0.3547 | 0.3794 | 0.7485 | 0.3510 | 0.8504 | 0.4435 |
+
+    Per seed on trans_test: attention 0.3732, 0.3785 and 0.3864; blanked accuracy 0.3683, 0.3248
+    and 0.3600. More of the Grad-CAM mass falls in the box. But the map comes from ConvNeXt's last
+    stage, not ResNet-18's `layer4`, so the comparison across networks is rough. With the box
+    blanked, 47% of the trans_test accuracy survives (0.3510 of 0.7485), against 43% for both
+    phase-1 arms: the background still carries a large share of the predictions.
+  - Slice table on trans_test, seed 0, like phase 1's above (every seed in `p3_slices_test.md`):
+
+    | model | accuracy, day | accuracy, night | accuracy, common species | accuracy, rare species |
+    | --- | --- | --- | --- | --- |
+    | phase 1: ResNet-18 arm B | 0.5618 | 0.5362 | 0.5504 | 0.3066 |
+    | phase 3: ConvNeXt-Tiny + copy-paste | 0.6563 | 0.6701 | 0.6718 | 0.4738 |
+
+    Night is no longer harder than day on trans_test. Re-weighting trans_test to the cis night
+    share changes the gap by under 0.01 on every seed (at most 0.0072).
+  - cis_test is again far below val: the finalist's mean val macro-F1 is 0.8619 and its
+    cis_test macro-F1 0.7241. This is the time shift again.
+  - Figures in `docs/figures/` (seed 2, the Space's next model; the features on all 3 seeds):
+    `p3_test_trans_confusion_matrix_seed2.png`, `p3_test_trans_per_class_seed2.png`,
+    `p3_attention_test_seed2.png`, `p3_features_by_camera_test.png` (the features still group by
+    camera), `p3_slices_test.md` and `p3_headline_test.md`. Two Grad-CAM overlays of the same
+    `assets/` photos as phase 1's 01 and 08: `p3_gradcam_overlay_01.png`, the bobcat, now called
+    bobcat (0.84) with the heat on the animal; `p3_gradcam_overlay_08.png`, the opossum, now
+    called squirrel (0.39), still wrong but with the heat on the animal instead of the
+    background. Seed 2 gets 8 of the 10 `assets/` photos right (arm B seed 2: 5); the raccoon by
+    day is called cat. (Data: Beery et al. 2018, CDLA-Permissive 1.0.)
+  - The Space's next model, `p3_convnext_cp` seed 2, was chosen on val before the scoring
+    (`docs/phase3-plan.md` section 13). It scores 0.6540 accuracy and 0.5315 macro-F1 on
+    trans_test; the live arm B seed 2 scores 0.5399 and 0.4275. The switch is item 13.15.
 
 ## 8. Demo and deployment
 
