@@ -36,22 +36,23 @@ training cameras; **trans_val** = one unseen camera kept for choosing; **cis_tes
 | --- | --- | --- | --- |
 | 1 | Who goes there? The labelling problem | 2 | 2 |
 | 2 | What this project is, and what it is not | 2 | 4 |
-| 3 | The known problem | 3 | 7 |
-| 4 | The process | 3 | 10 |
-| 5 | Step 0: the plain baseline | 3 | 13 |
-| 6 | Understanding the failure | 3 | 16 |
-| 7 | The method ladder | 5 | 21 |
-| 8 | What the failures taught | 2 | 23 |
-| 9 | The result, with the disclosure | 3 | 26 |
-| 10 | Before and after, then the live demo | 6 | 32 |
-| 11 | Limits and next steps | 2 | 34 |
-| 12 | What I learned | 2 | 36 |
-| 13 | Credits | 1 | 37 |
+| 3 | The known problem | 2 | 6 |
+| 4 | The process | 3 | 9 |
+| 5 | Step 0: the plain baseline | 3 | 12 |
+| 6 | Understanding the failure | 2 | 14 |
+| 7 | The method ladder | 4 | 18 |
+| 8 | What the failures taught | 2 | 20 |
+| 9 | The result, with the disclosure | 3 | 23 |
+| 10 | Before and after, then the live demo | 4 | 27 |
+| 11 | Limits and next steps | 2 | 29 |
+| 12 | What I learned | 2 | 31 |
+| 13 | Credits | 1 | 32 |
 | | Q&A, from the backup slides | after | |
 
-About 37 minutes. If the slot is nearer 32: cut slide 6's second figure, give slide 7 four
-minutes (talk through the kept and the most instructive dropped rungs only), and give slide 10's
-demo four minutes (one photo fewer). That brings it to about 33.
+About 32 minutes (trimmed from 37 on 2026-10-25): slide 3's background studies moved to "if
+asked"; slide 6 shows one figure; slide 7 is talked through on its kept and most instructive
+dropped rungs; slide 10's demo has one photo fewer. If running long on the day, cut in this
+order: slide 10's night coyote (optional already), slide 8's last bullet, slide 11's notes.
 
 ---
 
@@ -95,7 +96,7 @@ the learning was in the second part.
 
 ---
 
-## Slide 3. The known problem (3 min)
+## Slide 3. The known problem (2 min)
 
 **On the slide.**
 
@@ -114,14 +115,16 @@ the learning was in the second part.
 **Figure.** `docs/figures/camera_locations.png` (images per camera, cis vs trans) (cite).
 
 **Speaker notes.** The cis/trans measurement is Beery et al.'s, not mine; I adopted their
-benchmark. Koh et al. 2021 (WILDS) later made unseen-camera shift a standard benchmark, and
+benchmark. A field biologist moves cameras all the time, so the trans number is the one a user
+lives with. Then move on: "I set out to reproduce it."
+
+*If asked.* Koh et al. 2021 (WILDS) later made unseen-camera shift a standard benchmark, and
 Schneider et al. 2020 saw the same effect on a Canadian dataset (95.6% at trained locations,
-68.7% at new ones), so this is a well-established problem. A field biologist moves cameras all the
-time, so the trans number is the one a user lives with. `empty`, badger, fox and deer are dropped
-(plan section 2): `empty` is a different problem, the other three are too rare to learn (Schneider
-et al. put the practical floor at about 1,000 images per class). Two changes from the paper,
-for hygiene: I re-split train and val by burst (`seq_id`), because the published files share
-some bursts between them, and I report macro-F1 beside accuracy, as WILDS does.
+68.7% at new ones), so this is a well-established problem. `empty`, badger, fox and deer are
+dropped (plan section 2): `empty` is a different problem, the other three are too rare to learn
+(Schneider et al. put the practical floor at about 1,000 images per class). Two changes from the
+paper, for hygiene: I re-split train and val by burst (`seq_id`), because the published files
+share some bursts between them, and I report macro-F1 beside accuracy, as WILDS does.
 
 ---
 
@@ -187,7 +190,7 @@ per-camera bars show the spread across the 9 unseen cameras.
 
 ---
 
-## Slide 6. Understanding the failure (3 min)
+## Slide 6. Understanding the failure (2 min)
 
 **On the slide.** Three tools to ask "where does the model look?", ResNet-18 arm A, trans_test,
 mean of 3 seeds, images whose box lies inside the centre crop (plan section 7):
@@ -200,21 +203,19 @@ mean of 3 seeds, images whose box lies inside the centre crop (plan section 7):
   chance is 0.083. With the animal gone, the scenery alone still names the class far above
   chance: **the background is carrying predictions**.
 
-**Figures.** `docs/figures/attention_test_arm_a_seed0.png`; beside it, small,
-`docs/figures/gradcam_overlay_05.png` (a day coyote, right at 1.00, part of the heat on the sand
-below it) (cite).
+**Figure.** `docs/figures/attention_test_arm_a_seed0.png`. The day-coyote overlay that used to
+sit beside it is in backup B2.
 
 **Speaker notes.** Geirhos et al. 2020 call this shortcut learning: a rule that works on the
 benchmark and fails under shift. The two scores are simple checks that the project's literature
 review suggested (`research-report.md` Part 4), so a score change can be read: did the model move
 its eyes, or just get lucky? Grad-CAM is a heuristic, not ground truth, which is why it is paired
-with the animal-removed test. The overlay is from arm B seed 2, the model the Space served in
-phase 1; arm A's attention is within 0.002 of arm B's. A right answer is not always for the right
-reason: the coyote is right, and part of the heat is on the sand.
+with the animal-removed test. The Grad-CAM overlays themselves come on slide 10, before and
+after.
 
 ---
 
-## Slide 7. The method ladder (5 min)
+## Slide 7. The method ladder (4 min)
 
 **On the slide.** One rung per method: the source, what it suggested, what happened in my
 setup, and the verdict by the rule of slide 4. Changes are in macro-F1 against the baseline (arm
@@ -234,7 +235,9 @@ to 8 were judged on val and trans_val only.
 
 **Speaker notes.**
 
-- Walk the ladder top to bottom; spend the time on rungs 1, 5, 7 and 8.
+- Four minutes: spend them on rungs 1, 5, 7 and 8. Rungs 2, 3, 4 and 6 get one sentence
+  together: "three smaller changes and a gentler copy-paste, all dropped by the rule"; the
+  details are in backup B1.
 - **Rung 1.** Beery et al. classified the box crop at test time, which needs a detector when
   deployed. My literature review suggested spending the free boxes during training only, so the
   deployed model stays one classifier. I do not know whether someone has tested exactly this, and
@@ -316,9 +319,9 @@ next weakest (cite).
 
 ---
 
-## Slide 10. Before and after, then the live demo (6 min)
+## Slide 10. Before and after, then the live demo (4 min)
 
-**On the slide, part 1 (about 2 min): the same two photos, before and after.** Both from cameras
+**On the slide, part 1 (about 1 min): the same two photos, before and after.** Both from cameras
 never seen in training (cite: Beery et al. 2018, CDLA-Permissive 1.0):
 
 | photo | before: phase 1, ResNet-18 arm B seed 2 | after: phase 3, ConvNeXt-Tiny + copy-paste seed 2 |
@@ -333,20 +336,18 @@ slide 9's numbers. The numbers in parentheses are the model's confidence, its ow
 a calibrated probability (calibration, item 12.03, is not done). The overlay number is the
 photo's place in `assets/` in name order, not the index in the file name.
 
-**Part 2 (about 4 min): the live demo.** The Space,
+**Part 2 (about 3 min): the live demo.** The Space,
 <https://huggingface.co/spaces/Codx999/who-goes-there>, serving phase 3's ConvNeXt-Tiny +
 copy-paste seed 2 (switched on 2026-10-21, item 13.15; about 0.3 to 0.6 s a click on the Space's
 CPU, Grad-CAM on included).
 
 The script, saying before each click what I expect:
 
-1. **Night coyote**, `trans_coyote_night_05`: coyote, 100% on the Space (2026-10-21). "Infrared,
-   no colour, a camera it never saw."
-2. **The bobcat with Grad-CAM on**, `trans_bobcat_day_01`: bobcat 84%, cat 16% on the Space
+1. **The bobcat with Grad-CAM on**, `trans_bobcat_day_01`: bobcat 84%, cat 16% on the Space
    (2026-10-21). "The photo from the slide before."
-3. **The opossum, an honest failure**, `trans_opossum_day_10`: squirrel (0.39) in the scoring's
+2. **The opossum, an honest failure**, `trans_opossum_day_10`: squirrel (0.39) in the scoring's
    Grad-CAM run of the same weights. "It will get this wrong, and here is where it looks."
-4. **The live sort** (item 12.05): about 200 trans-test photos from a folder outside the repo,
+3. **The live sort** (item 12.05): about 200 trans-test photos from a folder outside the repo,
    sorted into class folders with a visible timer and per-class counts:
 
 ```bash
@@ -372,6 +373,9 @@ uv run python -m trailcam.demo.app --checkpoint <seed-2 checkpoint>.pt --config-
   logged yet. On the scoring's run, the model gets 8 of the 10 `assets/` photos right; the other
   wrong one is the raccoon by day (`trans_raccoon_day_07`), called cat (0.92).
 - A wrong answer you predicted is a better demo than a right one you hoped for.
+- **Optional, only if ahead of time:** the night coyote, `trans_coyote_night_05`, coyote 100% on
+  the Space (2026-10-21): "infrared, no colour, a camera it never saw". It opened the demo in the
+  37-minute version; cut first.
 - The live sort: read the counts out loud at the end; they are counts per predicted class, not a
   score (the script reads no labels).
 - If the 12.05 rehearsal includes the 20-photo human baseline, it goes before the model answers.
@@ -498,6 +502,9 @@ Caveat: trans_val is one camera, so these are one-camera results.
 | arm B | 0.2331 | 0.6039 | 0.2613 |
 
 - `docs/figures/attention_test_arm_a_seed0.png` and `docs/figures/attention_test_arm_b_seed0.png`.
+- `docs/figures/gradcam_overlay_05.png`, arm B seed 2 (the Space's phase-1 model): a day coyote,
+  right at 1.00, with part of the heat on the sand below it. A right answer is not always for
+  the right reason (cite).
 - From the slices (seed 0): on the rare species (bird, rodent, skunk) arm B was lower, 0.3066
   against 0.3754 accuracy, so its gain is in the common classes.
 
