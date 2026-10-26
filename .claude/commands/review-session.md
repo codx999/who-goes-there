@@ -7,8 +7,8 @@ playbook"). Do not edit anything in this command. Only the user starts it; never
 
 Arguments (all optional): a range `<a>..<b>` to review only part of the branch (fix rounds) or
 more than the branch (commits already merged to main, e.g. `9788ae4..HEAD` for the first review),
-and item ids (e.g. `3.02 3.03`) naming the `docs/progress.json` items the range implements. The
-implementing session knows the items; pass them when you type the command in that session. When a
+and item ids (e.g. `3.02 3.03`) naming the items the range implements (in
+`$MAIN/docs/progress.json`, the main checkout's local copy; see CLAUDE.md). The implementing session knows the items; pass them when you type the command in that session. When a
 range is given, use it everywhere below in place of `<base>..HEAD`.
 
 1. If `git status --porcelain` shows changes, stop and ask to commit first: the reviewers see

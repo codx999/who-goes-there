@@ -10,7 +10,11 @@ scope: detection, sequence-level classification, the `empty` class, anything bey
 ## Where the context lives
 
 - `docs/plan.md`: source of truth (design, split, training, schedule, decisions and why).
-- `docs/progress.json`: one item per unit of work; `docs/progress-log.md`: dated done / next.
+- `docs/progress.json`: one item per unit of work; `docs/progress-log.md`: dated done / next;
+  `docs/learning-journal.md`: the learning record. These three and the talk notes are local only
+  (git-ignored): they live in the main checkout's `docs/`, never in a worktree. From any checkout,
+  `MAIN="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"` gives the main
+  checkout's absolute path; read and write `$MAIN/docs/progress.json` and the others there.
 - `docs/data-inspection.md`: verified CCT20 facts. `docs/course-guideline.md`: class requirements.
 - `docs/setup-playbook.md`: session protocol and review tiers. `docs/references.md`: how to work.
 - `docs/research-report.md`: literature review and the evidence behind the experiment (section 6 of the plan).
@@ -42,12 +46,14 @@ scope: detection, sequence-level classification, the `empty` class, anything bey
 ## Session protocol
 
 1. Start: `pwd`, `git log --oneline -10`, `git merge-base --is-ancestor main HEAD` (in an app-made
-   worktree with no own commits, `git merge --ff-only main` if it fails), read the last entries of
-   `docs/progress-log.md`, `bash scripts/check.sh`, `gh run list --branch main --limit 1`. Fix red first.
-2. Pick: the lowest-id item in the current session with `owner: claude` and `passes: false`.
+   worktree with no own commits, `git merge --ff-only main` if it fails), set `MAIN` (above), read the
+   last entries of `$MAIN/docs/progress-log.md`, `bash scripts/check.sh`, `gh run list --branch main --limit 1`. Fix red first.
+2. Pick: the lowest-id item in `$MAIN/docs/progress.json` for the current session with
+   `owner: claude` and `passes: false`.
 3. Verify, then flip: run the item's steps; set `passes: true` only if they succeed. Never edit or
    delete items; new items need the user's OK. Items with `owner: user` are never flipped by Claude.
-4. End: `check.sh` green, a dated entry in `docs/progress-log.md`, one commit per item, no push.
+4. End: `check.sh` green, a dated entry in `$MAIN/docs/progress-log.md` (not committed), one
+   commit per item for the tracked files, no push.
    Merge and push are done by the user in the main checkout.
 5. Review: report the tier (`docs/setup-playbook.md`, "Code review playbook") and the command, then
    wait. Claude never starts a review on its own. Tier 3: the split code and the final scoring.
