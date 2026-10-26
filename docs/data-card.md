@@ -236,11 +236,11 @@ every training run records the hash in `docs/ledger.md`.
 
 ## Trans-test locations used for assets/
 
-Item 8.05, chosen by the user on 2026-10-18. The 10 demo photos in `assets/` are the Gradio
+Items 8.05 (2026-10-18, chosen by the user) and 13.22. The 15 demo photos in `assets/` are the Gradio
 examples and the only images Grad-CAM overlays are made from. They come from trans_test only
-(cameras never seen in training) and are the 512 px cache versions, 584 KB in all. They were
-picked by content from a random sample of 2 day and 2 night photos per class (seed 7). No model
-prediction was shown or used in the choice. File names give the labelled class, day or night,
+(cameras never seen in training) and are 512 px versions like the cache, about 900 KB in all.
+The first ten were picked by content from a random sample of 2 day and 2 night photos per class
+(seed 7). No model prediction was shown or used in either choice. File names give the labelled class, day or night,
 and an index; they never carry a dataset image id. One candidate with a person in the frame was
 left out.
 
@@ -256,6 +256,18 @@ left out.
 | `trans_raccoon_night_08.jpg` | raccoon | night | 100 |
 | `trans_car_night_09.jpg` | car | night | 0 |
 | `trans_opossum_day_10.jpg` | opossum | day | 46 |
+| `trans_rabbit_day_11.jpg` | rabbit | day | 46 |
+| `trans_squirrel_day_12.jpg` | squirrel | day | 78 |
+| `trans_bird_day_13.jpg` | bird | day | 0 |
+| `trans_rodent_night_14.jpg` | rodent | night | 40 |
+| `trans_skunk_night_15.jpg` | skunk | night | 130 |
 
-Four are infrared night frames; the locations are 0, 7, 46, 78 and 100, all trans_test.
+Photos 11 to 15 (item 13.22, 2026-10-26) add the five classes the first ten missed, so the
+examples cover all 12 classes. They were drawn at random (seed 1322, one frame per burst, two day
+and two night per class where both exist; 19 candidates) from trans_test, downloaded from LILA
+BC and resized like the 512 px cache, then picked by content for the presentation, one per class,
+with no model prediction shown or used.
+
+Six of the 15 are infrared night frames; the locations are 0, 7, 40, 46, 78, 100 and 130, all
+trans_test.
 Data: Caltech Camera Traps (CCT20), Beery et al. 2018, CDLA-Permissive 1.0.
