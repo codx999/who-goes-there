@@ -6,8 +6,8 @@ the classifier, the dataset, the architecture with its loss, optimizer and train
 DataLoader, test metrics, the inference timer, the Gradio UI and the Hugging Face Space. The story
 is how I built it, what I tried and what worked. One section per slide, each with a target time,
 what goes on the slide, the figure and the speaker notes. The deck is the Slides artifact
-<https://claude.ai/artifact/QGeyZXWLbB2AvL2keNczqR>, built from this file. Likely questions and
-short answers are in [`talk-qa.md`](talk-qa.md).
+<https://claude.ai/artifact/QGeyZXWLbB2AvL2keNczqR>, built from this file. Likely questions with
+short answers, and the spoken script, are kept on the presenter's machine, not in the repo.
 
 Nothing here is claimed as original: the problem, the split and every improvement I tried come
 from published research or standard practice, credited where they appear (slide 10's footnote).
@@ -17,7 +17,7 @@ from published research or standard practice, credited where they appear (slide 
 [`phase2-plan.md`](phase2-plan.md) section 12; phase 3 from [`phase3-plan.md`](phase3-plan.md)
 section 13 and [`test-ledger-phase3.md`](test-ledger-phase3.md); dataset counts from
 [`data-card.md`](data-card.md) and plan section 2; the training recipe from plan sections 4 and 5
-and `config.yaml`; run times and the Space's readings from [`progress-log.md`](progress-log.md);
+and `config.yaml`; run times and the Space's readings from the project's work log (kept locally);
 the papers' numbers from [`research-report.md`](research-report.md) Part 3. Headline claims use
 the mean of 3 seeds.
 
@@ -384,7 +384,7 @@ environment). The ResNet-18 (box-guided crops, seed 2) is the documented rollbac
 ## Slide 12. Live demo (3 min)
 
 **On the slide.** The audience's view only; the photo choice, expected answers and fallbacks are
-the presenter's, in the speaker notes and `talk-script.md`.
+the presenter's, in the speaker notes and the spoken script.
 
 - Title: the Space's address as a clickable link,
   <https://huggingface.co/spaces/Codx999/who-goes-there>.
@@ -489,7 +489,7 @@ a different list and no longer matches the deck.
 - Footer: Data: CCT20, Beery, Van Horn, Perona, ECCV 2018 · CDLA-Permissive 1.0 · code MIT.
 
 **Speaker notes.** Each next step costs something: a detector means two models at inference,
-burst voting needs the bursts. Then questions; answers in `talk-qa.md`. Leave this slide up
+burst voting needs the bursts. Then questions. Leave this slide up
 during questions so both links stay on screen; backups B1 to B4 are hidden (skipped when
 presenting), to jump to if a question needs one.
 

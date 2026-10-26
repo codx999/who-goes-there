@@ -303,3 +303,9 @@ secrets.toml
 !.env.example
 # macOS
 .DS_Store
+# Talk notes and working logs kept on the author's machine only (item 13.20)
+docs/talk-qa.md
+docs/talk-script.md
+docs/progress-log.md
+docs/progress.json
+docs/learning-journal.md

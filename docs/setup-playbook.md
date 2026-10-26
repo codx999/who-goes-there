@@ -9,7 +9,7 @@ This playbook copies the working setup of Animal Spirits (the finance-comment st
 
 Apply it in this order, one commit per step: tooling and check script first, then the data guard and hooks, then CLAUDE.md and the progress files, and the review playbook last. The review files depend on the check script and the progress files existing. The last section is a checklist you can follow top to bottom.
 
-The source files live in the Animal Spirits repo (`/Users/cody/Projects/Animal-Spirits`). Copy them across and edit them; do not copy anything under `docs/research/`, the package code or the data. The reviewer design is written up in `docs/review/playbook-reusable.md` (copied into this repo); Part B of that file is a prompt you can paste into Claude Code here.
+The source files live in the Animal Spirits repo (a separate local project). Copy them across and edit them; do not copy anything under `docs/research/`, the package code or the data. The reviewer design is written up in `docs/review/playbook-reusable.md` (copied into this repo); Part B of that file is a prompt you can paste into Claude Code here.
 
 ## Tooling setup
 

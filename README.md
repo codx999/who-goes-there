@@ -1,24 +1,110 @@
 # Who Goes There
 
-A PyTorch species classifier for camera-trap photos, tested on camera locations it never saw
-during training. Bootcamp capstone; presentation 2026-11-04.
+**A camera-trap species classifier that has to work on cameras it has never seen.**
+Try it live: **<https://huggingface.co/spaces/Codx999/who-goes-there>**
 
-Given one camera-trap image, the model names the animal in it. The headline result compares
-accuracy on **cis** test images (cameras also seen in training) with **trans** test images
-(cameras never seen), which shows how much a model leans on a camera's fixed background instead
-of the animal.
+Camera traps take photos faster than people can label them. This project trains a PyTorch model
+that looks at one camera-trap photo and names the animal in it: one of 11 animals, or a car. The
+hard part is that every camera has its own fixed background, so a model can learn the scenery
+instead of the animal and then fail on a camera it has never seen. The project measures that gap
+on the Caltech Camera Traps dataset and then shrinks it.
 
-## Status
+Built as the capstone for the bootcamp *AI and Machine Learning: Code, Train, & Deploy*
+(presentation 2026-11-04).
 
-Phases 1 to 3 are complete. Phase 1 trained the small CNN and both ResNet-18 arms, and the test
-sets were scored once on 2026-10-18. Phase 2 tried five changes on val and kept none. Phase 3 kept
-one recipe, ConvNeXt-Tiny with copy-paste, chosen on val. On 2026-10-20 the test sets were scored a
-second time, for that one recipe only. That second use is disclosed, and its results are shown
-beside phase 1's below. The design and every decision are in [`docs/plan.md`](docs/plan.md),
-[`docs/phase2-plan.md`](docs/phase2-plan.md) and [`docs/phase3-plan.md`](docs/phase3-plan.md);
-the work log is [`docs/progress-log.md`](docs/progress-log.md).
+## Results at a glance
 
-## Results
+Test accuracy, the share of photos named correctly, as the mean of 3 training runs. "Familiar
+cameras" are the 10 cameras seen in training, photographed at other times (14,478 photos); "new
+cameras" are 9 cameras never seen in training (21,473 photos).
+
+| model | familiar cameras | new cameras | gap |
+| --- | --- | --- | --- |
+| Small CNN, trained from scratch (1 run) | 50% | 31% | 19 points |
+| ResNet-18, pretrained (the baseline) | 67% | 51% | 16 points |
+| **ConvNeXt-Tiny + copy-paste (the final model)** | **76%** | **66%** | **10 points** |
+
+- **The gap is real:** every model does worse on cameras it has never seen, the same kind of gap
+  Beery et al. (2018) reported on this dataset.
+- **It got smaller:** a stronger pretrained model plus *copy-paste* augmentation (pasting animals
+  onto empty photos from other cameras, so animal and background stop going together) raised
+  new-camera accuracy from 51% to 66% and cut the gap from 16 to 10 points.
+- **What is still hard:** rare species on new cameras (bird, rodent, skunk), and the model still
+  uses the background more than it should.
+
+| | |
+| --- | --- |
+| ![Grad-CAM heat map of a bobcat from a new camera under the final model, heat on the animal](docs/figures/p3_gradcam_overlay_01.png) | ![Accuracy and macro-F1 per unseen camera for the baseline ResNet-18](docs/figures/test_trans_per_camera_arm_a_seed0.png) |
+| A bobcat from a new camera: the first model called it a cat; the final model says bobcat (84%), with its attention on the animal. | Accuracy per new camera for the baseline ResNet-18 (one run): some cameras are much harder than others. |
+
+## How it works
+
+1. **Data:** Caltech Camera Traps (CCT20), 20 cameras in the American Southwest. It is not in
+   `torchvision.datasets`, so it is loaded with a custom PyTorch `Dataset`. Photos are split by
+   camera, and by burst within the training cameras, so no near-duplicate frame leaks between
+   training and validation.
+2. **Pipeline:** photos cropped to 224 × 224, augmentation on training photos only (crop, flip, colour,
+   greyscale, and copy-paste for the final model), ImageNet normalisation, a `DataLoader` with
+   batches of 64.
+3. **Model:** an ImageNet-pretrained body (ResNet-18 for the baseline, ConvNeXt-Tiny for the final
+   model) with a new 12-class head; cross-entropy loss; AdamW with a slow rate for the body and a
+   fast one for the head; at most 10 epochs with a cosine schedule, keeping the best epoch on
+   validation macro-F1.
+4. **Choosing fairly:** each idea was one change from the same baseline, judged on validation and
+   on one held-out new camera over 3 runs; the test sets were kept for the end.
+5. **Training:** on a free Kaggle T4 GPU. **Deployment:** a Gradio app on Hugging Face Spaces,
+   running on a CPU, about 0.1 s per photo.
+
+## Try it
+
+**Online:** open the [Space](https://huggingface.co/spaces/Codx999/who-goes-there), click one of
+the example photos (or upload your own camera-trap photo) and press Classify. You get the top class
+with its confidence, two runners-up, the inference time, and an optional Grad-CAM heat map of
+where the model looked.
+
+**Locally** (Python 3.12 and [uv](https://docs.astral.sh/uv/); the weights are not in this repo,
+so pass a checkpoint trained with `trailcam.train`):
+
+```bash
+uv run python -m trailcam.demo.app --checkpoint <run>.pt --config-name p3_convnext_cp
+```
+
+Without a checkpoint, `--check` builds the interface with random weights and exits:
+
+```bash
+uv run python -m trailcam.demo.app --check
+```
+
+## What's in the repo
+
+| path | what it holds |
+| --- | --- |
+| `trailcam/data/` | the custom `Dataset`, the camera-and-burst split, transforms, box-guided crops and copy-paste, `DataLoader`s |
+| `trailcam/model/` | the small CNN and the pretrained backbones (ResNet-18, ConvNeXt-Tiny) |
+| `trailcam/train/` | the training loop, config and run ledger |
+| `trailcam/evaluate/` | metrics, test scoring, slices, hand-written Grad-CAM, attention and figures |
+| `trailcam/demo/` | the Gradio app, the timed prediction, and a folder sorter |
+| `notebooks/` | the Kaggle notebooks for training, evaluation and test scoring |
+| `space/` | the Hugging Face Space (`app.py`, `requirements.txt`) |
+| `scripts/` | checks, the data guard, Kaggle cache tools, the Space upload |
+| `tests/` | the test suite, run by `scripts/check.sh` and CI |
+| `config.yaml` | every training setting, one named config per model |
+
+**Guide to `docs/`.** For results: the run ledgers ([`ledger.md`](docs/ledger.md),
+[`ledger-phase2.md`](docs/ledger-phase2.md), [`ledger-phase3.md`](docs/ledger-phase3.md)), the two
+test scorings ([`test-ledger.md`](docs/test-ledger.md),
+[`test-ledger-phase3.md`](docs/test-ledger-phase3.md)), the dataset facts
+([`data-card.md`](docs/data-card.md)) and the figures ([`docs/figures/`](docs/figures/)). The
+other files in `docs/` are the project's working notes.
+
+## Detailed results
+
+The sections below use the project's working terms: **cis_test** is the familiar-camera test set,
+**trans_test** the new-camera test set and **trans_val** the one new camera held out for choosing
+(Beery et al.'s "cis" and "trans"). **Phase 1** trained the small CNN and two ResNet-18 arms
+(**arm A** the baseline, **arm B** with box-guided crops); **phase 2** tried five changes and kept
+none; **phase 3** kept ConvNeXt-Tiny with copy-paste.
+
 
 The test sets have been used twice. Each use is reported in its own section, and neither replaces
 the other:
@@ -224,14 +310,12 @@ Data: Caltech Camera Traps (CCT20), Beery et al. 2018, CDLA-Permissive 1.0 (see
   night share changes it by about 0.01 or less ([`slices_test.md`](docs/figures/slices_test.md),
   [`p3_slices_test.md`](docs/figures/p3_slices_test.md)).
 
-### What's next
+### Future work
 
 - **Phase 2** tried five changes on val and trans_val, and none was kept
   ([`docs/phase2-plan.md`](docs/phase2-plan.md) section 12).
 - **Phase 3** is complete: one recipe kept and scored on test, above
   ([`docs/phase3-plan.md`](docs/phase3-plan.md) section 13).
-- **Still to do before the presentation on 2026-11-04:** switch the Space to phase 3's seed 2
-  (item 13.15) and finish the slides ([`docs/slides.md`](docs/slides.md)).
 - **Beyond this project:**
   - train for more than 10 epochs, since two ConvNeXt runs peaked at the last one;
   - use new unseen cameras to separate the backbone from copy-paste, since the test sets have
@@ -240,26 +324,11 @@ Data: Caltech Camera Traps (CCT20), Beery et al. 2018, CDLA-Permissive 1.0 (see
   - a backbone pretrained on species images (BioCLIP), after its pretraining data is checked
     for CCT photos.
 
-## Demo
+### The live model
 
-Live demo on Hugging Face Spaces: **<https://huggingface.co/spaces/Codx999/who-goes-there>**. Upload a
-camera-trap photo, get the top class with its confidence, the two runners-up, the inference time
-and an optional Grad-CAM overlay. It serves phase 3's finalist, ConvNeXt-Tiny with copy-paste
-training (`p3_convnext_cp`) seed 2, chosen on val, since 2026-10-21; on the Space's CPU a click
-takes about half a second, Grad-CAM included. Phase 1's ResNet-18 arm B seed 2, which it served
-before, is the rollback.
-
-Run it locally (the weights are never in this repo; pass a `train.py` checkpoint):
-
-```bash
-uv run python -m trailcam.demo.app --checkpoint <run>.pt --config-name p3_convnext_cp
-```
-
-Without a checkpoint, `--check` builds the interface with random weights and exits:
-
-```bash
-uv run python -m trailcam.demo.app --check
-```
+The Space serves phase 3's finalist, ConvNeXt-Tiny with copy-paste training (`p3_convnext_cp`)
+seed 2, chosen on val, since 2026-10-21; on the Space's CPU a click takes about half a second,
+Grad-CAM included. Phase 1's ResNet-18 arm B seed 2, which it served before, is the rollback.
 
 ## Dataset
 
@@ -290,6 +359,73 @@ Enable the data-guard hooks once per clone:
 ```bash
 git config core.hooksPath .githooks
 ```
+
+## References and credits
+
+The problem, the dataset split and every improvement tried here come from published work or
+standard practice; none of it is claimed as original.
+
+**Dataset**
+
+- Sara Beery, Grant Van Horn, Pietro Perona. "Recognition in Terra Incognita." ECCV 2018.
+  <https://arxiv.org/abs/1807.04975>. The CCT20 split, the familiar vs new camera gap this project
+  reproduces, and box-guided crops.
+- Caltech Camera Traps on LILA BC: <https://lila.science/datasets/caltech-camera-traps>, licence
+  [CDLA-Permissive 1.0](https://cdla.dev/permissive-1-0/). The photos in `assets/` and in the
+  figures are from this dataset.
+
+**Methods used**
+
+- Kaiming He, Xiangyu Zhang, Shaoqing Ren, Jian Sun. "Deep Residual Learning for Image
+  Recognition." CVPR 2016. <https://arxiv.org/abs/1512.03385> (ResNet-18, the baseline).
+- Zhuang Liu, Hanzi Mao, Chao-Yuan Wu, Christoph Feichtenhofer, Trevor Darrell, Saining Xie. "A
+  ConvNet for the 2020s." CVPR 2022. <https://arxiv.org/abs/2201.03545> (ConvNeXt-Tiny; weights
+  `convnext_tiny.fb_in1k` from timm).
+- Jia Deng et al. "ImageNet: A Large-Scale Hierarchical Image Database." CVPR 2009 (the
+  pretraining data of both backbones).
+- Ilya Loshchilov, Frank Hutter. "Decoupled Weight Decay Regularization." ICLR 2019.
+  <https://arxiv.org/abs/1711.05101> (AdamW); and "SGDR: Stochastic Gradient Descent with Warm
+  Restarts." ICLR 2017. <https://arxiv.org/abs/1608.03983> (cosine schedule).
+- Irena Gao, Shiori Sagawa, Pang Wei Koh, Tatsunori Hashimoto, Percy Liang. "Out-of-Domain
+  Robustness via Targeted Augmentations." ICML 2023, PMLR 202:10800-10834 (targeted augmentation
+  for camera traps).
+- Mesnage et al. "Copy-Paste Augmentation Improves Automatic Species Identification in Camera Trap
+  Images." Ecology and Evolution 15(11):e72357, 2025.
+  <https://pmc.ncbi.nlm.nih.gov/articles/PMC12588685/> (copy-paste for camera traps).
+- Ramprasaath R. Selvaraju et al. "Grad-CAM: Visual Explanations from Deep Networks via
+  Gradient-based Localization." ICCV 2017. <https://arxiv.org/abs/1610.02391> (the heat maps;
+  implemented by hand in `trailcam/evaluate/gradcam.py`).
+
+**Background**
+
+- Robert Geirhos et al. "Shortcut Learning in Deep Neural Networks." Nature Machine Intelligence,
+  2020. <https://arxiv.org/abs/2004.07780>.
+- Pang Wei Koh et al. "WILDS: A Benchmark of in-the-Wild Distribution Shifts." ICML 2021.
+  <https://arxiv.org/abs/2012.07421>.
+- Mohammad Sadegh Norouzzadeh et al. "Automatically identifying, counting, and describing wild
+  animals in camera-trap images with deep learning." PNAS, 2018.
+  <https://doi.org/10.1073/pnas.1719367115>.
+- Sara Beery, Dan Morris, Siyu Yang. "Efficient Pipeline for Camera Trap Image Review" (the
+  MegaDetector). 2019. <https://arxiv.org/abs/1907.06772>.
+- Stefan Schneider, Saul Greenberg, Graham W. Taylor, Stefan C. Kremer. "Three critical factors
+  affecting automated image species recognition performance for camera traps." Ecology and
+  Evolution, 2020. <https://doi.org/10.1002/ece3.6147>.
+- Chuan Guo, Geoff Pleiss, Yu Sun, Kilian Q. Weinberger. "On Calibration of Modern Neural
+  Networks." ICML 2017. <https://arxiv.org/abs/1706.04599>.
+- Dussert, Chamaillé-Jammes, Dray, Miele. "Being confident in
+  confidence scores: calibration in deep learning models for camera trap image sequences." Remote
+  Sensing in Ecology and Conservation, 2024. <https://doi.org/10.1002/rse2.412>.
+- Samuel Stevens et al. "BioCLIP: A Vision Foundation Model for the Tree of Life." CVPR 2024.
+  <https://arxiv.org/abs/2311.18803> (future work).
+
+**Course and tools**
+
+- The course *AI and Machine Learning: Code, Train, & Deploy*, built on Daniel Bourke's *Learn
+  PyTorch for Deep Learning: Zero to Mastery* (<https://github.com/mrdbourke/pytorch-deep-learning>);
+  chapters 04 (custom datasets), 06 (transfer learning) and 09 (deployment).
+- [PyTorch and torchvision](https://pytorch.org/), [timm](https://github.com/huggingface/pytorch-image-models),
+  [Gradio](https://www.gradio.app/), [Hugging Face Spaces](https://huggingface.co/spaces),
+  [Kaggle](https://www.kaggle.com/) notebooks (free T4 GPU), [uv](https://docs.astral.sh/uv/).
 
 ## License
 
