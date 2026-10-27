@@ -269,6 +269,18 @@ def test_the_app_builds_with_and_without_examples(model: nn.Module, tmp_path: Pa
     assert isinstance(build_app(model, example_photos(assets)), gr.Blocks)
 
 
+def test_every_example_is_on_one_page(
+    model: nn.Module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Item 13.22: more photos than Gradio's default page of 10 all show on the first page."""
+    made = record_examples(monkeypatch)
+    examples = example_photos(photo_assets(tmp_path, count=12))
+    assert len(examples) == 12
+    build_app(model, examples)
+    assert len(made) == 1
+    assert made[0].dataset.samples_per_page == 12
+
+
 def test_with_photos_in_assets_the_button_still_runs_the_handler(
     model: nn.Module, photo: Image.Image, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

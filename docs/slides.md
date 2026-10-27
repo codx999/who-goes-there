@@ -433,8 +433,10 @@ uv run python -m trailcam.demo.app --checkpoint <seed-2 checkpoint>.pt --config-
 **Speaker notes.** A wrong answer you predicted is a better demo than a right one you hoped for.
 The confidence is the model's own estimate, not a calibrated probability. Rehearse on the Space
 and check each photo's answer; all three demo photos' Space readings are now logged here. The final model
-gets 8 of the 10 `assets/` photos right; the other wrong one is the raccoon by day, called cat
-(0.92). The checkpoint's file name and sha256 are in `progress-log.md`, 2026-10-21; the local tools
+gets 11 of the 15 `assets/` photos right on the live Space (2026-10-26, after item 13.22 added a
+rabbit, squirrel, bird, rodent and skunk): wrong are the opossum (squirrel 39%), the raccoon by
+day (cat 92%), the squirrel (dog 37%, squirrel second at 21%) and the rodent (rabbit 60%). Right
+among the new ones: rabbit 98%, bird 72%, skunk 100%. The checkpoint's file name and sha256 are in the work log, 2026-10-21; the local tools
 default to the ResNet-18's config, so `--config-name p3_convnext_cp` is required. The live sort's
 counts are per predicted class, not a score (the script reads no labels).
 

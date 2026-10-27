@@ -102,7 +102,13 @@ def build_app(
                 seconds = gr.Textbox(label="Inference time", interactive=False)
                 heatmap = gr.Image(type="pil", label="Grad-CAM (224 x 224 frame)")
         if examples:
-            gr.Examples(examples=[[str(path)] for path in examples], inputs=[photo])
+            # Every example on one page: Gradio's default of 10 per page hid photos 11 to 15
+            # on a second page (item 13.22).
+            gr.Examples(
+                examples=[[str(path)] for path in examples],
+                inputs=[photo],
+                examples_per_page=len(examples),
+            )
         gr.Markdown(CITATION)
 
         def handle(image: Image.Image | None, gradcam: bool) -> Result:
